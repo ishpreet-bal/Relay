@@ -19,7 +19,7 @@ export function ResearchQueue() {
         <h2 className="font-display font-semibold mb-1">Nothing in the queue</h2>
         <p className="text-sm text-muted mb-4 max-w-sm mx-auto">
           Select leads with a website and queue them for research. The worker reads
-          each site and discards any finding it can't tie back to a quote.
+          each site and discards any finding it can&apos;t tie back to a quote.
         </p>
         <Link href="/leads" className="btn-outline">Go to leads</Link>
       </div>

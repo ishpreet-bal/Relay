@@ -113,7 +113,7 @@ export default async function PortfolioSitePage({ params }: { params: Promise<{ 
             ))}
           </div>
           <p className="text-[11px] text-muted mt-3">
-            These come from reading your public website. If we've read something wrong, tell us — it's
+            These come from reading your public website. If we&apos;ve read something wrong, tell us — it&apos;s
             a starting point for a conversation, not a diagnosis.
           </p>
         </section>
@@ -134,7 +134,7 @@ export default async function PortfolioSitePage({ params }: { params: Promise<{ 
         <div className="card p-6 text-center">
           <h2 className="text-xl font-semibold mb-2">Worth a conversation?</h2>
           <p className="text-sm text-muted mb-5 max-w-md mx-auto">
-            Fifteen minutes to walk through what's above and find out whether any of it
+            Fifteen minutes to walk through what&apos;s above and find out whether any of it
             is worth building for you.
           </p>
           <div className="flex flex-wrap gap-3 justify-center">

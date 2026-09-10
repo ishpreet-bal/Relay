@@ -41,7 +41,7 @@ export default async function ProposalsPage() {
             <div className="card p-12 text-center">
               <h2 className="font-display font-semibold mb-1">No proposals yet</h2>
               <p className="text-sm text-muted max-w-md mx-auto">
-                Generate one from a lead's page once research has found automation
+                Generate one from a lead&apos;s page once research has found automation
                 opportunities. Pricing comes from your rate card, not from a model.
               </p>
             </div>

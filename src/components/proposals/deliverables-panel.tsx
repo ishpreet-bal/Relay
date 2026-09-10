@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { FileText, Globe, ExternalLink, Copy, Check } from 'lucide-react';
+import { FileText, Globe, Copy, Check } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { cn, formatMoney } from '@/lib/utils';
 

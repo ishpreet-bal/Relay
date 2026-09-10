@@ -57,7 +57,7 @@ export function ReviewQueue({ canApprove, canSend }: { canApprove: boolean; canS
           <Inbox className="size-7 mx-auto text-muted mb-3" strokeWidth={1.5} />
           <h2 className="font-display font-semibold mb-1">Nothing waiting for review</h2>
           <p className="text-sm text-muted max-w-sm mx-auto">
-            Drafts appear here after they're generated. Nothing sends without passing
+            Drafts appear here after they&apos;re generated. Nothing sends without passing
             through this screen first.
           </p>
         </div>

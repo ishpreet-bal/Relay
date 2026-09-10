@@ -98,8 +98,8 @@ export function CampaignBuilder() {
             {domainUnverified && (
               <p className="flex items-start gap-1.5 text-[11px] text-held mt-2">
                 <AlertTriangle className="size-3 mt-0.5 shrink-0" />
-                SPF or DKIM isn't verified for this address. You can save the campaign, but it
-                can't be activated until they are — sending before then damages deliverability
+                SPF or DKIM isn&apos;t verified for this address. You can save the campaign, but it
+                can&apos;t be activated until they are — sending before then damages deliverability
                 for every future email from this domain.
               </p>
             )}
@@ -200,10 +200,10 @@ export function CampaignBuilder() {
           <input type="checkbox" checked={allowContextual} className="accent-accent mt-0.5"
                  onChange={(e) => setAllowContextual(e.target.checked)} />
           <span>
-            Send industry-only emails to leads whose website couldn't be read.
+            Send industry-only emails to leads whose website couldn&apos;t be read.
             <span className="block text-[11px] text-muted mt-0.5">
               These reference the industry and city but make no claims about the business itself.
-              They're labelled separately in review so you can approve or skip them as a batch.
+              They&apos;re labelled separately in review so you can approve or skip them as a batch.
             </span>
           </span>
         </label>
@@ -231,7 +231,7 @@ export function CampaignBuilder() {
                 })}>
           {create.isPending ? 'Creating…' : 'Create campaign'}
         </button>
-        <p className="text-[11px] text-muted">It starts paused. You activate it when you're ready.</p>
+        <p className="text-[11px] text-muted">It starts paused. You activate it when you&apos;re ready.</p>
       </div>
 
       {create.error && <p className="text-micro text-blocked">{create.error.message}</p>}

@@ -43,7 +43,7 @@ export function ProposalAccept({ token, accent, agency }: { token: string; accen
     <div className="card p-5">
       <h2 className="font-medium mb-1">Ready to go ahead?</h2>
       <p className="text-micro text-muted mb-4">
-        Type your name to accept this proposal. We'll record the date and time.
+        Type your name to accept this proposal. We&apos;ll record the date and time.
         A countersigned agreement follows before any work begins.
       </p>
       <div className="flex flex-wrap gap-2">

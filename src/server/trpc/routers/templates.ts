@@ -69,6 +69,7 @@ export const templatesRouter = router({
       });
       if (existing) return existing;
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, organizationId, createdAt, updatedAt, ...rest } = source;
       return ctx.db.solutionTemplate.create({
         data: {
