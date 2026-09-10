@@ -2,18 +2,21 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import type { inferRouterOutputs } from '@trpc/server';
 import {
-  Check, X, RefreshCw, Pencil, AlertTriangle, ShieldAlert, ExternalLink, Loader2,
+  Check, X, Pencil, AlertTriangle, ShieldAlert, ExternalLink, Loader2,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
-import { cn } from '@/lib/utils';
+import type { AppRouter } from '@/server/trpc/routers/_app';
 import { TierBadge } from './tier-badge';
 
 interface Finding { severity: 'block' | 'warn'; rule: string; message: string; excerpt: string }
 interface Fact { claim: string; statement: string; sourceUrl: string; factId: string }
 
+type ReviewQueueMessage = inferRouterOutputs<AppRouter>['messages']['reviewQueue']['items'][number];
+
 export function DraftCard({ message, canApprove, canSend, onDone }: {
-  message: any; canApprove: boolean; canSend: boolean; onDone: () => void;
+  message: ReviewQueueMessage; canApprove: boolean; canSend: boolean; onDone: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [subject, setSubject] = useState(message.subject ?? '');
@@ -27,8 +30,8 @@ export function DraftCard({ message, canApprove, canSend, onDone }: {
   const reject = trpc.messages.reject.useMutation({ onSuccess: invalidate });
   const send = trpc.messages.send.useMutation({ onSuccess: invalidate });
 
-  const findings = (message.lintFindings ?? []) as Finding[];
-  const facts = (message.personalizationFacts ?? []) as Fact[];
+  const findings = (message.lintFindings ?? []) as unknown as Finding[];
+  const facts = (message.personalizationFacts ?? []) as unknown as Fact[];
   const blockers = findings.filter((f) => f.severity === 'block');
   const warnings = findings.filter((f) => f.severity === 'warn');
   const busy = edit.isPending || approve.isPending || reject.isPending || send.isPending;

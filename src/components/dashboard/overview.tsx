@@ -4,10 +4,11 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { AlertTriangle, Info } from 'lucide-react';
+import type { LeadStatus } from '@prisma/client';
 import { trpc } from '@/lib/trpc/client';
 import { cn, formatMoney } from '@/lib/utils';
 
-const PIPELINE_ORDER = [
+const PIPELINE_ORDER: LeadStatus[] = [
   'DISCOVERED', 'RESEARCHED', 'DRAFTED', 'CONTACTED',
   'ENGAGED', 'MEETING_BOOKED', 'PROPOSAL_SENT', 'WON',
 ];

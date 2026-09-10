@@ -90,7 +90,7 @@ function SendingLimits({ canWrite }: { canWrite: boolean }) {
       <p className="text-[11px] text-muted mb-4">
         Hard ceilings enforced by the send gate, on top of any per-campaign caps.
         {usage.data && (
-          <> You've sent <span className="num">{usage.data.usage.sends}</span> of{' '}
+          <> You&apos;ve sent <span className="num">{usage.data.usage.sends}</span> of{' '}
           <span className="num">{usage.data.limits.sendsPerMonth}</span> this month on the{' '}
           {usage.data.planName} plan.</>
         )}

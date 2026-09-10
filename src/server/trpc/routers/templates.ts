@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { Prisma } from '@prisma/client';
 import { router, permissionProcedure } from '../init';
 import { solutionSpecSchema } from '@/server/services/templates/spec';
 
@@ -68,9 +69,17 @@ export const templatesRouter = router({
       });
       if (existing) return existing;
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, organizationId, createdAt, updatedAt, ...rest } = source;
       return ctx.db.solutionTemplate.create({
-        data: { ...rest, organizationId: ctx.session.organizationId, version: 1 },
+        data: {
+          ...rest,
+          organizationId: ctx.session.organizationId,
+          version: 1,
+          spec: rest.spec as Prisma.InputJsonValue,
+          sampleData: rest.sampleData as Prisma.InputJsonValue,
+          workflowDiagram: rest.workflowDiagram ?? Prisma.JsonNull,
+        },
       });
     }),
 

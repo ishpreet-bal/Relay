@@ -1,5 +1,5 @@
-import { renderToBuffer } from '@react-pdf/renderer';
-import { createElement } from 'react';
+import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer';
+import { createElement, type ReactElement } from 'react';
 import { db } from '@/lib/db';
 import { ProposalDocument, type ProposalPdfData } from './proposal-document';
 
@@ -44,5 +44,7 @@ export async function renderProposalPdf(proposalId: string, organizationId: stri
     terms: proposal.terms,
   };
 
-  return renderToBuffer(createElement(ProposalDocument, { data }));
+  return renderToBuffer(
+    createElement(ProposalDocument, { data }) as ReactElement<DocumentProps>,
+  );
 }

@@ -57,7 +57,7 @@ export function ResearchReport({ leadId, canRun }: { leadId: string; canRun: boo
         <div className="flex items-start gap-3">
           <AlertTriangle className="size-4 text-held shrink-0 mt-0.5" />
           <div className="flex-1">
-            <h3 className="text-[13px] font-medium mb-1">Research didn't finish</h3>
+            <h3 className="text-[13px] font-medium mb-1">Research didn&apos;t finish</h3>
             <p className="text-micro text-muted mb-3">{data.error}</p>
             {canRun && (
               <button type="button" className="btn-outline h-8 text-micro" disabled={running}

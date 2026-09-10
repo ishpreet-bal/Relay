@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -18,7 +18,7 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db;
  */
 export async function withTenant<T>(
   organizationId: string,
-  fn: (tx: Omit<PrismaClient, '$transaction' | '$connect' | '$disconnect'>) => Promise<T>,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   return db.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SELECT set_config('app.current_org', $1, true)`, organizationId);

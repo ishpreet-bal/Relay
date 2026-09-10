@@ -20,6 +20,9 @@ export async function POST(req: Request) {
     return new Response('Missing signature headers', { status: 400 });
   }
 
+  // Clerk's webhook payload shape varies by event type; narrowing it per-event
+  // in `handle` isn't worth a full typed union for a handler this small.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let event: { type: string; data: Record<string, any> };
   try {
     event = new Webhook(env().CLERK_WEBHOOK_SECRET).verify(payload, {
@@ -60,12 +63,14 @@ export async function POST(req: Request) {
   return Response.json({ ok: true });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handle(event: { type: string; data: Record<string, any> }) {
   const d = event.data;
 
   switch (event.type) {
     case 'user.created':
     case 'user.updated': {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const email = d.email_addresses?.find((e: any) => e.id === d.primary_email_address_id)?.email_address
         ?? d.email_addresses?.[0]?.email_address;
       if (!email) throw new Error('User has no email address');

@@ -19,7 +19,7 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
       <Shell title="This link isn't valid">
         <p>
           The link may have been altered in transit. Reply to the email you received
-          with the word “unsubscribe” and you'll be removed manually.
+          with the word “unsubscribe” and you&apos;ll be removed manually.
         </p>
       </Shell>
     );
@@ -41,11 +41,11 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
   return (
     <Shell title="You're unsubscribed">
       <p>
-        <strong>{verified.email}</strong> won't receive any further email from{' '}
+        <strong>{verified.email}</strong> won&apos;t receive any further email from{' '}
         {org?.brandName ?? org?.name ?? 'us'}. Anything already scheduled has been cancelled.
       </p>
       <p className="text-sm text-muted mt-4">
-        This took effect immediately. You don't need to do anything else.
+        This took effect immediately. You don&apos;t need to do anything else.
       </p>
     </Shell>
   );

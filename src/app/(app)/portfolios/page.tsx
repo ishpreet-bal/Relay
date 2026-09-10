@@ -33,7 +33,7 @@ export default async function PortfoliosPage() {
           {sites.length === 0 ? (
             <div className="card p-12 text-center">
               <h2 className="font-display font-semibold mb-1">No demo sites yet</h2>
-              <p className="text-sm text-muted">Create one from a researched lead's page.</p>
+              <p className="text-sm text-muted">Create one from a researched lead&apos;s page.</p>
             </div>
           ) : (
             <ul className="card divide-y divide-hairline">

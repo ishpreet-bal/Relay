@@ -614,6 +614,8 @@ model Message {
   personalizationFacts Json?   // [{factId, statement, sourceUrl, sentence}]
   /** Specific claims the linter could not tie to a ledger fact. */
   unverifiedClaims     Json?
+  /** Full lint output (blockers and warnings) from the last draft or edit; gates approve/send. */
+  lintFindings         Json?
   model         String?
   promptVersion String?
   generationCostCents Int?

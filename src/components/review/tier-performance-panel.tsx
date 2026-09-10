@@ -71,7 +71,7 @@ export function TierPerformancePanel() {
                 type="button"
                 className={off ? 'btn-outline h-7 text-micro' : 'btn-ghost h-7 text-micro'}
                 disabled={toggle.isPending}
-                onClick={() => toggle.mutate({ enabled: off })}
+                onClick={() => toggle.mutate({ enabled: !!off })}
               >
                 {off ? 'Turn industry-only back on' : 'Turn industry-only off'}
               </button>

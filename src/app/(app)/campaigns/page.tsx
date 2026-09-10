@@ -74,7 +74,7 @@ export default async function CampaignsPage() {
                 {domainUnverified && (
                   <p className="flex items-center gap-1.5 text-[11px] text-held mb-3">
                     <AlertTriangle className="size-3" />
-                    SPF or DKIM isn't verified for {campaign.mailbox!.fromEmail}. This campaign can't be activated until it is.
+                    SPF or DKIM isn&apos;t verified for {campaign.mailbox!.fromEmail}. This campaign can&apos;t be activated until it is.
                   </p>
                 )}
 

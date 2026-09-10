@@ -114,7 +114,7 @@ export async function enrollLeads(organizationId: string, campaignId: string, le
 
   if (toCreate.length) {
     await db.campaignEnrollment.createMany({
-      data: toCreate.map((t, i) => ({
+      data: toCreate.map((t) => ({
         organizationId,
         campaignId,
         leadId: t.leadId,
