@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { ClerkProvider } from '@clerk/nextjs';
 import { Archivo, Inter, JetBrains_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/components/shell/theme-provider';
+import { OrgAutoActivate } from '@/components/shell/org-auto-activate';
 import { TRPCProvider } from '@/lib/trpc/client';
 import './globals.css';
 
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <html lang="en" suppressHydrationWarning className={`${display.variable} ${body.variable} ${mono.variable}`}>
         <body>
           <ThemeProvider>
+            <OrgAutoActivate />
             <TRPCProvider>{children}</TRPCProvider>
           </ThemeProvider>
         </body>
