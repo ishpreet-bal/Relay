@@ -39,6 +39,7 @@ function buildFactLedger(research: {
       id: `f${n++}`,
       statement: `${p.title}. ${p.rationale ?? ''} Their own page says: "${citation.quote}"`.trim(),
       sourceUrl: citation.url,
+      kind: 'prospect',
     });
   }
 
@@ -50,6 +51,7 @@ function buildFactLedger(research: {
       id: `f${n++}`,
       statement: `Opportunity: ${o.title}. ${o.workflow ?? ''}`.trim(),
       sourceUrl: citation.url,
+      kind: 'prospect',
     });
   }
 
@@ -58,6 +60,7 @@ function buildFactLedger(research: {
       id: `f${n++}`,
       statement: `They list these services: ${research.servicesOffered.slice(0, 8).join(', ')}.`,
       sourceUrl: 'research:services',
+      kind: 'prospect',
     });
   }
   if (research.detectedSoftware?.length) {
@@ -65,6 +68,7 @@ function buildFactLedger(research: {
       id: `f${n++}`,
       statement: `Software detected on their site: ${research.detectedSoftware.join(', ')}.`,
       sourceUrl: 'research:software',
+      kind: 'prospect',
     });
   }
 
@@ -187,6 +191,7 @@ export async function draftMessage(opts: DraftOptions) {
           city: lead.city,
           industry: lead.industry,
           facts,
+          tier,
           senderName: opts.senderName,
           agencyName,
           offerBrief: opts.offerBrief,
