@@ -1,6 +1,8 @@
 import { requirePermission } from '@/lib/auth';
 import { Topbar } from '@/components/shell/topbar';
 import { ResearchQueue } from '@/components/research/research-queue';
+import { ResearchStarter } from '@/components/research/research-starter';
+import { can } from '@/lib/rbac';
 import { monthlySpend } from '@/server/ai/budget';
 
 export const metadata = { title: 'Research' };
@@ -15,6 +17,7 @@ export default async function ResearchPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-6">
           <BudgetBar spentCents={spend.spentCents} capCents={spend.capCents} runs={spend.runs} />
+          <ResearchStarter canRun={can(session.role, 'research:run')} />
           <ResearchQueue />
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { headers } from 'next/headers';
 import { db } from '@/lib/db';
 import { verifyWebhook, SignatureError } from '@/server/services/webhook-verify';
-import { env } from '@/lib/env';
+import { requireEnv } from '@/lib/env';
 import { suppress } from '@/server/services/suppression';
 import { logActivity } from '@/server/services/crm';
 
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     verified = verifyWebhook<ResendEvent>({
       body: raw,
       headers: await headers(),
-      secret: env().RESEND_WEBHOOK_SECRET,
+      secret: requireEnv('RESEND_WEBHOOK_SECRET', 'Resend webhooks'),
     });
   } catch (err) {
     // 401 and nothing else. No parsing, no logging of the body, no partial

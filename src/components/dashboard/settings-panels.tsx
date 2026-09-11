@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CreditCard, ScrollText, SlidersHorizontal, Check } from 'lucide-react';
+import { CreditCard, PenLine, ScrollText, SlidersHorizontal, Check } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { cn, formatMoney } from '@/lib/utils';
 
@@ -16,11 +16,78 @@ export function SettingsPanels({ canWrite, canBill, canAudit }: {
 }) {
   return (
     <div className="space-y-6">
+      <OutreachBriefPanel canWrite={canWrite} />
       <RateCard canWrite={canWrite} />
       <SendingLimits canWrite={canWrite} />
       {canBill && <Billing />}
       {canAudit && <AuditLog />}
     </div>
+  );
+}
+
+/**
+ * The brief every draft is written from. Lives here as well as on the Drafts
+ * page because it is workspace configuration, not a per-session choice.
+ */
+function OutreachBriefPanel({ canWrite }: { canWrite: boolean }) {
+  const settings = trpc.admin.settings.useQuery();
+  const utils = trpc.useUtils();
+  const update = trpc.admin.updateSettings.useMutation({ onSuccess: () => utils.admin.settings.invalidate() });
+
+  const [draft, setDraft] = useState<{ senderName: string; offer: string; tone: string } | null>(null);
+  const current = {
+    senderName: settings.data?.defaultSenderName ?? '',
+    offer: settings.data?.offerBrief ?? '',
+    tone: settings.data?.toneGuidelines ?? '',
+  };
+  const value = draft ?? current;
+  const dirty = draft !== null && (
+    draft.senderName !== current.senderName || draft.offer !== current.offer || draft.tone !== current.tone
+  );
+
+  return (
+    <section className="card p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <PenLine className="size-3.5 text-muted" strokeWidth={1.75} />
+        <h2 className="text-[13px] font-medium flex-1">Outreach brief</h2>
+        {dirty && canWrite && (
+          <button type="button" className="btn-primary h-7 text-micro" disabled={update.isPending}
+                  onClick={() => update.mutate({
+                    defaultSenderName: value.senderName.trim() || null,
+                    offerBrief: value.offer.trim() || null,
+                    toneGuidelines: value.tone.trim() || null,
+                  })}>
+            {update.isPending ? 'Saving…' : 'Save'}
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-muted mb-4">
+        The only claims a draft may make about you. Campaigns can override it; drafts written
+        outside a campaign use exactly this.
+      </p>
+
+      <div className="space-y-3">
+        <div>
+          <label htmlFor="settings-sender" className="eyebrow block mb-1.5">Sign-off name</label>
+          <input id="settings-sender" className="input" maxLength={80} disabled={!canWrite}
+                 value={value.senderName}
+                 onChange={(e) => setDraft({ ...value, senderName: e.target.value })} />
+        </div>
+        <div>
+          <label htmlFor="settings-offer" className="eyebrow block mb-1.5">What you do</label>
+          <textarea id="settings-offer" className="input h-auto py-2 resize-y" rows={3} maxLength={2000}
+                    disabled={!canWrite} value={value.offer}
+                    onChange={(e) => setDraft({ ...value, offer: e.target.value })} />
+        </div>
+        <div>
+          <label htmlFor="settings-tone" className="eyebrow block mb-1.5">Tone notes</label>
+          <input id="settings-tone" className="input" maxLength={2000} disabled={!canWrite}
+                 value={value.tone}
+                 onChange={(e) => setDraft({ ...value, tone: e.target.value })} />
+        </div>
+      </div>
+      {update.error && <p className="text-[11px] text-blocked mt-2">{update.error.message}</p>}
+    </section>
   );
 }
 

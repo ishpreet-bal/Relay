@@ -5,7 +5,7 @@ import { buildProposal } from '@/server/services/proposal';
 import { createPortfolioSite, publishSite } from '@/server/services/portfolio';
 import { recordAudit } from '@/lib/audit';
 import { logActivity } from '@/server/services/crm';
-import { env } from '@/lib/env';
+import { env, requireEnv } from '@/lib/env';
 
 export const proposalsRouter = router({
   list: permissionProcedure('proposal:read').query(({ ctx }) =>
@@ -115,7 +115,7 @@ export const proposalsRouter = router({
         session: ctx.session, action: 'portfolio.create', entityType: 'PortfolioSite',
         entityId: site.id, after: { subdomain: site.subdomain },
       });
-      return { site, url: `https://${site.subdomain}.${env().PORTFOLIO_ROOT_DOMAIN}` };
+      return { site, url: `https://${site.subdomain}.${requireEnv('PORTFOLIO_ROOT_DOMAIN', 'Demo sites')}` };
     }),
 
   publishSite: permissionProcedure('portfolio:publish')

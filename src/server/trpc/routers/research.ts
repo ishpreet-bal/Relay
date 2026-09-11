@@ -86,6 +86,30 @@ export const researchRouter = router({
       return { queued: leads.length, skipped: input.leadIds.length - leads.length };
     }),
 
+  /**
+   * Leads with a website that research has never successfully read. Without
+   * this the queue page could only show work already in flight, and there was
+   * no way to put anything into it.
+   */
+  ready: permissionProcedure('research:read')
+    .input(z.object({ limit: z.number().int().min(1).max(200).default(50) }).default({}))
+    .query(({ ctx, input }) =>
+      ctx.db.lead.findMany({
+        where: {
+          organizationId: ctx.session.organizationId,
+          deletedAt: null,
+          websiteUrl: { not: null },
+          OR: [{ research: { is: null } }, { research: { status: { in: ['FAILED', 'CANCELLED'] } } }],
+        },
+        select: {
+          id: true, companyName: true, domain: true, industry: true, city: true, score: true,
+          research: { select: { status: true, error: true } },
+        },
+        orderBy: { score: 'desc' },
+        take: input.limit,
+      }),
+    ),
+
   queue: permissionProcedure('research:read').query(({ ctx }) =>
     ctx.db.research.findMany({
       where: { organizationId: ctx.session.organizationId, status: { in: ['QUEUED', 'RUNNING', 'FAILED'] } },

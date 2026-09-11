@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { db } from '@/lib/db';
-import { env } from '@/lib/env';
+import { env, requireEnv } from '@/lib/env';
 
 /**
  * Opt-out links are HMAC-signed and self-describing, so a recipient can
@@ -9,7 +9,7 @@ import { env } from '@/lib/env';
  * requires a login, a reason, or a second click.
  */
 function sign(payload: string) {
-  return createHmac('sha256', env().UNSUBSCRIBE_SIGNING_KEY).update(payload).digest('base64url');
+  return createHmac('sha256', requireEnv('UNSUBSCRIBE_SIGNING_KEY', 'Unsubscribe links')).update(payload).digest('base64url');
 }
 
 export async function issueUnsubscribeToken(organizationId: string, email: string) {

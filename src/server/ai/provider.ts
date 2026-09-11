@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { db } from '@/lib/db';
-import { env } from '@/lib/env';
+import { env, requireEnv } from '@/lib/env';
 import { costCents, MODELS } from './pricing';
 import { assertBudget } from './budget';
 
@@ -35,7 +35,7 @@ let anthropicClient: Anthropic | null = null;
 let openaiClient: OpenAI | null = null;
 
 function anthropic() {
-  anthropicClient ??= new Anthropic({ apiKey: env().ANTHROPIC_API_KEY, maxRetries: 0 });
+  anthropicClient ??= new Anthropic({ apiKey: requireEnv('ANTHROPIC_API_KEY', 'AI drafting and research'), maxRetries: 0 });
   return anthropicClient;
 }
 function openai() {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Loader2, SearchX } from 'lucide-react';
+import { ArrowDown, ArrowUp, Loader2, Plus, SearchX, Users } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { cn, formatCompact } from '@/lib/utils';
 import { ScoreMeter, type ScoreSignal } from './score-meter';
@@ -22,9 +22,20 @@ const COLUMNS: Array<{ key: Sort | null; label: string; className?: string }> = 
   { key: 'lastContactedAt', label: 'Last touch', className: 'hidden xl:table-cell' },
 ];
 
-export function LeadTable({ filter, onFilterChange }: {
+/** True when nothing is narrowing the list, so an empty result means an empty pipeline. */
+function isDefaultFilter(filter: LeadFilter): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { sort, direction, limit, cursor, ...narrowing } = filter;
+  return Object.values(narrowing).every(
+    (v) => v === undefined || v === null || v === '' || v === false ||
+      (Array.isArray(v) && v.length === 0) || v === 0,
+  );
+}
+
+export function LeadTable({ filter, onFilterChange, onAddLead }: {
   filter: LeadFilter;
   onFilterChange: (f: LeadFilter) => void;
+  onAddLead?: () => void;
 }) {
   const [cursorStack, setCursorStack] = useState<string[]>([]);
   const query = trpc.leads.list.useQuery(filter, { placeholderData: (prev) => prev });
@@ -56,20 +67,42 @@ export function LeadTable({ filter, onFilterChange }: {
   }
 
   if (!rows.length) {
+    // An empty pipeline and an over-narrow filter need opposite advice, and
+    // telling someone with no leads to "widen the filters" sends them nowhere.
+    const pipelineIsEmpty = isDefaultFilter(filter);
+
     return (
       <div className="p-12 text-center">
-        <SearchX className="size-7 mx-auto text-muted mb-3" strokeWidth={1.5} />
-        <h2 className="font-display font-semibold mb-1">No leads match these filters</h2>
-        <p className="text-sm text-muted mb-4">
-          Widen the filters, or import a list to start building the pipeline.
-        </p>
-        <button
-          type="button"
-          className="btn-outline"
-          onClick={() => onFilterChange({ sort: 'score', direction: 'desc', limit: filter.limit })}
-        >
-          Clear filters
-        </button>
+        {pipelineIsEmpty ? (
+          <>
+            <Users className="size-7 mx-auto text-muted mb-3" strokeWidth={1.5} />
+            <h2 className="font-display font-semibold mb-1">No leads yet</h2>
+            <p className="text-sm text-muted mb-4 max-w-sm mx-auto">
+              Add a company you want to work with, or import a list. Research reads their website,
+              and drafting follows from what it verifies.
+            </p>
+            {onAddLead && (
+              <button type="button" className="btn-primary" onClick={onAddLead}>
+                <Plus className="size-3.5" strokeWidth={2} /> Add your first lead
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <SearchX className="size-7 mx-auto text-muted mb-3" strokeWidth={1.5} />
+            <h2 className="font-display font-semibold mb-1">No leads match these filters</h2>
+            <p className="text-sm text-muted mb-4">
+              Widen the filters, or import a list to start building the pipeline.
+            </p>
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={() => onFilterChange({ sort: 'score', direction: 'desc', limit: filter.limit })}
+            >
+              Clear filters
+            </button>
+          </>
+        )}
       </div>
     );
   }

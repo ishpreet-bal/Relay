@@ -9,6 +9,7 @@ import { ScoreMeter, type ScoreSignal } from '@/components/leads/score-meter';
 import { StatusPill } from '@/components/leads/status-pill';
 import { ResearchReport } from '@/components/research/research-report';
 import { DeliverablesPanel } from '@/components/proposals/deliverables-panel';
+import { LeadDraftPanel } from '@/components/drafts/lead-draft-panel';
 import { can } from '@/lib/rbac';
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -91,6 +92,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </section>
 
             <aside className="space-y-5">
+              <LeadDraftPanel leadId={lead.id} canDraft={can(session.role, 'message:draft')} />
               <DeliverablesPanel
                 leadId={lead.id}
                 canWrite={can(session.role, 'proposal:write')}

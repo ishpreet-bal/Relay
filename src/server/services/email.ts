@@ -1,13 +1,13 @@
 import { Resend } from 'resend';
 import { db } from '@/lib/db';
-import { env } from '@/lib/env';
+import { requireEnv } from '@/lib/env';
 import { evaluateSend, type GateVerdict } from './send-gate';
 import { issueUnsubscribeToken, unsubscribeUrl } from './unsubscribe';
 import { logActivity } from './crm';
 
 let resendClient: Resend | null = null;
 function resend() {
-  resendClient ??= new Resend(env().RESEND_API_KEY);
+  resendClient ??= new Resend(requireEnv('RESEND_API_KEY', 'Email sending'));
   return resendClient;
 }
 

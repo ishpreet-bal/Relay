@@ -54,6 +54,15 @@ model Organization {
   contextualPausedAt    DateTime?
   contextualPauseReason String?
 
+  /**
+   * Outreach defaults for drafting outside a campaign. A campaign overrides
+   * these; without one, the Drafts page has nothing to brief the model with.
+   */
+  defaultSenderName String?
+  offerBrief        String? @db.Text
+  toneGuidelines    String? @db.Text
+  bannedPhrases     String[] @default([])
+
   /** Rate card. Proposal pricing is arithmetic on these, never generated. */
   dayRateCents        Int    @default(120000)
   discoveryFeeCents   Int    @default(0)

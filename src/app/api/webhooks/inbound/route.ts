@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import { db } from '@/lib/db';
-import { env } from '@/lib/env';
+import { requireEnv } from '@/lib/env';
 import { verifyWebhook, SignatureError } from '@/server/services/webhook-verify';
 import { exitEnrollment } from '@/server/services/campaigns';
 import { suppress } from '@/server/services/suppression';
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     verified = verifyWebhook<InboundEvent>({
       body: raw,
       headers: await headers(),
-      secret: env().RESEND_WEBHOOK_SECRET,
+      secret: requireEnv('RESEND_WEBHOOK_SECRET', 'Inbound email webhooks'),
     });
   } catch (err) {
     if (err instanceof SignatureError) return new Response('Invalid signature', { status: 401 });

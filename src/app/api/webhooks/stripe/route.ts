@@ -1,7 +1,7 @@
 import type Stripe from 'stripe';
 import { headers } from 'next/headers';
 import { db } from '@/lib/db';
-import { env } from '@/lib/env';
+import { requireEnv } from '@/lib/env';
 import { stripe, syncSubscription, recordInvoice } from '@/server/services/billing';
 
 /**
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
   let event: Stripe.Event;
   try {
-    event = stripe().webhooks.constructEvent(raw, signature, env().STRIPE_WEBHOOK_SECRET);
+    event = stripe().webhooks.constructEvent(raw, signature, requireEnv('STRIPE_WEBHOOK_SECRET', 'Stripe webhooks'));
   } catch (err) {
     return new Response(
       `Signature verification failed: ${err instanceof Error ? err.message : 'unknown'}`,

@@ -72,6 +72,7 @@ export const adminRouter = router({
         dayRateCents: true, discoveryFeeCents: true, supportMonthlyCents: true,
         proposalTerms: true, proposalValidDays: true,
         dailySendCap: true, hourlySendCap: true, minMinutesBetweenSends: true,
+        defaultSenderName: true, offerBrief: true, toneGuidelines: true, bannedPhrases: true,
       },
     }),
   ),
@@ -92,6 +93,10 @@ export const adminRouter = router({
       dailySendCap: z.number().int().min(1).max(1000).optional(),
       hourlySendCap: z.number().int().min(1).max(200).optional(),
       minMinutesBetweenSends: z.number().int().min(0).max(120).optional(),
+      defaultSenderName: z.string().max(80).nullish(),
+      offerBrief: z.string().max(2000).nullish(),
+      toneGuidelines: z.string().max(2000).nullish(),
+      bannedPhrases: z.array(z.string().max(80)).max(50).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const before = await ctx.db.organization.findUniqueOrThrow({

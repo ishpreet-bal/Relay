@@ -74,6 +74,46 @@ export const messagesRouter = router({
       return previewGate(input.id);
     }),
 
+  /**
+   * Leads that research has finished with but nobody has drafted to yet. This
+   * is the hand-off between the research and review stages; without it the
+   * only way to produce a draft was to enroll the lead in a campaign.
+   */
+  draftable: permissionProcedure('message:read')
+    .input(z.object({ limit: z.number().int().min(1).max(100).default(25) }).default({}))
+    .query(async ({ ctx, input }) => {
+      const leads = await ctx.db.lead.findMany({
+        where: {
+          organizationId: ctx.session.organizationId,
+          deletedAt: null,
+          status: { in: ['RESEARCHED', 'DRAFTED', 'APPROVED'] },
+          messages: { none: { direction: 'OUTBOUND', status: { in: ['DRAFT', 'NEEDS_EDIT', 'APPROVED', 'SCHEDULED', 'SENT', 'DELIVERED'] } } },
+          contacts: { some: { email: { not: null } } },
+        },
+        select: {
+          id: true, companyName: true, industry: true, city: true, score: true,
+          research: { select: { status: true } },
+          contacts: {
+            where: { email: { not: null } },
+            select: { email: true, firstName: true, lastName: true, title: true },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            take: 1,
+          },
+        },
+        orderBy: { score: 'desc' },
+        take: input.limit,
+      });
+      return leads.map((l) => ({
+        id: l.id,
+        companyName: l.companyName,
+        industry: l.industry,
+        city: l.city,
+        score: l.score,
+        researchSucceeded: l.research?.status === 'SUCCEEDED',
+        contact: l.contacts[0] ?? null,
+      }));
+    }),
+
   draft: permissionProcedure('message:draft')
     .input(z.object({ leadId: z.string().uuid(), options: draftOptions }))
     .mutation(async ({ ctx, input }) => {
