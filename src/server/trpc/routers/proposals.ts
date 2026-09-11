@@ -5,7 +5,7 @@ import { buildProposal } from '@/server/services/proposal';
 import { createPortfolioSite, publishSite } from '@/server/services/portfolio';
 import { recordAudit } from '@/lib/audit';
 import { logActivity } from '@/server/services/crm';
-import { env, requireEnv } from '@/lib/env';
+import { env } from '@/lib/env';
 
 export const proposalsRouter = router({
   list: permissionProcedure('proposal:read').query(({ ctx }) =>
@@ -90,6 +90,16 @@ export const proposalsRouter = router({
     }),
   ),
 
+  /** Scoped to one lead, so a lead page does not pull the whole workspace's sites. */
+  sitesByLead: permissionProcedure('portfolio:read')
+    .input(z.object({ leadId: z.string().uuid() }))
+    .query(({ ctx, input }) =>
+      ctx.db.portfolioSite.findMany({
+        where: { organizationId: ctx.session.organizationId, leadId: input.leadId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ),
+
   createSite: permissionProcedure('portfolio:write')
     .input(z.object({
       leadId: z.string().uuid(),
@@ -115,7 +125,10 @@ export const proposalsRouter = router({
         session: ctx.session, action: 'portfolio.create', entityType: 'PortfolioSite',
         entityId: site.id, after: { subdomain: site.subdomain },
       });
-      return { site, url: `https://${site.subdomain}.${requireEnv('PORTFOLIO_ROOT_DOMAIN', 'Demo sites')}` };
+      // The domain is only needed to address the site publicly, so building one
+      // without it configured succeeds — publishing is what actually requires it.
+      const root = env().PORTFOLIO_ROOT_DOMAIN;
+      return { site, url: root ? `https://${site.subdomain}.${root}` : null };
     }),
 
   publishSite: permissionProcedure('portfolio:publish')
@@ -125,6 +138,14 @@ export const proposalsRouter = router({
         where: { id: input.id, organizationId: ctx.session.organizationId },
       });
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      // Publishing is the point where the site needs a public address.
+      if (input.publish && !env().PORTFOLIO_ROOT_DOMAIN) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Set PORTFOLIO_ROOT_DOMAIN to a domain you control before publishing a demo site.',
+        });
+      }
 
       const site = await publishSite(ctx.session.organizationId, input.id, input.publish);
       await recordAudit({

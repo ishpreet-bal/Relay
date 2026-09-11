@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, LayoutTemplate } from 'lucide-react';
 import { requirePermission } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { Topbar } from '@/components/shell/topbar';
@@ -39,6 +39,17 @@ export default async function SolutionsPage() {
             to their vertical, and let the prospect see the dashboard rather than
             imagine it. Every demo runs on sample data and says so on screen.
           </p>
+
+          {visible.length === 0 && (
+            <div className="card p-12 text-center">
+              <LayoutTemplate className="size-7 mx-auto text-muted mb-3" strokeWidth={1.5} />
+              <h2 className="font-display font-semibold mb-1">The library is empty</h2>
+              <p className="text-sm text-muted max-w-sm mx-auto">
+                The built-in industry demos ship with the platform and are loaded by the database
+                seed. Run <span className="num">npm run db:seed</span> to install them.
+              </p>
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map((template) => (

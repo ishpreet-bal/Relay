@@ -1,8 +1,6 @@
+import { redirect } from 'next/navigation';
+
+/** The app root is not a destination — the pipeline starts at the overview. */
 export default function HomePage() {
-  return (
-    <main>
-      <h1>Foundry</h1>
-      <p>Dashboard is running.</p>
-    </main>
-  );
+  redirect('/dashboard');
 }

@@ -15,18 +15,18 @@ export function DeliverablesPanel({ leadId, canWrite, hasResearch }: {
 }) {
   const utils = trpc.useUtils();
   const proposals = trpc.proposals.byLead.useQuery({ leadId });
-  const sites = trpc.proposals.sites.useQuery();
+  const sites = trpc.proposals.sitesByLead.useQuery({ leadId });
 
   const generate = trpc.proposals.generate.useMutation({
     onSuccess: () => { utils.proposals.byLead.invalidate({ leadId }); utils.leads.timeline.invalidate({ leadId }); },
   });
   const createSite = trpc.proposals.createSite.useMutation({
-    onSuccess: () => { utils.proposals.sites.invalidate(); utils.leads.timeline.invalidate({ leadId }); },
+    onSuccess: () => { utils.proposals.sitesByLead.invalidate({ leadId }); utils.leads.timeline.invalidate({ leadId }); },
   });
-  const publish = trpc.proposals.publishSite.useMutation({ onSuccess: () => utils.proposals.sites.invalidate() });
+  const publish = trpc.proposals.publishSite.useMutation({ onSuccess: () => utils.proposals.sitesByLead.invalidate({ leadId }) });
   const markSent = trpc.proposals.markSent.useMutation({ onSuccess: () => utils.proposals.byLead.invalidate({ leadId }) });
 
-  const leadSites = sites.data?.filter((s) => s.leadId === leadId) ?? [];
+  const leadSites = sites.data ?? [];
 
   return (
     <div className="space-y-4">
