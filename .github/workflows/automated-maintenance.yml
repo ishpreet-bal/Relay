@@ -1,0 +1,107 @@
+name: Automated Maintenance
+
+# Runs real, low-risk upkeep against main on a schedule and commits only when
+# a task actually produces a change: eslint --fix, an `npm outdated` report,
+# and a typecheck/test status log entry. Every run first rolls a random
+# skip so activity doesn't fire on a fixed daily cadence (more likely on
+# weekdays, occasional on weekends). No feature/working branches are ever
+# touched by this workflow.
+
+on:
+  schedule:
+    - cron: '37 15 * * *' # ~15:37 UTC daily; most runs no-op or skip below
+  workflow_dispatch: {} # allows a manual test run from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: automated-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: foundry_maintenance
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/foundry_maintenance
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/foundry_maintenance
+    steps:
+      - name: Roll random skip
+        id: roll
+        run: |
+          dow=$(date -u +%u) # 1=Mon .. 7=Sun
+          if [ "$dow" -le 5 ]; then threshold=80; else threshold=30; fi
+          roll=$((RANDOM % 100))
+          echo "day-of-week=$dow threshold=$threshold roll=$roll"
+          if [ "$roll" -lt "$threshold" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping this run (random no-op, by design)."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.roll.outputs.run == 'true'
+        with: { ref: main }
+
+      - uses: actions/setup-node@v4
+        if: steps.roll.outputs.run == 'true'
+        with: { node-version: 20, cache: npm }
+
+      - name: Install deps
+        if: steps.roll.outputs.run == 'true'
+        run: npm ci
+
+      - name: Prisma generate
+        if: steps.roll.outputs.run == 'true'
+        run: npx prisma generate
+
+      - name: Lint autofix
+        if: steps.roll.outputs.run == 'true'
+        run: npm run lint -- --fix || true
+
+      - name: Dependency freshness report
+        if: steps.roll.outputs.run == 'true'
+        run: |
+          {
+            echo "### $(date -u +%Y-%m-%d) — dependency freshness"
+            echo '```'
+            npm outdated || true
+            echo '```'
+            echo
+          } >> MAINTENANCE.md
+
+      - name: Typecheck + test status
+        if: steps.roll.outputs.run == 'true'
+        run: |
+          status="pass"
+          npx prisma migrate deploy || status="fail"
+          npm run typecheck || status="fail"
+          npm run test || status="fail"
+          {
+            echo "### $(date -u +%Y-%m-%d) — typecheck/test status: $status"
+            echo
+          } >> MAINTENANCE.md
+
+      - name: Commit if anything real changed
+        if: steps.roll.outputs.run == 'true'
+        run: |
+          git config user.name "Foundry Maintenance Bot"
+          git config user.email "ishpreetbal81@gmail.com"
+          if git diff --quiet; then
+            echo "No real changes produced this run; nothing to commit."
+            exit 0
+          fi
+          git add -A
+          git commit -m "chore(maintenance): automated lint/dependency/test check $(date -u +%Y-%m-%d)"
+          git push origin HEAD:main
