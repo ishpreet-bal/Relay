@@ -108,12 +108,13 @@ async function handle(event: { type: string; data: Record<string, any> }) {
       const org = await db.organization.findUnique({ where: { clerkOrgId: d.organization.id } });
       const user = await db.user.findUnique({ where: { clerkUserId: d.public_user_data.user_id } });
       if (!org || !user) throw new Error('Membership arrived before org or user');
-      const role: Role = d.role === 'org:admin' ? 'ADMIN' : 'OPERATOR';
+      const role = await initialRole(org.id, d.role);
       await db.membership.upsert({
         where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
         create: { organizationId: org.id, userId: user.id, role },
-        // Never silently demote an OWNER on a Clerk role sync.
-        update: { role: role === 'ADMIN' ? undefined : role },
+        // Roles are managed in Foundry after the membership exists. A Clerk
+        // role change must never silently promote or demote someone.
+        update: {},
       });
       break;
     }
@@ -135,4 +136,16 @@ async function handle(event: { type: string; data: Record<string, any> }) {
       break;
     }
   }
+}
+
+/**
+ * Least privilege by default. The first member of a workspace is its owner
+ * (Clerk only sends membership events for real people, and the creator's
+ * arrives first); Clerk org admins become admins; everyone else starts
+ * read-only until an admin grants more inside Foundry.
+ */
+async function initialRole(organizationId: string, clerkRole: unknown): Promise<Role> {
+  const existing = await db.membership.count({ where: { organizationId } });
+  if (existing === 0) return 'OWNER';
+  return clerkRole === 'org:admin' ? 'ADMIN' : 'VIEWER';
 }

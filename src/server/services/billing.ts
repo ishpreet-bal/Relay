@@ -61,8 +61,8 @@ export async function createCheckoutSession(params: {
     mode: 'subscription',
     customer: customerId,
     line_items: [{ price: price.id, quantity: Math.max(1, params.seats) }],
-    success_url: `${env().APP_URL}/settings/billing?checkout=complete`,
-    cancel_url: `${env().APP_URL}/settings/billing?checkout=cancelled`,
+    success_url: `${env().APP_URL}/settings?checkout=complete`,
+    cancel_url: `${env().APP_URL}/settings?checkout=cancelled`,
     // The organization id travels on the subscription so the webhook can find
     // the workspace without trusting anything from the browser.
     subscription_data: { metadata: { organizationId: params.organizationId } },
@@ -77,7 +77,7 @@ export async function createPortalSession(organizationId: string, email: string)
   const customerId = await ensureCustomer(organizationId, email);
   const session = await stripe().billingPortal.sessions.create({
     customer: customerId,
-    return_url: `${env().APP_URL}/settings/billing`,
+    return_url: `${env().APP_URL}/settings`,
   });
   return session.url;
 }

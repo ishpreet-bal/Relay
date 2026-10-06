@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Users, Microscope, PenLine, Send, FileText,
+  LayoutDashboard, Users, Microscope, Send, FileText,
   Globe, ShieldBan, Settings, Layers, LayoutTemplate,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,6 @@ const NAV: Array<{ href: string; label: string; icon: typeof Users; permission: 
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, permission: 'lead:read' },
   { href: '/leads', label: 'Leads', icon: Users, permission: 'lead:read' },
   { href: '/research', label: 'Research', icon: Microscope, permission: 'research:read' },
-  { href: '/drafts', label: 'Drafts', icon: PenLine, permission: 'message:read' },
   { href: '/review', label: 'Review queue', icon: Send, permission: 'message:read', badge: 'held' },
   { href: '/campaigns', label: 'Campaigns', icon: Layers, permission: 'campaign:read' },
   { href: '/solutions', label: 'Solution library', icon: LayoutTemplate, permission: 'lead:read' },
