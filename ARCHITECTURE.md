@@ -1,4 +1,4 @@
-# Foundry — Sales OS for AI automation agencies
+# Relay — Sales OS for AI automation agencies
 
 A pipeline platform built around one principle: **the operator approves every
 message before it leaves the building.** Volume is capped on purpose. The
@@ -28,7 +28,7 @@ and cost, and the org has a monthly budget ceiling enforced before the call.
 **n8n for integrations, not for core logic.** n8n is excellent at "when a Stripe
 invoice is paid, post to Slack and update SharePoint." It's a poor place to put
 the send gate. Core sequencing runs in the Node worker against Postgres; n8n
-subscribes to Foundry webhooks and handles customer-specific glue.
+subscribes to Relay webhooks and handles customer-specific glue.
 
 **No queue service on day one.** Scheduled sends and follow-ups are a
 `nextActionAt` column plus a worker polling with `FOR UPDATE SKIP LOCKED`. It is

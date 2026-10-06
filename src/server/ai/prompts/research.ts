@@ -1,115 +1,153 @@
+import type { ClaimType, SignalType } from '@prisma/client';
 import type { CrawledPage } from '@/server/services/crawler';
+import type { Evidence } from '../grounding';
+import { CLAIM_TYPES, SIGNAL_TYPES } from '@/lib/domain';
 
 /**
  * Bump this whenever the prompt changes. It's stored on every Research row and
  * AiRun, so a quality regression can be traced to the exact prompt that caused
  * it and old results can be selectively re-run.
  */
-export const RESEARCH_PROMPT_VERSION = 'research/2026-01-15.1';
+export const RESEARCH_PROMPT_VERSION = 'research/2026-10-06.offer-aware.1';
 
-export const RESEARCH_SYSTEM = `You are a research analyst at an AI automation agency. You read a prospective client's website and identify where their team is likely losing time to manual work.
+export { CLAIM_TYPES, SIGNAL_TYPES };
+
+export const RESEARCH_SYSTEM = `You are a research analyst preparing a salesperson to contact a company. You read the company's own website and report what it says — nothing else.
+
+The salesperson works for a business that sells something specific (described below). Your job is to answer: what is true about this company, what has happened recently that might make them care, and why might they need what our client sells?
 
 EVIDENCE RULES — these are absolute:
-1. Every claim you make must be supported by text that appears on the pages provided. You will cite the page id and quote the supporting text verbatim.
-2. Quotes must be copied exactly from the page text, character for character. A paraphrased quote is a failed citation and the claim will be discarded.
-3. If the pages do not support a claim, do not make it. An empty list is a correct answer.
-4. Never state what software a company uses unless it is named on the page or listed in the detected software provided to you.
-5. Never invent employee counts, revenue, client names, locations, or years in business.
-6. Distinguish observation from inference. "Their contact page offers only a phone number and a form" is an observation. "Their front desk likely fields repetitive scheduling calls" is an inference drawn from it. Inferences are allowed and valuable, but the observation underneath must be cited.
+1. Every fact, signal, attribute and relevance angle must be supported by text on the pages provided. Cite the page id and quote the supporting text verbatim.
+2. Quotes must be copied exactly from the page text. A paraphrased quote fails verification and the item is discarded.
+3. If the pages do not support something, leave it out. Empty lists are correct answers.
+4. Never invent employee counts, revenue, customer names, locations, dates or numbers.
+5. A FACT states only what the quote states. "They have a facility in Milton, Ontario" is a fact if a page says so. "They are growing fast" is not a fact unless a page says it.
+6. A RELEVANCE angle is an inference, and must be labelled as one: name the observation (quoted) and explain why it might connect to the client's offer. Never present an inference as a fact.
+7. Dates: give eventDate only if the page states when the event happened (YYYY-MM-DD or YYYY-MM). Otherwise null. Do not assume something is recent because it is on the website.
 
-ESTIMATION RULES:
-- For each opportunity, estimate hours per week currently spent on that manual work by a typical business of this type and size. Be conservative and state it as a plain number.
-- Do not produce dollar figures. Cost is calculated downstream from your hour estimates.
-- Set confidence honestly: 0.9 when the page states the process outright, 0.6 when you are inferring from strong signals, 0.4 when it is an educated guess about the industry.
+SIGNALS are events that make outreach timely: hiring, expansion, a new location, a new contract, a new product, funding, a leadership change, a regulatory event, a technology change. Undated "about us" history is rarely a signal.
 
-TONE: You are writing for a colleague who will use this to start a conversation, not for the prospect. Be specific and plain. No marketing language.`;
+TONE: plain and specific, for a colleague. No marketing language.`;
+
+export interface ResearchFact {
+  claimType: ClaimType;
+  statement: string;
+  evidence: Evidence[];
+}
+
+export interface ResearchSignal {
+  type: SignalType;
+  title: string;
+  summary: string;
+  eventDate: string | null;
+  confidence: number;
+  evidence: Evidence[];
+}
+
+export interface ResearchAttribute {
+  attribute: string;
+  assessment: 'MET' | 'NOT_MET' | 'UNKNOWN';
+  note: string;
+  evidence?: Evidence[];
+}
+
+export interface ResearchRelevance {
+  angle: string;
+  reasoning: string;
+  confidence: number;
+  evidence: Evidence[];
+}
 
 export interface ResearchOutput {
   companySummary: string;
   servicesOffered: string[];
-  painPoints: Array<{
-    title: string;
-    rationale: string;
-    confidence: number;
-    evidence: Array<{ pageId: string; quote: string }>;
-  }>;
-  opportunities: Array<{
-    title: string;
-    workflow: string;
-    tooling: string[];
-    hoursPerWeek: number;
-    effortDays: number;
-    confidence: number;
-    evidence: Array<{ pageId: string; quote: string }>;
-  }>;
+  facts: ResearchFact[];
+  signals: ResearchSignal[];
+  icpAttributes: ResearchAttribute[];
+  relevance: ResearchRelevance[];
   talkingPoints: string[];
   overallConfidence: number;
 }
 
-export function buildResearchPrompt(input: {
-  companyName: string;
-  industry: string | null;
-  city: string | null;
-  region: string | null;
-  employeeCount: number | null;
+export interface ResearchContext {
+  account: {
+    name: string;
+    industry: string | null;
+    city: string | null;
+    region: string | null;
+    employeeCount: number | null;
+  };
+  client: {
+    name: string;
+    description: string | null;
+    productsServices: string[];
+    serviceAreas: string[];
+  };
+  offer: { summary: string; valueProposition: string | null } | null;
+  icp: { name: string; requiredAttributes: string[]; signalKeywords: string[] } | null;
   detectedSoftware: string[];
-  signals: Record<string, boolean>;
   pages: CrawledPage[];
-}): string {
-  const pageBlocks = input.pages
+  today: string;
+}
+
+export function buildResearchPrompt(ctx: ResearchContext): string {
+  const pageBlocks = ctx.pages
     .map((p) => `<page id="${p.id}" url="${p.url}" title="${p.title.replace(/"/g, "'")}">\n${p.text}\n</page>`)
     .join('\n\n');
 
-  const observedSignals = Object.entries(input.signals)
-    .map(([k, v]) => `- ${k.replace(/([A-Z])/g, ' $1').toLowerCase().trim()}: ${v ? 'yes' : 'no'}`)
-    .join('\n');
+  const offer = ctx.offer
+    ? `Offer: ${ctx.offer.summary}${ctx.offer.valueProposition ? `\nWhy it matters: ${ctx.offer.valueProposition}` : ''}`
+    : 'Offer: not specified — research the company itself and leave relevance empty unless the pages make a need obvious.';
 
-  return `<company>
-Name: ${input.companyName}
-Industry: ${input.industry ?? 'unknown'}
-Location: ${[input.city, input.region].filter(Boolean).join(', ') || 'unknown'}
-Employees: ${input.employeeCount ?? 'unknown'}
-</company>
+  return `<today>${ctx.today}</today>
 
+<our_client>
+Company: ${ctx.client.name}
+${ctx.client.description ? `About: ${ctx.client.description}\n` : ''}What they sell: ${ctx.client.productsServices.join('; ') || 'not specified'}
+Where they serve: ${ctx.client.serviceAreas.join('; ') || 'not specified'}
+${offer}
+</our_client>
+
+<target_company>
+Name: ${ctx.account.name}
+Industry (from our records, may be wrong): ${ctx.account.industry ?? 'unknown'}
+Location (from our records): ${[ctx.account.city, ctx.account.region].filter(Boolean).join(', ') || 'unknown'}
+Employees (from our records): ${ctx.account.employeeCount ?? 'unknown'}
+</target_company>
+${ctx.icp ? `
+<ideal_customer_profile name="${ctx.icp.name}">
+Check each attribute against the pages: ${ctx.icp.requiredAttributes.length ? ctx.icp.requiredAttributes.map((a) => `"${a}"`).join(', ') : '(none)'}
+Signals worth watching for: ${ctx.icp.signalKeywords.join(', ') || '(none specified)'}
+</ideal_customer_profile>
+` : ''}
 <detected_software>
-${input.detectedSoftware.length ? input.detectedSoftware.join(', ') : 'None detected in page source'}
+${ctx.detectedSoftware.length ? ctx.detectedSoftware.join(', ') : 'None detected in page source'}
 </detected_software>
-
-<automated_signals>
-${observedSignals}
-</automated_signals>
 
 <pages>
 ${pageBlocks}
 </pages>
 
-Analyze this company and respond with JSON matching exactly this shape:
+Respond with JSON matching exactly this shape:
 
 {
-  "companySummary": "3-4 sentences on what they do, who they serve, and how they appear to operate day to day.",
-  "servicesOffered": ["service", "..."],
-  "painPoints": [
-    {
-      "title": "Short label, under 10 words",
-      "rationale": "2-3 sentences. State the observation, then the inference.",
-      "confidence": 0.0,
-      "evidence": [{ "pageId": "p1", "quote": "exact text copied from that page" }]
-    }
+  "companySummary": "3-4 plain sentences: what they do, who they serve, where they operate.",
+  "servicesOffered": ["what the target company sells or does"],
+  "facts": [
+    { "claimType": "one of ${CLAIM_TYPES.join(' | ')}", "statement": "One sentence stating only what the quote states.", "evidence": [{ "pageId": "p1", "quote": "exact text" }] }
   ],
-  "opportunities": [
-    {
-      "title": "What you would automate",
-      "workflow": "2-3 sentences describing the automation concretely: trigger, steps, output.",
-      "tooling": ["n8n", "Power Automate", "..."],
-      "hoursPerWeek": 0,
-      "effortDays": 0,
-      "confidence": 0.0,
-      "evidence": [{ "pageId": "p2", "quote": "exact text copied from that page" }]
-    }
+  "signals": [
+    { "type": "one of ${SIGNAL_TYPES.join(' | ')}", "title": "Under 10 words", "summary": "One or two sentences.", "eventDate": "YYYY-MM-DD or YYYY-MM or null", "confidence": 0.0, "evidence": [{ "pageId": "p2", "quote": "exact text" }] }
   ],
-  "talkingPoints": ["A specific thing to mention in a first email, grounded in the pages above."],
+  "icpAttributes": [
+    { "attribute": "the attribute text from the ICP", "assessment": "MET | NOT_MET | UNKNOWN", "note": "one sentence", "evidence": [{ "pageId": "p1", "quote": "exact text" }] }
+  ],
+  "relevance": [
+    { "angle": "Short label", "reasoning": "Observation (quoted below) → why it might connect to our client's offer. Phrase as a possibility, not a fact.", "confidence": 0.0, "evidence": [{ "pageId": "p3", "quote": "exact text" }] }
+  ],
+  "talkingPoints": ["Something specific a caller could mention, grounded in the facts above."],
   "overallConfidence": 0.0
 }
 
-Return between 2 and 5 pain points and between 2 and 4 opportunities. Every pain point and opportunity needs at least one evidence quote. Return only the JSON object.`;
+Return up to 8 facts, up to 5 signals, one entry per ICP attribute (UNKNOWN needs no evidence), and up to 3 relevance angles. Return only the JSON object.`;
 }

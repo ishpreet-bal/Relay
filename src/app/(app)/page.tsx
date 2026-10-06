@@ -1,8 +1,10 @@
-export default function HomePage() {
-  return (
-    <main>
-      <h1>Foundry</h1>
-      <p>Dashboard is running.</p>
-    </main>
-  );
+import { redirect } from 'next/navigation';
+import { getSession } from '@/lib/auth';
+import { homeFor } from '@/lib/page-auth';
+
+/** Everyone lands where their work is: staff on the dashboard, callers on the queue, clients in the portal. */
+export default async function Home() {
+  const session = await getSession();
+  if (!session) redirect('/sign-in');
+  redirect(homeFor(session));
 }

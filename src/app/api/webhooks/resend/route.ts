@@ -3,7 +3,10 @@ import { db } from '@/lib/db';
 import { verifyWebhook, SignatureError } from '@/server/services/webhook-verify';
 import { env } from '@/lib/env';
 import { suppress } from '@/server/services/suppression';
-import { logActivity } from '@/server/services/crm';
+import { logActivity } from '@/server/services/activity';
+import { exitEnrollment } from '@/server/services/campaigns';
+import { refreshCallTask } from '@/server/services/call-queue';
+import { setFieldEvidence } from '@/server/services/provenance';
 
 /**
  * Delivery telemetry. Two events here are not analytics but compliance
@@ -82,6 +85,8 @@ export async function POST(req: Request) {
           ...(rank(message.status) < rank('OPENED') ? { status: 'OPENED' as const } : {}),
         },
       });
+      // Opens are weak evidence, but repeated opens still nudge the queue.
+      if (message.contactId && message.openCount >= 1) await refreshCallTask(message.contactId);
       break;
 
     case 'email.clicked':
@@ -92,14 +97,18 @@ export async function POST(req: Request) {
           ...(rank(message.status) < rank('CLICKED') ? { status: 'CLICKED' as const } : {}),
         },
       });
+      await db.account.update({ where: { id: message.accountId }, data: { lastEngagedAt: occurredAt } });
       await logActivity({
-        organizationId: message.organizationId, leadId: message.leadId, type: 'EMAIL_RECEIVED',
+        organizationId: message.organizationId, clientId: message.clientId, accountId: message.accountId,
+        contactId: message.contactId, campaignId: message.campaignId, type: 'EMAIL_RECEIVED',
         title: 'Clicked a link', body: event.data.click?.link, occurredAt,
       });
+      if (message.contactId) await refreshCallTask(message.contactId);
       break;
 
     case 'email.bounced': {
-      const hard = (event.data.bounce?.type ?? '').toLowerCase().includes('hard');
+      const hard = (event.data.bounce?.type ?? '').toLowerCase().includes('hard')
+        || (event.data.bounce?.type ?? '').toLowerCase() === 'permanent';
       await db.message.update({
         where: { id: message.id },
         data: { status: 'BOUNCED', bounceType: event.data.bounce?.type ?? 'unknown' },
@@ -109,9 +118,14 @@ export async function POST(req: Request) {
       // a permanent suppression.
       if (hard && address) {
         await suppress({
-          organizationId: message.organizationId, value: address,
-          reason: 'HARD_BOUNCE', note: `Bounced on ${occurredAt.toISOString()}`,
+          organizationId: message.organizationId, value: address, scope: 'EMAIL', channel: 'EMAIL',
+          reason: 'HARD_BOUNCE', source: 'BOUNCE_WEBHOOK', contactId: message.contactId,
+          campaignId: message.campaignId, note: `Bounced on ${occurredAt.toISOString()}`,
         });
+        if (message.contactId) {
+          await setFieldEvidence({ contactId: message.contactId }, 'email', 'REJECTED');
+          await exitEnrollment({ contactId: message.contactId, reason: 'BOUNCED', note: 'Hard bounce' });
+        }
       }
       break;
     }
@@ -121,8 +135,9 @@ export async function POST(req: Request) {
       const address = event.data.to?.[0];
       if (address) {
         await suppress({
-          organizationId: message.organizationId, value: address,
-          reason: 'SPAM_COMPLAINT', note: 'Marked as spam by the recipient',
+          organizationId: message.organizationId, value: address, scope: 'EMAIL', channel: 'EMAIL',
+          reason: 'SPAM_COMPLAINT', source: 'COMPLAINT_WEBHOOK', contactId: message.contactId,
+          campaignId: message.campaignId, note: 'Marked as spam by the recipient',
         });
       }
       break;

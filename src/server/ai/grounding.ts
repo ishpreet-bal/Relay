@@ -29,10 +29,10 @@ export interface GroundingReport {
 const FUZZY_THRESHOLD = 0.75;
 const MIN_QUOTE_WORDS = 4;
 
-function normalize(s: string) {
+export function normalizeForMatch(s: string) {
   return s
     .toLowerCase()
-    .replace(/[\u2018\u2019\u201c\u201d]/g, (c) => (c === '\u2018' || c === '\u2019' ? "'" : '"'))
+    .replace(/[‘’“”]/g, (c) => (c === '‘' || c === '’' ? "'" : '"'))
     .replace(/&(amp|nbsp|#39|quot);/g, ' ')
     .replace(/[^\w\s'"-]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -40,7 +40,7 @@ function normalize(s: string) {
 }
 
 function tokens(s: string) {
-  return normalize(s).split(' ').filter((t) => t.length > 2);
+  return normalizeForMatch(s).split(' ').filter((t) => t.length > 2);
 }
 
 /** Fraction of the quote's tokens that appear, in order, in the page text. */
@@ -82,7 +82,7 @@ export function verifyEvidence(
       verified.push({ ...base, matchType: 'exact', similarity: 1 });
       continue;
     }
-    if (normalize(page.text).includes(normalize(item.quote))) {
+    if (normalizeForMatch(page.text).includes(normalizeForMatch(item.quote))) {
       verified.push({ ...base, matchType: 'normalized', similarity: 1 });
       continue;
     }
@@ -101,36 +101,74 @@ export function verifyEvidence(
 }
 
 /**
- * Filters a list of claims down to those with at least one verified citation.
- * A claim that loses all its evidence is dropped entirely — degrading it to
+ * Filters items down to those with at least one verified citation. An item
+ * that loses all its evidence is dropped entirely — degrading it to
  * "unsourced" and showing it anyway would defeat the point.
  */
-export function groundClaims<T extends { title: string; evidence: Evidence[] }>(
-  claims: T[],
+export function groundItems<T extends { evidence?: Evidence[] }>(
+  items: T[],
   pages: CrawledPage[],
-): { grounded: Array<T & { citations: VerifiedCitation[] }>; report: GroundingReport } {
-  const grounded: Array<T & { citations: VerifiedCitation[] }> = [];
+  label: (item: T) => string,
+): { grounded: Array<Omit<T, 'evidence'> & { citations: VerifiedCitation[] }>; report: GroundingReport } {
+  const grounded: Array<Omit<T, 'evidence'> & { citations: VerifiedCitation[] }> = [];
   const rejectedClaims: GroundingReport['rejectedClaims'] = [];
 
-  for (const claim of claims) {
-    const { verified, rejected } = verifyEvidence(claim.evidence ?? [], pages);
+  for (const item of items) {
+    const { verified, rejected } = verifyEvidence(item.evidence ?? [], pages);
     if (verified.length === 0) {
-      rejectedClaims.push({
-        claim: claim.title,
-        reason: rejected[0]?.reason ?? 'No evidence provided',
-      });
+      rejectedClaims.push({ claim: label(item), reason: rejected[0]?.reason ?? 'No evidence provided' });
       continue;
     }
-    grounded.push({ ...claim, citations: verified });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { evidence, ...rest } = item;
+    grounded.push({ ...rest, citations: verified });
   }
 
   return {
     grounded,
     report: {
-      totalClaims: claims.length,
+      totalClaims: items.length,
       groundedClaims: grounded.length,
       rejectedClaims,
-      groundingRate: claims.length ? grounded.length / claims.length : 0,
+      groundingRate: items.length ? grounded.length / items.length : 0,
     },
   };
+}
+
+/** Back-compatible wrapper for items labelled by `title`. */
+export function groundClaims<T extends { title: string; evidence: Evidence[] }>(items: T[], pages: CrawledPage[]) {
+  return groundItems(items, pages, (i) => i.title);
+}
+
+export function mergeReports(...reports: GroundingReport[]): GroundingReport {
+  const total = reports.reduce((s, r) => s + r.totalClaims, 0);
+  const grounded = reports.reduce((s, r) => s + r.groundedClaims, 0);
+  return {
+    totalClaims: total,
+    groundedClaims: grounded,
+    rejectedClaims: reports.flatMap((r) => r.rejectedClaims),
+    groundingRate: total ? grounded / total : 0,
+  };
+}
+
+/**
+ * Parses a model-reported event date ("2026-09", "2026-09-14", "September
+ * 2026"), accepting it only if it is a real date that is not in the future.
+ * An unparseable date becomes null — "we don't know when" — never a guess.
+ */
+export function parseEventDate(value: unknown, now = new Date()): Date | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const v = value.trim();
+  let date: Date | null = null;
+  const iso = v.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  if (iso) {
+    date = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, iso[3] ? Number(iso[3]) : 1));
+  } else {
+    const parsed = new Date(v);
+    date = Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (!date || Number.isNaN(date.getTime())) return null;
+  if (date.getTime() > now.getTime() + 24 * 3600_000) return null;
+  if (date.getUTCFullYear() < 1950) return null;
+  return date;
 }

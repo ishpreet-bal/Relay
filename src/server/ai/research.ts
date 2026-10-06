@@ -1,13 +1,16 @@
+import type { ClaimType, Prisma, SignalType } from '@prisma/client';
 import { db } from '@/lib/db';
 import { crawlSite, type CrawledPage } from '@/server/services/crawler';
-import { estimateRoi } from '@/server/services/roi';
-import { rescoreLead } from '@/server/services/leads';
-import { logActivity } from '@/server/services/crm';
+import { rescoreAccount } from '@/server/services/scoring';
+import { logActivity } from '@/server/services/activity';
+import { saveSignals } from '@/server/services/signals';
+import { advanceAccountStatus } from '@/server/services/accounts';
+import { recordProviderCall } from '@/server/connectors/records';
 import { complete, parseJson } from './provider';
 import { MODELS } from './pricing';
-import { groundClaims, type GroundingReport } from './grounding';
+import { groundItems, mergeReports, parseEventDate, type GroundingReport, type VerifiedCitation } from './grounding';
 import {
-  buildResearchPrompt, RESEARCH_SYSTEM, RESEARCH_PROMPT_VERSION, type ResearchOutput,
+  buildResearchPrompt, CLAIM_TYPES, RESEARCH_PROMPT_VERSION, RESEARCH_SYSTEM, SIGNAL_TYPES, type ResearchOutput,
 } from './prompts/research';
 
 export class ResearchError extends Error {
@@ -17,34 +20,78 @@ export class ResearchError extends Error {
   }
 }
 
+/** A fact that survived verification — the only thing a draft may state about a prospect. */
+export interface VerifiedFact {
+  id: string;
+  claimType: ClaimType;
+  statement: string;
+  citations: VerifiedCitation[];
+}
+
+export interface VerifiedRelevance {
+  angle: string;
+  reasoning: string;
+  confidence: number;
+  citations: VerifiedCitation[];
+}
+
+export interface VerifiedAttribute {
+  attribute: string;
+  assessment: 'MET' | 'NOT_MET' | 'UNKNOWN';
+  note: string;
+  citations: VerifiedCitation[];
+}
+
+const clamp = (n: unknown, fallback = 0.5) => {
+  const v = typeof n === 'number' && Number.isFinite(n) ? n : fallback;
+  return Math.max(0, Math.min(1, v));
+};
+
 /**
- * The research pipeline: crawl → generate → verify → cost → persist.
+ * The research pipeline: crawl → generate → verify → persist.
  *
- * The verify step is not optional and not advisory. Claims whose quotes cannot
- * be located in the crawled text are removed before anything is written to the
- * database, so downstream personalization can only ever reference material that
- * survived verification. If nothing survives, the run fails loudly rather than
- * storing a confident-sounding empty report.
+ * Research is framed by the client's offer: the question is not "what does
+ * this company do" but "why might this company care about what our client
+ * sells". The verify step is not optional and not advisory. Facts, signals,
+ * attribute checks and relevance angles whose quotes cannot be located in the
+ * crawled text are removed before anything is written, so downstream drafting
+ * can only ever reference material that survived verification.
  */
-export async function runResearch(organizationId: string, leadId: string) {
-  const lead = await db.lead.findFirstOrThrow({
-    where: { id: leadId, organizationId, deletedAt: null },
+export async function runResearch(organizationId: string, accountId: string) {
+  const account = await db.account.findFirstOrThrow({
+    where: { id: accountId, organizationId, deletedAt: null },
+    include: {
+      client: {
+        include: {
+          offers: { where: { isActive: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+          icps: { where: { isActive: true }, orderBy: { createdAt: 'asc' } },
+        },
+      },
+    },
   });
 
-  if (!lead.websiteUrl) {
-    throw new ResearchError('This lead has no website to research.', 'NO_WEBSITE');
+  if (!account.websiteUrl) {
+    throw new ResearchError('This account has no website to research.', 'NO_WEBSITE');
   }
 
+  const offer = account.client.offers[0] ?? null;
+  const icp = account.client.icps.find((i) => i.id === account.icpId) ?? account.client.icps[0] ?? null;
+
   await db.research.upsert({
-    where: { leadId },
-    create: { leadId, organizationId, status: 'RUNNING' },
-    update: { status: 'RUNNING', error: null },
+    where: { accountId },
+    create: { accountId, organizationId, clientId: account.clientId, offerId: offer?.id ?? null, status: 'RUNNING' },
+    update: { status: 'RUNNING', error: null, offerId: offer?.id ?? null },
   });
-  await db.lead.update({ where: { id: leadId }, data: { status: 'RESEARCHING' } });
 
   try {
-    // 1. Crawl
-    const crawl = await crawlSite(lead.websiteUrl);
+    // 1. Crawl the company's own site — first-party, robots-respecting, small.
+    const crawl = await crawlSite(account.websiteUrl);
+    await recordProviderCall({
+      organizationId, clientId: account.clientId, accountId,
+      provider: 'company_website', operation: 'website.crawl', lookupKey: account.domain ?? account.websiteUrl,
+      status: crawl.pages.length ? 'SUCCESS' : 'NOT_FOUND',
+      normalized: { pages: crawl.pages.map(pageMeta), errors: crawl.errors, blockedByRobots: crawl.blockedByRobots } as Prisma.InputJsonValue,
+    });
     if (crawl.blockedByRobots) {
       throw new ResearchError('Their robots.txt asks crawlers not to read the site.', 'BLOCKED');
     }
@@ -52,26 +99,26 @@ export async function runResearch(organizationId: string, leadId: string) {
       throw new ResearchError('Could not read any pages from their website.', 'CRAWL_FAILED');
     }
 
-    // 2. Generate
+    // 2. Generate, framed by the client's offer and ICP.
     const completion = await complete({
       organizationId,
       kind: 'research',
-      entityId: leadId,
+      entityId: accountId,
+      attribution: { clientId: account.clientId, accountId },
       promptVersion: RESEARCH_PROMPT_VERSION,
       model: MODELS.research,
       system: RESEARCH_SYSTEM,
       user: buildResearchPrompt({
-        companyName: lead.companyName,
-        industry: lead.industry,
-        city: lead.city,
-        region: lead.region,
-        employeeCount: lead.employeeCount,
+        account,
+        client: account.client,
+        offer: offer ? { summary: offer.summary, valueProposition: offer.valueProposition } : null,
+        icp: icp ? { name: icp.name, requiredAttributes: icp.requiredAttributes, signalKeywords: icp.signalKeywords } : null,
         detectedSoftware: crawl.detectedSoftware,
-        signals: crawl.signals,
         pages: crawl.pages,
+        today: new Date().toISOString().slice(0, 10),
       }),
       maxTokens: 4096,
-      temperature: 0.3,
+      temperature: 0.2,
       json: true,
     });
 
@@ -85,57 +132,60 @@ export async function runResearch(organizationId: string, leadId: string) {
       );
     }
 
-    // 3. Verify every claim against the pages we actually fetched.
-    const painResult = groundClaims(output.painPoints ?? [], crawl.pages);
-    const oppResult = groundClaims(output.opportunities ?? [], crawl.pages);
+    // 3. Verify every item against the pages we actually fetched.
+    const facts = groundItems(
+      (output.facts ?? []).filter((f) => CLAIM_TYPES.includes(f.claimType)),
+      crawl.pages, (f) => f.statement,
+    );
+    const signals = groundItems(
+      (output.signals ?? []).filter((s) => SIGNAL_TYPES.includes(s.type)),
+      crawl.pages, (s) => s.title,
+    );
+    const relevance = groundItems(output.relevance ?? [], crawl.pages, (r) => r.angle);
+    // UNKNOWN assessments carry no evidence by design; MET / NOT_MET must be proven.
+    const attributesToCheck = (output.icpAttributes ?? []).filter((a) => a.assessment !== 'UNKNOWN');
+    const attributes = groundItems(attributesToCheck, crawl.pages, (a) => a.attribute);
+    const unknownAttributes: VerifiedAttribute[] = (output.icpAttributes ?? [])
+      .filter((a) => a.assessment === 'UNKNOWN')
+      .map((a) => ({ attribute: a.attribute, assessment: 'UNKNOWN', note: a.note ?? '', citations: [] }));
 
-    const report: GroundingReport = {
-      totalClaims: painResult.report.totalClaims + oppResult.report.totalClaims,
-      groundedClaims: painResult.report.groundedClaims + oppResult.report.groundedClaims,
-      rejectedClaims: [...painResult.report.rejectedClaims, ...oppResult.report.rejectedClaims],
-      groundingRate: 0,
-    };
-    report.groundingRate = report.totalClaims ? report.groundedClaims / report.totalClaims : 0;
+    const report: GroundingReport = mergeReports(facts.report, signals.report, relevance.report, attributes.report);
 
-    if (oppResult.grounded.length === 0) {
+    if (facts.grounded.length === 0 && signals.grounded.length === 0) {
       throw new ResearchError(
-        'Nothing on their site supported a specific automation opportunity. Try researching again, or work this lead manually.',
+        'Nothing on their site could be verified. Research again later, or work this account from other sources.',
         'UNGROUNDED',
       );
     }
 
-    // 4. ROI is arithmetic on the model's hour estimates, never generated.
-    const roi = estimateRoi(
-      oppResult.grounded.map((o) => ({
-        title: o.title,
-        hoursPerWeek: Math.max(0, Math.min(40, o.hoursPerWeek ?? 0)),
-        confidence: clamp(o.confidence),
-      })),
-    );
+    const verifiedFacts: VerifiedFact[] = facts.grounded.map((f, i) => ({
+      id: `r${i + 1}`, claimType: f.claimType, statement: f.statement, citations: f.citations,
+    }));
+    const verifiedRelevance: VerifiedRelevance[] = relevance.grounded.map((r) => ({
+      angle: r.angle, reasoning: r.reasoning, confidence: clamp(r.confidence), citations: r.citations,
+    }));
+    const verifiedAttributes: VerifiedAttribute[] = [
+      ...attributes.grounded.map((a) => ({ attribute: a.attribute, assessment: a.assessment, note: a.note ?? '', citations: a.citations })),
+      ...unknownAttributes,
+    ];
 
-    // A run that lost claims to verification is a less trustworthy run, and the
-    // stored confidence should say so.
-    const confidence = clamp(output.overallConfidence ?? 0.5) * (0.5 + 0.5 * report.groundingRate);
-
-    const allCitations = [...painResult.grounded, ...oppResult.grounded].flatMap((c) => c.citations);
+    // A run that lost items to verification is a less trustworthy run.
+    const confidence = clamp(output.overallConfidence) * (0.5 + 0.5 * report.groundingRate);
 
     const research = await db.research.update({
-      where: { leadId },
+      where: { accountId },
       data: {
-        status: 'SUCCEEDED',
-        pagesCrawled: crawl.pages.map(pageMeta) as never,
+        status: 'COMPLETED',
+        pagesCrawled: crawl.pages.map(pageMeta) as Prisma.InputJsonValue,
         rawExtract: crawl.pages.map((p) => `[${p.id}] ${p.url}\n${p.text}`).join('\n\n---\n\n'),
         companySummary: output.companySummary ?? null,
-        servicesOffered: output.servicesOffered ?? [],
+        servicesOffered: (output.servicesOffered ?? []).slice(0, 20),
         detectedSoftware: crawl.detectedSoftware,
-        observedSignals: crawl.signals as never,
-        painPoints: painResult.grounded as never,
-        opportunities: oppResult.grounded as never,
-        talkingPoints: output.talkingPoints ?? [],
-        citations: { verified: allCitations, report } as never,
-        estimatedHoursSavedPerMonth: roi.hoursSavedPerMonth,
-        estimatedAnnualSavingsCents: roi.annualSavingsCents,
-        roiAssumptions: { ...roi.assumptions, perOpportunity: roi.perOpportunity } as never,
+        observedSignals: crawl.signals as Prisma.InputJsonValue,
+        facts: verifiedFacts as unknown as Prisma.InputJsonValue,
+        relevance: { angles: verifiedRelevance, attributes: verifiedAttributes } as unknown as Prisma.InputJsonValue,
+        talkingPoints: (output.talkingPoints ?? []).slice(0, 8),
+        citations: { report } as unknown as Prisma.InputJsonValue,
         confidence,
         model: completion.model,
         promptVersion: RESEARCH_PROMPT_VERSION,
@@ -147,36 +197,59 @@ export async function runResearch(organizationId: string, leadId: string) {
       },
     });
 
-    await db.lead.update({ where: { id: leadId }, data: { status: 'RESEARCHED' } });
-    await rescoreLead(leadId);
+    await db.account.update({
+      where: { id: accountId },
+      data: {
+        researchSummary: output.companySummary ?? null,
+        enrichmentStatus: account.enrichmentStatus === 'NOT_STARTED' ? 'PARTIAL' : account.enrichmentStatus,
+        techStack: [...new Set([...account.techStack, ...crawl.detectedSoftware])],
+      },
+    });
+
+    const createdSignals = await saveSignals(
+      account,
+      signals.grounded.map((s) => {
+        const citation = s.citations[0]!;
+        return {
+          type: s.type as SignalType,
+          title: s.title,
+          summary: s.summary,
+          sourceUrl: citation.url,
+          sourceTitle: citation.pageTitle,
+          sourceQuote: citation.quote,
+          eventDate: parseEventDate(s.eventDate),
+          confidence: clamp(s.confidence) * citation.similarity,
+          source: 'RESEARCH',
+          provider: 'company_website',
+          evidenceStatus: 'VERIFIED',
+          metadata: { matchType: citation.matchType, eventDateReported: s.eventDate ?? null, researchId: research.id },
+        };
+      }),
+      { rescore: false },
+    );
+
+    await advanceAccountStatus(accountId, 'ENRICHED');
+    await rescoreAccount(accountId);
     await logActivity({
-      organizationId,
-      leadId,
+      organizationId, clientId: account.clientId, accountId,
       type: 'RESEARCH_COMPLETED',
       title: 'Research completed',
-      body: `${oppResult.grounded.length} automation opportunities found across ${crawl.pages.length} pages.`
-        + (report.rejectedClaims.length
-          ? ` ${report.rejectedClaims.length} unsupported claims were discarded.`
-          : ''),
+      body: `${verifiedFacts.length} verified facts and ${createdSignals.length} new signals from ${crawl.pages.length} pages.`
+        + (report.rejectedClaims.length ? ` ${report.rejectedClaims.length} unsupported items were discarded.` : ''),
       metadata: { groundingRate: report.groundingRate, costCents: completion.costCents },
     });
 
-    return { research, report, pagesCrawled: crawl.pages.length };
+    return { research, report, pagesCrawled: crawl.pages.length, signalsCreated: createdSignals.length };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Research failed';
     await db.research.update({
-      where: { leadId },
+      where: { accountId },
       data: { status: 'FAILED', error: message.slice(0, 500) },
     });
-    await db.lead.update({ where: { id: leadId }, data: { status: 'DISCOVERED' } });
     throw err;
   }
 }
 
 function pageMeta(p: CrawledPage) {
   return { id: p.id, url: p.url, title: p.title, chars: p.chars, fetchedAt: p.fetchedAt };
-}
-
-function clamp(n: number) {
-  return Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0.5));
 }

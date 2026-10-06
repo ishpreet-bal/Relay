@@ -1,4 +1,4 @@
-# Foundry — setup and wiring
+# Relay — setup and wiring
 
 How the pieces connect, in the order you should connect them. Budget about two
 hours for the first pass, most of it waiting on DNS.
@@ -74,7 +74,7 @@ Do these in order. Later steps depend on earlier ones.
 ### 3.1 Database
 
 ```bash
-git clone <your-repo> foundry && cd foundry
+git clone <your-repo> relay && cd relay
 cp .env.example .env
 npm install
 ```

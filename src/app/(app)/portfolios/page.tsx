@@ -14,7 +14,7 @@ export default async function PortfoliosPage() {
   const sites = await db.portfolioSite.findMany({
     where: { organizationId: session.organizationId },
     orderBy: { createdAt: 'desc' },
-    include: { lead: { select: { id: true, companyName: true } } },
+    include: { account: { select: { id: true, name: true } } },
   });
 
   const root = env().PORTFOLIO_ROOT_DOMAIN;
@@ -33,15 +33,15 @@ export default async function PortfoliosPage() {
           {sites.length === 0 ? (
             <div className="card p-12 text-center">
               <h2 className="font-display font-semibold mb-1">No demo sites yet</h2>
-              <p className="text-sm text-muted">Create one from a researched lead&apos;s page.</p>
+              <p className="text-sm text-muted">Demo sites belong to Relay&apos;s earlier automation-agency workflow. Existing sites keep working.</p>
             </div>
           ) : (
             <ul className="card divide-y divide-hairline">
               {sites.map((site) => (
                 <li key={site.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1 min-w-0">
-                    <Link href={`/leads/${site.lead.id}`} className="text-[13px] font-medium hover:text-accent">
-                      {site.lead.companyName}
+                    <Link href={`/accounts/${site.account.id}`} className="text-[13px] font-medium hover:text-accent">
+                      {site.account.name}
                     </Link>
                     <p className="num text-[11px] text-muted truncate">{site.subdomain}.{root}</p>
                   </div>

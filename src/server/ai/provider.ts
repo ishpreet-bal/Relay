@@ -2,14 +2,19 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
-import { costCents, MODELS } from './pricing';
+import { costCents, costMillicents, MODELS } from './pricing';
 import { assertBudget } from './budget';
+import { recordUsage, type UsageAttribution } from '@/server/services/usage';
+import { logger } from '@/lib/logger';
+import type { UsageType } from '@prisma/client';
 
 export interface CompletionRequest {
   organizationId: string;
   /** What this call is for — becomes AiRun.kind and drives cost reporting. */
-  kind: 'research' | 'personalize' | 'proposal' | 'portfolio' | 'classify';
+  kind: 'research' | 'personalize' | 'verify' | 'proposal' | 'portfolio' | 'classify';
   entityId?: string;
+  /** Who the cost belongs to, for unit economics. */
+  attribution?: UsageAttribution;
   promptVersion: string;
   system: string;
   user: string;
@@ -45,6 +50,15 @@ function openai() {
   return openaiClient;
 }
 
+const USAGE_TYPE: Record<CompletionRequest['kind'], UsageType> = {
+  research: 'AI_RESEARCH',
+  personalize: 'AI_PERSONALIZATION',
+  verify: 'AI_VERIFICATION',
+  proposal: 'AI_OTHER',
+  portfolio: 'AI_OTHER',
+  classify: 'AI_OTHER',
+};
+
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 529]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -78,14 +92,14 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
     } catch (primaryError) {
       const fallback = req.fallbackModel ?? MODELS.fallbackResearch;
       if (!openai()) throw primaryError;
-      console.warn(`Anthropic call failed, falling back to ${fallback}:`, primaryError);
+      logger.warn('ai.fallback', { kind: req.kind, fallback, error: primaryError });
       result = await withRetries(() => callOpenAI(req, fallback), 2);
     }
 
     await db.aiRun.update({
       where: { id: run.id },
       data: {
-        status: 'SUCCEEDED',
+        status: 'COMPLETED',
         provider: result.provider,
         model: result.model,
         tokensIn: result.tokensIn,
@@ -93,6 +107,15 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
         costCents: result.costCents,
         latencyMs: result.latencyMs,
       },
+    });
+    await recordUsage({
+      organizationId: req.organizationId,
+      ...req.attribution,
+      provider: result.provider,
+      type: USAGE_TYPE[req.kind],
+      costMillicents: costMillicents(result.model, result.tokensIn, result.tokensOut),
+      aiRunId: run.id,
+      metadata: { model: result.model, tokensIn: result.tokensIn, tokensOut: result.tokensOut, promptVersion: req.promptVersion },
     });
     return result;
   } catch (err) {

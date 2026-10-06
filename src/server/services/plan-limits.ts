@@ -46,7 +46,7 @@ export async function getUsage(organizationId: string) {
   const [org, seats, leads, research, sends, campaigns, sites] = await Promise.all([
     db.organization.findUniqueOrThrow({ where: { id: organizationId } }),
     db.membership.count({ where: { organizationId } }),
-    db.lead.count({ where: { organizationId, deletedAt: null } }),
+    db.account.count({ where: { organizationId, deletedAt: null } }),
     db.aiRun.count({ where: { organizationId, kind: 'research', createdAt: { gte: monthStart } } }),
     db.message.count({ where: { organizationId, direction: 'OUTBOUND', sentAt: { gte: monthStart } } }),
     db.campaign.count({ where: { organizationId, status: 'ACTIVE' } }),

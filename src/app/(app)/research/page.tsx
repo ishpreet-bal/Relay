@@ -1,4 +1,5 @@
-import { requirePermission } from '@/lib/auth';
+import { pageSession } from '@/lib/page-auth';
+import { PageBody } from '@/components/ui/page';
 import { Topbar } from '@/components/shell/topbar';
 import { ResearchQueue } from '@/components/research/research-queue';
 import { monthlySpend } from '@/server/ai/budget';
@@ -6,18 +7,16 @@ import { monthlySpend } from '@/server/ai/budget';
 export const metadata = { title: 'Research' };
 
 export default async function ResearchPage() {
-  const session = await requirePermission('research:read');
+  const session = await pageSession('research:read');
   const spend = await monthlySpend(session.organizationId);
 
   return (
     <>
       <Topbar title="Research" />
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto p-6">
-          <BudgetBar spentCents={spend.spentCents} capCents={spend.capCents} runs={spend.runs} />
-          <ResearchQueue />
-        </div>
-      </div>
+      <PageBody width="narrow">
+        <BudgetBar spentCents={spend.spentCents} capCents={spend.capCents} runs={spend.runs} />
+        <ResearchQueue />
+      </PageBody>
     </>
   );
 }

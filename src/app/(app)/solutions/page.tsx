@@ -7,7 +7,7 @@ import { Topbar } from '@/components/shell/topbar';
 export const metadata = { title: 'Solution library' };
 
 export default async function SolutionsPage() {
-  const session = await requirePermission('lead:read');
+  const session = await requirePermission('account:read');
 
   const templates = await db.solutionTemplate.findMany({
     where: {

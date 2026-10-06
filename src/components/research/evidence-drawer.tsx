@@ -9,10 +9,10 @@ import { useMemo } from 'react';
  * highlighted. The reviewer verifies rather than trusts — which is only
  * possible because the crawl is stored, not discarded after generation.
  */
-export function EvidenceDrawer({ leadId, pageId, quote, onClose }: {
-  leadId: string; pageId: string; quote: string; onClose: () => void;
+export function EvidenceDrawer({ accountId, pageId, quote, onClose }: {
+  accountId: string; pageId: string; quote: string; onClose: () => void;
 }) {
-  const extract = trpc.research.extract.useQuery({ leadId, pageId });
+  const extract = trpc.research.extract.useQuery({ accountId, pageId });
 
   const highlighted = useMemo(() => {
     if (!extract.data) return null;

@@ -33,6 +33,13 @@ export function costCents(model: string, tokensIn: number, tokensOut: number): n
   return Math.ceil(dollars * 100);
 }
 
+/** Exact cost in thousandths of a cent, for usage records. */
+export function costMillicents(model: string, tokensIn: number, tokensOut: number): number {
+  const price = PRICING[model];
+  if (!price) return 0;
+  return Math.round(((tokensIn / 1_000_000) * price.inputPerMTok + (tokensOut / 1_000_000) * price.outputPerMTok) * 100_000);
+}
+
 /**
  * Model roles, so call sites ask for a capability rather than hardcoding a
  * model name. Swapping the research model is a one-line change here.
@@ -42,6 +49,8 @@ export const MODELS = {
   research: 'claude-sonnet-5',
   /** Voice-sensitive drafting. */
   personalize: 'claude-sonnet-5',
+  /** Claim extraction and support checks on drafts. */
+  verify: 'claude-haiku-4-5-20251001',
   /** Cheap, high-volume classification and extraction. */
   classify: 'claude-haiku-4-5-20251001',
   /** Fallback provider equivalents. */

@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { Loader2, Clock, AlertTriangle } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
+import { useActiveClient } from '@/components/shell/active-client';
 import { cn } from '@/lib/utils';
 
 export function ResearchQueue() {
-  const queue = trpc.research.queue.useQuery(undefined, {
+  const { clientId } = useActiveClient();
+  const queue = trpc.research.queue.useQuery({ clientId }, {
     // Cheap poll so a running batch visibly drains without a websocket.
     refetchInterval: (q) => (q.state.data?.some((r) => r.status === 'RUNNING') ? 5_000 : 30_000),
   });
@@ -18,10 +20,10 @@ export function ResearchQueue() {
       <div className="card p-10 text-center">
         <h2 className="font-display font-semibold mb-1">Nothing in the queue</h2>
         <p className="text-sm text-muted mb-4 max-w-sm mx-auto">
-          Select leads with a website and queue them for research. The worker reads
+          Select accounts with a website and queue them for research. The worker reads
           each site and discards any finding it can&apos;t tie back to a quote.
         </p>
-        <Link href="/leads" className="btn-outline">Go to leads</Link>
+        <Link href="/accounts" className="btn-outline">Go to accounts</Link>
       </div>
     );
   }
@@ -41,7 +43,8 @@ export function ResearchQueue() {
 
 type Item = {
   id: string; status: string; error: string | null; updatedAt: Date;
-  lead: { id: string; companyName: string; domain: string | null; industry: string | null };
+  account: { id: string; name: string; domain: string | null; industry: string | null };
+  client: { name: string };
 };
 
 function Group({ title, items, tone, icon: Icon, spin }: {
@@ -60,14 +63,14 @@ function Group({ title, items, tone, icon: Icon, spin }: {
               spin && 'animate-spin',
             )} strokeWidth={1.75} />
             <div className="flex-1 min-w-0">
-              <Link href={`/leads/${item.lead.id}`} className="text-[13px] font-medium hover:text-accent">
-                {item.lead.companyName}
+              <Link href={`/accounts/${item.account.id}`} className="text-[13px] font-medium hover:text-accent">
+                {item.account.name}
               </Link>
               {item.error
                 ? <p className="text-[11px] text-held truncate">{item.error}</p>
-                : <p className="num text-[11px] text-muted truncate">{item.lead.domain ?? 'No website'}</p>}
+                : <p className="num text-[11px] text-muted truncate">{item.account.domain ?? 'No website'}</p>}
             </div>
-            <span className="text-[11px] text-muted capitalize shrink-0">{item.lead.industry ?? '—'}</span>
+            <span className="text-[11px] text-muted capitalize shrink-0">{item.client.name}</span>
           </li>
         ))}
       </ul>

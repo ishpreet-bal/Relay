@@ -4,31 +4,31 @@ import { router, permissionProcedure } from '../init';
 import { buildProposal } from '@/server/services/proposal';
 import { createPortfolioSite, publishSite } from '@/server/services/portfolio';
 import { recordAudit } from '@/lib/audit';
-import { logActivity } from '@/server/services/crm';
+import { logActivity } from '@/server/services/activity';
 import { env } from '@/lib/env';
 
 export const proposalsRouter = router({
   list: permissionProcedure('proposal:read').query(({ ctx }) =>
     ctx.db.proposal.findMany({
-      where: { organizationId: ctx.session.organizationId },
+      where: { organizationId: ctx.access.organizationId },
       orderBy: { createdAt: 'desc' },
       take: 100,
-      include: { lead: { select: { id: true, companyName: true } } },
+      include: { account: { select: { id: true, name: true } } },
     }),
   ),
 
-  byLead: permissionProcedure('proposal:read')
-    .input(z.object({ leadId: z.string().uuid() }))
+  byAccount: permissionProcedure('proposal:read')
+    .input(z.object({ accountId: z.string().uuid() }))
     .query(({ ctx, input }) =>
       ctx.db.proposal.findMany({
-        where: { leadId: input.leadId, organizationId: ctx.session.organizationId },
+        where: { accountId: input.accountId, organizationId: ctx.access.organizationId },
         orderBy: { createdAt: 'desc' },
       }),
     ),
 
   generate: permissionProcedure('proposal:write')
     .input(z.object({
-      leadId: z.string().uuid(),
+      accountId: z.string().uuid(),
       title: z.string().max(160).optional(),
       includeOpportunities: z.array(z.number().int().min(0)).optional(),
       overrides: z.object({
@@ -40,7 +40,7 @@ export const proposalsRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const proposal = await buildProposal({
-          organizationId: ctx.session.organizationId,
+          organizationId: ctx.access.organizationId,
           userId: ctx.session.userId,
           ...input,
         });
@@ -62,7 +62,7 @@ export const proposalsRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const proposal = await ctx.db.proposal.findFirst({
-        where: { id: input.id, organizationId: ctx.session.organizationId },
+        where: { id: input.id, organizationId: ctx.access.organizationId },
       });
       if (!proposal) throw new TRPCError({ code: 'NOT_FOUND' });
 
@@ -71,11 +71,10 @@ export const proposalsRouter = router({
         data: { status: 'SENT' },
       });
       await logActivity({
-        organizationId: ctx.session.organizationId, leadId: proposal.leadId,
+        organizationId: ctx.access.organizationId, accountId: proposal.accountId,
         userId: ctx.session.userId, type: 'PROPOSAL_SENT',
         title: `Proposal ${proposal.number} sent`,
       });
-      await ctx.db.lead.update({ where: { id: proposal.leadId }, data: { status: 'PROPOSAL_SENT' } });
 
       return { proposal: updated, url: `${env().APP_URL}/p/${proposal.shareToken}` };
     }),
@@ -84,15 +83,15 @@ export const proposalsRouter = router({
 
   sites: permissionProcedure('portfolio:read').query(({ ctx }) =>
     ctx.db.portfolioSite.findMany({
-      where: { organizationId: ctx.session.organizationId },
+      where: { organizationId: ctx.access.organizationId },
       orderBy: { createdAt: 'desc' },
-      include: { lead: { select: { id: true, companyName: true } } },
+      include: { account: { select: { id: true, name: true } } },
     }),
   ),
 
   createSite: permissionProcedure('portfolio:write')
     .input(z.object({
-      leadId: z.string().uuid(),
+      accountId: z.string().uuid(),
       templateSlug: z.string().max(80).optional(),
       expiresInDays: z.number().int().min(7).max(365).optional(),
       logoUrl: z.string().url().max(500).optional(),
@@ -107,7 +106,7 @@ export const proposalsRouter = router({
         });
       }
       const site = await createPortfolioSite({
-        organizationId: ctx.session.organizationId,
+        organizationId: ctx.access.organizationId,
         userId: ctx.session.userId,
         ...input,
       });
@@ -122,11 +121,11 @@ export const proposalsRouter = router({
     .input(z.object({ id: z.string().uuid(), publish: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const owned = await ctx.db.portfolioSite.count({
-        where: { id: input.id, organizationId: ctx.session.organizationId },
+        where: { id: input.id, organizationId: ctx.access.organizationId },
       });
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND' });
 
-      const site = await publishSite(ctx.session.organizationId, input.id, input.publish);
+      const site = await publishSite(ctx.access.organizationId, input.id, input.publish);
       await recordAudit({
         session: ctx.session, action: input.publish ? 'portfolio.publish' : 'portfolio.unpublish',
         entityType: 'PortfolioSite', entityId: input.id,
@@ -146,7 +145,7 @@ export const proposalsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const owned = await ctx.db.portfolioSite.count({
-        where: { id, organizationId: ctx.session.organizationId },
+        where: { id, organizationId: ctx.access.organizationId },
       });
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND' });
       return ctx.db.portfolioSite.update({ where: { id }, data });

@@ -1,42 +1,20 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { router, permissionProcedure } from '../init';
-import {
-  pipelineSnapshot, outreachPerformance, conversionRate, revenueSummary, activeProjects,
-} from '@/server/services/analytics';
 import { getUsage } from '@/server/services/plan-limits';
 import { createCheckoutSession, createPortalSession } from '@/server/services/billing';
-import { monthlySpend } from '@/server/ai/budget';
 import { recordAudit } from '@/lib/audit';
 
 export const adminRouter = router({
-  overview: permissionProcedure('lead:read')
-    .input(z.object({ days: z.number().min(7).max(365).default(90) }).default({ days: 90 }))
-    .query(async ({ ctx, input }) => {
-      const orgId = ctx.session.organizationId;
-      const [pipeline, outreach, conversion, revenue, aiSpend] = await Promise.all([
-        pipelineSnapshot(orgId),
-        outreachPerformance(orgId, input.days),
-        conversionRate(orgId),
-        revenueSummary(orgId),
-        monthlySpend(orgId),
-      ]);
-      return { pipeline, outreach, conversion, revenue, aiSpend };
-    }),
-
-  projects: permissionProcedure('proposal:read').query(({ ctx }) =>
-    activeProjects(ctx.session.organizationId),
-  ),
-
   invoices: permissionProcedure('billing:manage').query(({ ctx }) =>
     ctx.db.invoice.findMany({
-      where: { organizationId: ctx.session.organizationId },
+      where: { organizationId: ctx.access.organizationId },
       orderBy: { createdAt: 'desc' },
       take: 50,
     }),
   ),
 
-  usage: permissionProcedure('settings:read').query(({ ctx }) => getUsage(ctx.session.organizationId)),
+  usage: permissionProcedure('settings:read').query(({ ctx }) => getUsage(ctx.access.organizationId)),
 
   /** Paginated audit trail. Read-only by design — entries are never editable. */
   auditLog: permissionProcedure('audit:read')
@@ -49,7 +27,7 @@ export const adminRouter = router({
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.auditLog.findMany({
         where: {
-          organizationId: ctx.session.organizationId,
+          organizationId: ctx.access.organizationId,
           ...(input.action ? { action: { contains: input.action } } : {}),
           ...(input.entityType ? { entityType: input.entityType } : {}),
         },
@@ -65,7 +43,7 @@ export const adminRouter = router({
 
   settings: permissionProcedure('settings:read').query(({ ctx }) =>
     ctx.db.organization.findUniqueOrThrow({
-      where: { id: ctx.session.organizationId },
+      where: { id: ctx.access.organizationId },
       select: {
         name: true, brandName: true, brandLogoUrl: true, brandPrimary: true,
         websiteUrl: true, timezone: true, currency: true,
@@ -95,10 +73,10 @@ export const adminRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const before = await ctx.db.organization.findUniqueOrThrow({
-        where: { id: ctx.session.organizationId },
+        where: { id: ctx.access.organizationId },
       });
       const after = await ctx.db.organization.update({
-        where: { id: ctx.session.organizationId },
+        where: { id: ctx.access.organizationId },
         data: input,
       });
       await recordAudit({
@@ -113,7 +91,7 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const url = await createCheckoutSession({
-          organizationId: ctx.session.organizationId,
+          organizationId: ctx.access.organizationId,
           email: ctx.session.email,
           ...input,
         });
@@ -127,6 +105,6 @@ export const adminRouter = router({
     }),
 
   billingPortal: permissionProcedure('billing:manage').mutation(async ({ ctx }) => ({
-    url: await createPortalSession(ctx.session.organizationId, ctx.session.email),
+    url: await createPortalSession(ctx.access.organizationId, ctx.session.email),
   })),
 });

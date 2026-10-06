@@ -18,7 +18,11 @@ export function stripe() {
  * edits the success URL, must not be able to desynchronize their own billing.
  */
 
-/** Maps a Stripe price lookup key to a plan. Configure these in Stripe. */
+/**
+ * Maps a Stripe price lookup key to a plan. Configure these in Stripe. The
+ * keys predate the rename to Relay and are kept so existing Stripe prices
+ * keep resolving.
+ */
 const PRICE_TO_PLAN: Record<string, Plan> = {
   foundry_solo_monthly: 'SOLO',
   foundry_solo_yearly: 'SOLO',

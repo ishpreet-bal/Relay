@@ -12,7 +12,7 @@ export async function renderProposalPdf(proposalId: string, organizationId: stri
   const proposal = await db.proposal.findFirstOrThrow({
     where: { id: proposalId, organizationId },
     include: {
-      lead: { select: { companyName: true, city: true, region: true } },
+      account: { select: { name: true, city: true, region: true } },
       organization: { select: { brandName: true, name: true, brandPrimary: true } },
     },
   });
@@ -24,8 +24,8 @@ export async function renderProposalPdf(proposalId: string, organizationId: stri
     title: proposal.title,
     agencyName: proposal.organization.brandName ?? proposal.organization.name,
     accentColor: proposal.organization.brandPrimary,
-    clientName: proposal.lead.companyName,
-    clientCity: [proposal.lead.city, proposal.lead.region].filter(Boolean).join(', ') || null,
+    clientName: proposal.account.name,
+    clientCity: [proposal.account.city, proposal.account.region].filter(Boolean).join(', ') || null,
     preparedOn: proposal.createdAt.toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' }),
     validUntil: proposal.expiresAt?.toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' }) ?? null,
     currency: proposal.currency,

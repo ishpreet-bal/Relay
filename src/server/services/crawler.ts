@@ -18,7 +18,7 @@ export interface CrawlResult {
   errors: Array<{ url: string; reason: string }>;
 }
 
-const USER_AGENT = 'FoundryBot/1.0 (+https://foundry.app/bot; research for a single named prospect)';
+const USER_AGENT = 'RelayBot/1.0 (research for a single named prospect)';
 const MAX_PAGES = 8;
 const MAX_CHARS_PER_PAGE = 12_000;
 const FETCH_TIMEOUT_MS = 12_000;
@@ -124,7 +124,7 @@ async function isAllowed(origin: string, path: string): Promise<boolean> {
       const [rawKey, ...rest] = line.split(':');
       const key = rawKey?.toLowerCase().trim();
       const value = rest.join(':').trim();
-      if (key === 'user-agent') applies = value === '*' || /foundrybot/i.test(value);
+      if (key === 'user-agent') applies = value === '*' || /relaybot/i.test(value);
       else if (key === 'disallow' && applies && value) disallowed.push(value);
     }
     return !disallowed.some((rule) => rule === '/' || path.startsWith(rule));

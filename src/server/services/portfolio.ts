@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { db } from '@/lib/db';
 import { addDays } from 'date-fns';
-import { logActivity } from './crm';
+import { logActivity } from './activity';
 
 /**
  * Prospect microsites.
@@ -36,15 +36,15 @@ async function uniqueSubdomain(base: string) {
 
 export async function createPortfolioSite(params: {
   organizationId: string;
-  leadId: string;
+  accountId: string;
   userId: string | null;
   templateSlug?: string;
   expiresInDays?: number;
   logoUrl?: string;
   logoConsentNote?: string;
 }) {
-  const lead = await db.lead.findFirstOrThrow({
-    where: { id: params.leadId, organizationId: params.organizationId, deletedAt: null },
+  const lead = await db.account.findFirstOrThrow({
+    where: { id: params.accountId, organizationId: params.organizationId, deletedAt: null },
     include: { research: true, organization: { select: { brandName: true, name: true, brandPrimary: true } } },
   });
 
@@ -66,16 +66,16 @@ export async function createPortfolioSite(params: {
   type Opportunity = { title: string; workflow?: string; hoursPerWeek?: number; citations?: Array<{ url: string; quote: string }> };
   const opportunities = (lead.research?.opportunities ?? []) as unknown as Opportunity[];
 
-  const subdomain = await uniqueSubdomain(slugifyCompany(lead.companyName));
+  const subdomain = await uniqueSubdomain(slugifyCompany(lead.name));
   const agencyName = lead.organization.brandName ?? lead.organization.name;
 
   const site = await db.portfolioSite.create({
     data: {
       organizationId: params.organizationId,
-      leadId: params.leadId,
+      accountId: params.accountId,
       templateId: template?.id ?? null,
       subdomain,
-      headline: `What automation could look like at ${lead.companyName}`,
+      headline: `What automation could look like at ${lead.name}`,
       subheadline: template
         ? `A working example built around how ${lead.industry ?? 'businesses like yours'} actually run, prepared by ${agencyName}.`
         : `Prepared by ${agencyName}.`,
@@ -86,7 +86,7 @@ export async function createPortfolioSite(params: {
       logoConsentNote: params.logoConsentNote ?? null,
       accentColor: template?.accentColor ?? lead.organization.brandPrimary,
       content: {
-        companyName: lead.companyName,
+        name: lead.name,
         city: lead.city,
         industry: lead.industry,
         summary: lead.research?.companySummary ?? null,
@@ -110,7 +110,7 @@ export async function createPortfolioSite(params: {
 
   await logActivity({
     organizationId: params.organizationId,
-    leadId: params.leadId,
+    accountId: params.accountId,
     userId: params.userId,
     type: 'SYSTEM',
     title: 'Demo site created',
@@ -133,7 +133,7 @@ export async function getPublicSite(subdomain: string) {
     where: { subdomain },
     include: {
       template: true,
-      lead: { select: { id: true, companyName: true } },
+      account: { select: { id: true, name: true } },
       organization: { select: { brandName: true, name: true, brandLogoUrl: true, websiteUrl: true } },
     },
   });
@@ -171,7 +171,7 @@ export async function recordSiteView(params: {
       ...(priorVisit ? {} : { uniqueVisitors: { increment: 1 } }),
       firstViewedAt: undefined,
     },
-    select: { id: true, organizationId: true, leadId: true, firstViewedAt: true, subdomain: true },
+    select: { id: true, organizationId: true, accountId: true, firstViewedAt: true, subdomain: true },
   });
 
   await db.portfolioView.create({
@@ -186,13 +186,13 @@ export async function recordSiteView(params: {
   // The first visit is a real buying signal and belongs on the timeline.
   if (!site.firstViewedAt) {
     await db.portfolioSite.update({ where: { id: site.id }, data: { firstViewedAt: new Date() } });
-    await db.lead.update({
-      where: { id: site.leadId },
+    await db.account.update({
+      where: { id: site.accountId },
       data: { temperature: 'HOT' },
     });
     await logActivity({
       organizationId: site.organizationId,
-      leadId: site.leadId,
+      accountId: site.accountId,
       type: 'SYSTEM',
       title: 'Demo site opened',
       body: `Someone opened ${site.subdomain} for the first time.`,

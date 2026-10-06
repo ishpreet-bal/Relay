@@ -1,15 +1,12 @@
-import { Resend } from 'resend';
 import { db } from '@/lib/db';
-import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { NotConfiguredError } from '@/server/errors';
+import { chainFor } from '@/server/connectors/registry';
 import { evaluateSend, type GateVerdict } from './send-gate';
 import { issueUnsubscribeToken, unsubscribeUrl, oneClickUnsubscribeUrl } from './unsubscribe';
-import { logActivity } from './crm';
-
-let resendClient: Resend | null = null;
-function resend() {
-  resendClient ??= new Resend(env().RESEND_API_KEY);
-  return resendClient;
-}
+import { logActivity } from './activity';
+import { advanceAccountStatus } from './accounts';
+import { recordUsage } from './usage';
 
 export interface SendOutcome {
   sent: boolean;
@@ -28,19 +25,17 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
 
   const verdict = await evaluateSend(message);
   if (!verdict.allowed) {
-    await db.message.update({
-      where: { id: messageId },
-      data: { failureReason: verdict.reason },
-    });
+    await db.message.update({ where: { id: messageId }, data: { failureReason: verdict.reason } });
     return { sent: false, messageId, verdict };
   }
+
+  const [provider] = await chainFor(message.organizationId, 'EMAIL_SENDING');
+  if (!provider?.emailSending) throw new NotConfiguredError('EMAIL_SENDING', 'No email sending provider is connected.');
 
   const contact = await db.contact.findUniqueOrThrow({ where: { id: message.contactId! } });
   const mailbox = message.mailboxId
     ? await db.mailbox.findUniqueOrThrow({ where: { id: message.mailboxId } })
-    : await db.mailbox.findFirstOrThrow({
-        where: { organizationId: message.organizationId, isActive: true },
-      });
+    : await db.mailbox.findFirstOrThrow({ where: { organizationId: message.organizationId, isActive: true } });
 
   const token = await issueUnsubscribeToken(message.organizationId, contact.email!);
   const url = unsubscribeUrl(token);
@@ -52,7 +47,7 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
   await db.message.update({ where: { id: messageId }, data: { status: 'SENDING' } });
 
   try {
-    const result = await resend().emails.send({
+    const result = await provider.emailSending.send({
       from: `${mailbox.fromName} <${mailbox.fromEmail}>`,
       to: contact.email!,
       replyTo: mailbox.replyToEmail ?? mailbox.fromEmail,
@@ -69,44 +64,52 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
       },
     });
 
-    if (result.error) throw new Error(result.error.message);
-
     const sentAt = new Date();
-    await db.$transaction([
+    const [account] = await db.$transaction([
+      db.account.findUniqueOrThrow({ where: { id: message.accountId }, select: { score: true } }),
       db.message.update({
         where: { id: messageId },
         data: {
           status: 'SENT',
           sentAt,
-          providerMessageId: result.data?.id ?? null,
+          providerMessageId: result.providerMessageId,
           mailboxId: mailbox.id,
           failureReason: null,
+          // Captured at the moment of sending so outcomes can later be
+          // compared with what Relay believed when it acted.
+          contactScoreAtSend: contact.score,
         },
       }),
-      db.lead.update({
-        where: { id: message.leadId },
-        data: { lastContactedAt: sentAt, status: 'CONTACTED' },
-      }),
+      db.contact.update({ where: { id: contact.id }, data: { lastContactedAt: sentAt } }),
+      db.account.update({ where: { id: message.accountId }, data: { lastContactedAt: sentAt } }),
     ]);
+    await db.message.update({ where: { id: messageId }, data: { accountScoreAtSend: account.score } });
+    await advanceAccountStatus(message.accountId, 'ACTIVE_OUTREACH');
 
+    await recordUsage({
+      organizationId: message.organizationId,
+      clientId: message.clientId, campaignId: message.campaignId, accountId: message.accountId, contactId: contact.id,
+      provider: provider.id, type: 'EMAIL_SENT', costMillicents: result.costMillicents, messageId,
+    });
     await logActivity({
       organizationId: message.organizationId,
-      leadId: message.leadId,
+      clientId: message.clientId,
+      accountId: message.accountId,
+      contactId: contact.id,
+      campaignId: message.campaignId,
       type: 'EMAIL_SENT',
       title: message.subject ?? 'Email sent',
       body: message.bodyText ?? undefined,
-      metadata: { messageId, to: contact.email },
+      metadata: { messageId, to: contact.email, approvalSource: message.approvalSource },
       occurredAt: sentAt,
     });
 
-    return { sent: true, messageId, verdict, providerMessageId: result.data?.id };
+    return { sent: true, messageId, verdict, providerMessageId: result.providerMessageId ?? undefined };
   } catch (err) {
+    logger.error('email.send_failed', { messageId, error: err });
     await db.message.update({
       where: { id: messageId },
-      data: {
-        status: 'FAILED',
-        failureReason: err instanceof Error ? err.message.slice(0, 300) : 'Send failed',
-      },
+      data: { status: 'FAILED', failureReason: err instanceof Error ? err.message.slice(0, 300) : 'Send failed' },
     });
     throw err;
   }
