@@ -2,7 +2,7 @@ import { Resend } from 'resend';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { evaluateSend, type GateVerdict } from './send-gate';
-import { issueUnsubscribeToken, unsubscribeUrl } from './unsubscribe';
+import { issueUnsubscribeToken, unsubscribeUrl, oneClickUnsubscribeUrl } from './unsubscribe';
 import { logActivity } from './crm';
 
 let resendClient: Resend | null = null;
@@ -44,6 +44,7 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
 
   const token = await issueUnsubscribeToken(message.organizationId, contact.email!);
   const url = unsubscribeUrl(token);
+  const oneClickUrl = oneClickUnsubscribeUrl(token);
 
   const html = (message.bodyHtml ?? '').replaceAll('{{unsubscribe_url}}', url);
   const text = `${message.bodyText ?? ''}\n\n---\nUnsubscribe: ${url}`;
@@ -62,7 +63,7 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
         // RFC 8058 one-click unsubscribe. Mailbox providers weight this heavily
         // for inbox placement, and it gives the recipient the least-friction
         // exit available.
-        'List-Unsubscribe': `<${url}>, <mailto:${mailbox.replyToEmail ?? mailbox.fromEmail}?subject=unsubscribe>`,
+        'List-Unsubscribe': `<${oneClickUrl}>, <mailto:${mailbox.replyToEmail ?? mailbox.fromEmail}?subject=unsubscribe>`,
         'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
         ...(message.inReplyTo ? { 'In-Reply-To': message.inReplyTo, References: message.inReplyTo } : {}),
       },

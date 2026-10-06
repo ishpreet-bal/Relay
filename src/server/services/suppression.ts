@@ -24,9 +24,12 @@ export async function suppress(params: {
   });
 
   const contacts = await db.contact.findMany({
+    // Stored addresses keep whatever case they were imported with; suppression
+    // values are lowercased. Match insensitively or a mixed-case contact keeps
+    // its queued follow-ups.
     where: scope === 'EMAIL'
-      ? { organizationId: params.organizationId, email: value }
-      : { organizationId: params.organizationId, email: { endsWith: `@${value}` } },
+      ? { organizationId: params.organizationId, email: { equals: value, mode: 'insensitive' } }
+      : { organizationId: params.organizationId, email: { endsWith: `@${value}`, mode: 'insensitive' } },
     select: { id: true, leadId: true },
   });
 

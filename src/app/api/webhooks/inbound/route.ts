@@ -55,17 +55,28 @@ export async function POST(req: Request) {
   const fromAddress = extractAddress(event.data.from ?? '');
   const inReplyTo = event.data.headers?.['in-reply-to'] ?? event.data.headers?.['In-Reply-To'];
 
-  // Match on the threading header first; fall back to the sender address, which
-  // covers replies from a colleague on the same domain.
+  // Match on the threading header first — provider message ids are globally
+  // unique, so this can never cross tenants. The sender-address fallback
+  // (replies from a colleague, or a client that strips threading headers) is
+  // only attempted inside the organization that owns the receiving mailbox;
+  // looking the sender up across every workspace would attach one tenant's
+  // prospect reply to another tenant's record.
   const original = inReplyTo
     ? await db.message.findFirst({ where: { providerMessageId: stripBrackets(inReplyTo) } })
     : null;
 
-  const contact = original
-    ? await db.contact.findUnique({ where: { id: original.contactId ?? '' } })
-    : fromAddress
-      ? await db.contact.findFirst({ where: { email: fromAddress } })
-      : null;
+  let contact = original?.contactId
+    ? await db.contact.findUnique({ where: { id: original.contactId } })
+    : null;
+
+  if (!contact && fromAddress) {
+    const organizationId = await organizationForRecipients(event.data.to ?? []);
+    if (organizationId) {
+      contact = await db.contact.findFirst({
+        where: { organizationId, email: { equals: fromAddress, mode: 'insensitive' } },
+      });
+    }
+  }
 
   if (!contact) {
     await db.webhookEvent.update({
@@ -144,6 +155,23 @@ function looksLikeOptOut(body: string) {
   // unsubscribe footer of our own email is quoted in nearly every reply.
   const own = body.split(/\n\s*(>|On .+ wrote:|-{2,}\s*Original Message)/)[0] ?? body;
   return OPT_OUT_PATTERNS.some((p) => p.test(own));
+}
+
+/**
+ * Resolves the workspace a reply was sent to from its recipient addresses.
+ * Returns null when no mailbox matches or when the addresses point at more
+ * than one workspace — an ambiguous reply is recorded unmatched rather than
+ * guessed at.
+ */
+async function organizationForRecipients(to: string[]): Promise<string | null> {
+  const addresses = to.map(extractAddress).filter((a): a is string => !!a);
+  if (!addresses.length) return null;
+  const mailboxes = await db.mailbox.findMany({
+    where: { OR: [{ fromEmail: { in: addresses, mode: 'insensitive' } }, { replyToEmail: { in: addresses, mode: 'insensitive' } }] },
+    select: { organizationId: true },
+  });
+  const orgs = new Set(mailboxes.map((m) => m.organizationId));
+  return orgs.size === 1 ? [...orgs][0]! : null;
 }
 
 function extractAddress(from: string) {
