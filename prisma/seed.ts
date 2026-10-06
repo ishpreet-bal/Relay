@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { SOLUTION_TEMPLATES } from './seeds/solution-templates';
 import { EXTRA_TEMPLATES } from './seeds/solution-templates-extra';
 import { solutionSpecSchema } from '../src/server/services/templates/spec';
+import { seedDemoClients } from './seeds/demo-clients';
 
 const db = new PrismaClient();
 
@@ -68,6 +69,20 @@ async function main() {
         },
       });
       console.log(`  + ${template.slug}`);
+    }
+  }
+
+  // Optional: example clients for a workspace that already exists (workspaces
+  // are created through Clerk). Set SEED_DEMO_WORKSPACE to its slug.
+  const demoSlug = process.env.SEED_DEMO_WORKSPACE;
+  if (demoSlug) {
+    const org = await db.organization.findFirst({ where: { slug: demoSlug, deletedAt: null } });
+    if (!org) {
+      console.error(`No workspace with slug "${demoSlug}".`);
+      process.exitCode = 1;
+    } else {
+      console.log(`Seeding example clients into ${org.name}…`);
+      await seedDemoClients(db, org.id);
     }
   }
 

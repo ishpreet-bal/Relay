@@ -29,6 +29,22 @@ const sender: EmailSendingProvider = {
     if (result.error) throw new Error(result.error.message);
     return { providerMessageId: result.data?.id ?? null, costMillicents: costPerEmail() };
   },
+
+  // Resend marks a domain "verified" only once its SPF and DKIM records
+  // check out, so that status stands for both.
+  async domainStatus(domain) {
+    const list = await resend().domains.list();
+    if (list.error) throw new Error(list.error.message);
+    const match = (list.data?.data ?? []).find((d) => d.name.toLowerCase() === domain.toLowerCase());
+    if (!match) return { found: false, spf: false, dkim: false, detail: `${domain} hasn't been added to Resend yet.` };
+    const verified = match.status === 'verified';
+    return {
+      found: true,
+      spf: verified,
+      dkim: verified,
+      detail: verified ? `${domain} is verified.` : `${domain} is ${match.status.replace(/_/g, ' ')} in Resend. Add the DNS records Resend shows, then check again.`,
+    };
+  },
 };
 
 export const resendConnector: ConnectorDefinition = {

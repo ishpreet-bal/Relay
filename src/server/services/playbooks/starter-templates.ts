@@ -56,7 +56,7 @@ export const STARTER_PLAYBOOKS: PlaybookTemplate[] = [
       'Mention one specific lane or service area from the offer.',
       'If there is a hiring or expansion signal, lead with it; otherwise lead with reliability on their region.',
     ),
-    callOpener: "Hi {firstName}, it's {your name} from {client}. I'll be quick — we run freight for manufacturers around {company}'s area and I wanted to see who handles your outbound shipping decisions.",
+    callOpener: "Hi {firstName}, it's {caller} from {client}. I'll be quick — we run freight for manufacturers around {company}'s area and I wanted to see who handles your outbound shipping decisions.",
     discoveryQuestions: [
       'Roughly how many loads a week do you ship, and to where?',
       'Is that mostly dedicated, contract or spot?',
@@ -93,7 +93,7 @@ export const STARTER_PLAYBOOKS: PlaybookTemplate[] = [
       'Mention one capability from the proof points that fits their products.',
       'Lead with a new-product or expansion signal if there is one; otherwise with turnaround on low-volume parts.',
     ),
-    callOpener: "Hi {firstName}, {your name} with {client}. We machine low-volume precision parts for manufacturers near {company}. Who looks after outsourced machining there?",
+    callOpener: "Hi {firstName}, {caller} with {client}. We machine low-volume precision parts for manufacturers near {company}. Who looks after outsourced machining there?",
     discoveryQuestions: [
       'What do you machine in-house versus send out?',
       'Where do your current suppliers struggle — lead time, tolerance, volume?',
@@ -126,7 +126,7 @@ export const STARTER_PLAYBOOKS: PlaybookTemplate[] = [
       'Mention the type of facility they run and one relevant service.',
       'If they opened or moved a location, lead with that; otherwise with reliability.',
     ),
-    callOpener: "Hi {firstName}, {your name} from {client}. We clean facilities like {company}'s — who looks after your cleaning contract?",
+    callOpener: "Hi {firstName}, {caller} from {client}. We clean facilities like {company}'s — who looks after your cleaning contract?",
     discoveryQuestions: ['Who cleans the facility today?', 'When does that contract come up?', "What's the one thing you'd change about it?"],
     objectionHandling: [
       { objection: 'ALREADY_HAVE_PROVIDER', response: 'Most places do. When does that contract renew? A comparison quote costs you nothing.' },
@@ -154,7 +154,7 @@ export const STARTER_PLAYBOOKS: PlaybookTemplate[] = [
       'Mention one component and the application it fits.',
       'Lead with an expansion or new-line signal if there is one; otherwise with lead times.',
     ),
-    callOpener: "Hi {firstName}, {your name} with {client}. We supply components to plants like {company}'s — who handles sourcing for those?",
+    callOpener: "Hi {firstName}, {caller} with {client}. We supply components to plants like {company}'s — who handles sourcing for those?",
     discoveryQuestions: ['Which components cause you the most downtime or delay?', 'Who qualifies new suppliers?', 'Any lines being added or upgraded?'],
     objectionHandling: [
       { objection: 'ALREADY_HAVE_PROVIDER', response: 'Most plants have an approved vendor. Worth having a qualified second source for when lead times stretch?' },

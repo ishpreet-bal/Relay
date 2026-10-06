@@ -162,7 +162,7 @@ export function CampaignBuilder() {
       <Section title="Sending">
         <div className="card p-4 space-y-4">
           {mailboxes.data && !mailboxes.data.length ? (
-            <NotConfigured what="A sending mailbox">Add one in Settings before this campaign can be activated. You can still create it now.</NotConfigured>
+            <NotConfigured what="A sending mailbox">Add one under Settings → Sending mailboxes before this campaign can be activated. You can still create it now.</NotConfigured>
           ) : (
             <Field label="From">
               {(id) => (

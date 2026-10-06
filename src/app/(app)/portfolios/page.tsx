@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
-import { requirePermission } from '@/lib/auth';
+import { pageSession } from '@/lib/page-auth';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { Topbar } from '@/components/shell/topbar';
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 export const metadata = { title: 'Demo sites' };
 
 export default async function PortfoliosPage() {
-  const session = await requirePermission('portfolio:read');
+  const session = await pageSession('portfolio:read');
 
   const sites = await db.portfolioSite.findMany({
     where: { organizationId: session.organizationId },
