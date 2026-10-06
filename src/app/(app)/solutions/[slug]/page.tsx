@@ -9,7 +9,7 @@ import { solutionSpecSchema } from '@/server/services/templates/spec';
 
 export default async function SolutionPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await requirePermission('lead:read');
+  const session = await requirePermission('account:read');
 
   const candidates = await db.solutionTemplate.findMany({
     where: { slug, OR: [{ organizationId: null }, { organizationId: session.organizationId }] },

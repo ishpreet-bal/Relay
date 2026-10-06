@@ -18,7 +18,7 @@ export default async function ProposalsPage() {
     where: { organizationId: session.organizationId },
     orderBy: { createdAt: 'desc' },
     take: 100,
-    include: { lead: { select: { id: true, companyName: true } } },
+    include: { account: { select: { id: true, name: true } } },
   });
 
   const outstanding = proposals
@@ -41,8 +41,8 @@ export default async function ProposalsPage() {
             <div className="card p-12 text-center">
               <h2 className="font-display font-semibold mb-1">No proposals yet</h2>
               <p className="text-sm text-muted max-w-md mx-auto">
-                Generate one from a lead&apos;s page once research has found automation
-                opportunities. Pricing comes from your rate card, not from a model.
+                Proposals belong to Foundry&apos;s earlier automation-agency workflow. Existing proposals stay
+                here and their links keep working; new ones are no longer generated.
               </p>
             </div>
           ) : (
@@ -50,8 +50,8 @@ export default async function ProposalsPage() {
               {proposals.map((p) => (
                 <li key={p.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1 min-w-0">
-                    <Link href={`/leads/${p.lead.id}`} className="text-[13px] font-medium hover:text-accent">
-                      {p.lead.companyName}
+                    <Link href={`/accounts/${p.account.id}`} className="text-[13px] font-medium hover:text-accent">
+                      {p.account.name}
                     </Link>
                     <p className="num text-[11px] text-muted">
                       {p.number} · {p.createdAt.toLocaleDateString('en-CA')}

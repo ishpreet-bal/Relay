@@ -2,9 +2,7 @@ import { headers } from 'next/headers';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { verifyWebhook, SignatureError } from '@/server/services/webhook-verify';
-import { exitEnrollment } from '@/server/services/campaigns';
-import { suppress } from '@/server/services/suppression';
-import { logActivity } from '@/server/services/crm';
+import { recordReply } from '@/server/services/inbound';
 
 interface InboundEvent {
   type: string;
@@ -20,10 +18,8 @@ interface InboundEvent {
 }
 
 /**
- * Inbound replies. This is the most important stop condition in the platform:
- * the moment a prospect answers, every queued follow-up for them must die. A
- * sequence that keeps nudging someone who already replied is worse than no
- * sequence at all.
+ * Inbound replies from Resend. Verifies, dedupes and matches the reply to a
+ * contact; services/inbound.ts decides what the reply means.
  */
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -86,75 +82,20 @@ export async function POST(req: Request) {
     return Response.json({ ok: true, unmatched: true });
   }
 
-  const organizationId = contact.organizationId;
-  const body = event.data.text ?? stripHtml(event.data.html ?? '');
-
-  await db.message.create({
-    data: {
-      organizationId,
-      leadId: contact.leadId,
-      contactId: contact.id,
-      campaignId: original?.campaignId ?? null,
-      direction: 'INBOUND',
-      status: 'REPLIED',
-      subject: event.data.subject ?? '(no subject)',
-      bodyText: body,
-      threadId: original?.threadId ?? original?.providerMessageId ?? null,
-      inReplyTo: inReplyTo ? stripBrackets(inReplyTo) : null,
-      sentAt: new Date(event.created_at),
-    },
+  await recordReply({
+    contact,
+    original,
+    subject: event.data.subject ?? null,
+    body: event.data.text ?? stripHtml(event.data.html ?? ''),
+    receivedAt: new Date(event.created_at),
+    inReplyTo: inReplyTo ? stripBrackets(inReplyTo) : null,
   });
-
-  if (original) {
-    await db.message.update({ where: { id: original.id }, data: { status: 'REPLIED' } });
-  }
-
-  await logActivity({
-    organizationId,
-    leadId: contact.leadId,
-    type: 'EMAIL_RECEIVED',
-    title: `Reply: ${event.data.subject ?? '(no subject)'}`,
-    body,
-    occurredAt: new Date(event.created_at),
-  });
-
-  // Stop every sequence for this lead before anything else can schedule.
-  await exitEnrollment({ leadId: contact.leadId, reason: 'REPLIED', note: 'Prospect replied' });
-  await db.lead.update({
-    where: { id: contact.leadId },
-    data: { status: 'ENGAGED', temperature: 'HOT' },
-  });
-
-  // An explicit opt-out in the reply body is honoured immediately, without
-  // waiting for someone to read it.
-  if (looksLikeOptOut(body) && contact.email) {
-    await suppress({
-      organizationId, value: contact.email, reason: 'DO_NOT_CONTACT',
-      note: 'Requested no further contact in a reply',
-    });
-  }
 
   await db.webhookEvent.update({
     where: { provider_externalId: { provider: 'resend-inbound', externalId: verified.id } },
     data: { processedAt: new Date() },
   });
   return Response.json({ ok: true });
-}
-
-const OPT_OUT_PATTERNS = [
-  /\bunsubscribe\b/i,
-  /\b(stop|quit) (emailing|contacting|messaging) me\b/i,
-  /\b(remove|take) me (from|off) (your )?(list|mailing)/i,
-  /\bdo not (contact|email|reach out)/i,
-  /\bnot interested\b.*\b(stop|remove|don'?t)\b/i,
-  /\bplease stop\b/i,
-];
-
-function looksLikeOptOut(body: string) {
-  // Only inspect the reply itself, not the quoted thread underneath — the
-  // unsubscribe footer of our own email is quoted in nearly every reply.
-  const own = body.split(/\n\s*(>|On .+ wrote:|-{2,}\s*Original Message)/)[0] ?? body;
-  return OPT_OUT_PATTERNS.some((p) => p.test(own));
 }
 
 /**

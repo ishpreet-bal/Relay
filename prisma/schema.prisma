@@ -1,7 +1,15 @@
-// Foundry — Sales OS for AI automation agencies
-// Postgres 16 (Supabase). Multi-tenant by organizationId, enforced at the
-// application layer AND at the database layer via Postgres RLS (see
-// prisma/migrations/*_rls/migration.sql).
+// Foundry — outbound sales operating system for B2B small businesses.
+// Postgres 16 (Supabase).
+//
+// Tenancy has two levels:
+//   Organization — the operating workspace (Foundry itself, today). Hard
+//                  boundary: every row carries organizationId.
+//   Client       — a business Foundry runs outbound for. Every prospect,
+//                  campaign, call and meeting belongs to exactly one client,
+//                  and client users can only ever see their own.
+// Isolation is enforced in the service layer (src/server/access). Row-level
+// security is enabled on every table with no policies, which closes the
+// Supabase Data API to anon/authenticated roles; see docs/ASSESSMENT.md.
 
 generator client {
   provider        = "prisma-client-js"
@@ -20,68 +28,86 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Organization {
-  id        String   @id @default(uuid()) @db.Uuid
-  clerkOrgId String  @unique
-  name      String
-  slug      String   @unique
+  id            String  @id @default(uuid()) @db.Uuid
+  clerkOrgId    String  @unique
+  name          String
+  slug          String  @unique
   // Sending identity + branding used by proposals and portfolio pages
-  brandName      String?
-  brandLogoUrl   String?
-  brandPrimary   String  @default("#4F46E5")
-  brandAccent    String  @default("#0EA5E9")
-  sendingDomain  String?
-  websiteUrl     String?
-  timezone       String  @default("America/Toronto")
-  messages Message[]
+  brandName     String?
+  brandLogoUrl  String?
+  brandPrimary  String  @default("#4F46E5")
+  brandAccent   String  @default("#0EA5E9")
+  sendingDomain String?
+  websiteUrl    String?
+  timezone      String  @default("America/Toronto")
+
   // Billing
-  stripeCustomerId     String?  @unique
-  stripeSubscriptionId String?  @unique
-  plan                 Plan     @default(TRIAL)
-  planSeats            Int      @default(1)
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  plan                 Plan      @default(TRIAL)
+  planSeats            Int       @default(1)
   trialEndsAt          DateTime?
 
-  // Guardrails — the platform is built for quality over volume.
-  dailySendCap    Int @default(60)
-  hourlySendCap   Int @default(12)
+  // Guardrails — volume is capped on purpose.
+  dailySendCap           Int @default(60)
+  hourlySendCap          Int @default(12)
   minMinutesBetweenSends Int @default(3)
 
   /**
-   * Master switch for industry-only (CONTEXTUAL) drafts. Starts on, but the
-   * platform will turn it off on its own if the data says those sends aren't
-   * earning replies — see services/tier-performance.ts.
+   * Master switch for industry-only (CONTEXTUAL) drafts. The platform turns
+   * it off on its own if the data says those sends aren't earning replies —
+   * see services/tier-performance.ts.
    */
   allowContextual       Boolean   @default(true)
   contextualPausedAt    DateTime?
   contextualPauseReason String?
 
-  /** Rate card. Proposal pricing is arithmetic on these, never generated. */
-  dayRateCents        Int    @default(120000)
-  discoveryFeeCents   Int    @default(0)
-  supportMonthlyCents Int    @default(0)
-  currency            String @default("CAD")
+  /**
+   * Rate card. Proposal pricing is arithmetic on these, never generated.
+   */
+  dayRateCents        Int     @default(120000)
+  discoveryFeeCents   Int     @default(0)
+  supportMonthlyCents Int     @default(0)
+  currency            String  @default("CAD")
   proposalTerms       String?
-  proposalValidDays   Int    @default(30)
+  proposalValidDays   Int     @default(30)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  memberships   Membership[]
-  leads         Lead[]
-  campaigns     Campaign[]
-  templates     SolutionTemplate[]
-  proposals     Proposal[]
-  portfolios    PortfolioSite[]
-  suppressions  Suppression[]
-  mailboxes     Mailbox[]
-  auditLogs     AuditLog[]
-  apiKeys       ApiKey[]
-  tasks         Task[]
-  activities    Activity[]
-  discoveryRuns DiscoveryRun[]
-  aiRuns        AiRun[]
-  webhookEvents WebhookEvent[]
-  industryContexts IndustryContext[]
+  memberships       Membership[]
+  clients           Client[]
+  accounts          Account[]
+  contacts          Contact[]
+  campaigns         Campaign[]
+  messages          Message[]
+  templates         SolutionTemplate[]
+  proposals         Proposal[]
+  portfolios        PortfolioSite[]
+  suppressions      Suppression[]
+  mailboxes         Mailbox[]
+  auditLogs         AuditLog[]
+  apiKeys           ApiKey[]
+  tasks             Task[]
+  activities        Activity[]
+  discoveryRuns     DiscoveryRun[]
+  aiRuns            AiRun[]
+  webhookEvents     WebhookEvent[]
+  playbooks         Playbook[]
+  offers            Offer[]
+  icps              IdealCustomerProfile[]
+  proofPoints       ProofPoint[]
+  signals           Signal[]
+  calls             Call[]
+  callTasks         CallTask[]
+  meetings          Meeting[]
+  jobs              Job[]
+  usageRecords      UsageRecord[]
+  providerRecords   ProviderRecord[]
+  provenance        DataProvenance[]
+  connectorSettings ConnectorSetting[]
+  messageClaims     MessageClaim[]
 
   @@index([deletedAt])
 }
@@ -103,45 +129,61 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  memberships Membership[]
-  assignedLeads Lead[]  @relation("LeadOwner")
-  tasks       Task[]
-  activities  Activity[]
-  auditLogs   AuditLog[]
+  memberships    Membership[]
+  ownedAccounts  Account[]    @relation("AccountOwner")
+  tasks          Task[]
+  activities     Activity[]
+  auditLogs      AuditLog[]
+  calls          Call[]       @relation("Caller")
+  callTasks      CallTask[]   @relation("CallTaskAssignee")
+  meetingsBooked Meeting[]    @relation("MeetingBooker")
 }
 
+/**
+ * Three parties use Foundry. Internal staff (SUPER_ADMIN … CALLER) work across
+ * every client in the workspace; client users (CLIENT_*) are bound to exactly
+ * one client through Membership.clientId and never see internal operations.
+ * Permissions per role live in src/lib/rbac.ts.
+ */
 enum Role {
-  OWNER      // billing + destructive actions
-  ADMIN      // full operational control
-  OPERATOR   // can approve and send outreach
-  ANALYST    // read + draft, cannot send
-  VIEWER     // read only
+  SUPER_ADMIN // billing, members, everything
+  FOUNDRY_ADMIN // runs operations across all clients
+  OPERATOR // runs campaigns: approve, send, manage prospects
+  ANALYST // research, enrichment and drafting; cannot send
+  CALLER // call queue, call outcomes, meeting booking
+  CLIENT_ADMIN // client portal plus their business profile, offers, ICPs
+  CLIENT_MEMBER // client portal, read only
 }
 
 model Membership {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
-  userId         String       @db.Uuid
-  role           Role         @default(OPERATOR)
-  createdAt      DateTime     @default(now())
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  role           Role     @default(CLIENT_MEMBER)
+  /// Required for CLIENT_* roles; a client user without one has no access.
+  clientId       String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, userId])
   @@index([userId])
+  @@index([clientId])
 }
 
 model ApiKey {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
   name           String
   // Only the SHA-256 hash is stored; the plaintext is shown once at creation.
-  hashedKey      String   @unique
-  prefix         String   // first 8 chars, for display: "fdy_live_a1b2..."
+  hashedKey      String    @unique
+  prefix         String // first 8 chars, for display: "fdy_live_a1b2..."
   lastUsedAt     DateTime?
   revokedAt      DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -149,32 +191,285 @@ model ApiKey {
 }
 
 // ---------------------------------------------------------------------------
-// MODULE 1 — Lead discovery
+// Clients and what they sell
 // ---------------------------------------------------------------------------
 
-enum LeadStatus {
+enum ClientStatus {
+  ONBOARDING
+  ACTIVE
+  PAUSED
+  CHURNED
+}
+
+/**
+ * A business Foundry runs outbound for.
+ */
+model Client {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  name           String
+  slug           String
+  status         ClientStatus @default(ONBOARDING)
+
+  websiteUrl  String?
+  domain      String?
+  description String? @db.Text
+
+  /// What they sell, in their words.
+  productsServices  String[] @default([])
+  /// Where they can deliver: "Ontario", "Ontario–Michigan lanes".
+  serviceAreas      String[] @default([])
+  industriesServed  String[] @default([])
+  differentiators   String[] @default([])
+  /// Names or domains of current customers. Never prospected, and only
+  /// referenced in outreach through an approved ProofPoint.
+  existingCustomers String[] @default([])
+
+  averageDealValueCents Int?
+  currency              String @default("CAD")
+  timezone              String @default("America/Toronto")
+
+  /// Who outreach is signed by and where meetings get booked.
+  senderName  String?
+  senderTitle String?
+  bookingUrl  String?
+
+  primaryContactName  String?
+  primaryContactEmail String?
+  primaryContactPhone String?
+  /// Internal notes; never shown to the client.
+  notes               String? @db.Text
+
+  onboardedAt DateTime?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  Membership[]
+  offers       Offer[]
+  icps         IdealCustomerProfile[]
+  proofPoints  ProofPoint[]
+  playbooks    Playbook[]
+  accounts     Account[]
+  contacts     Contact[]
+  campaigns    Campaign[]
+  messages     Message[]
+  signals      Signal[]
+  calls        Call[]
+  callTasks    CallTask[]
+  meetings     Meeting[]
+  suppressions Suppression[]
+  usageRecords UsageRecord[]
+  research     Research[]
+  activities   Activity[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+}
+
+/**
+ * What the client is actually offering. Prospecting and messaging depend on it.
+ */
+model Offer {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @db.Uuid
+  clientId              String   @db.Uuid
+  name                  String
+  /// One line: "Dedicated Ontario–Michigan transportation capacity".
+  summary               String
+  description           String?  @db.Text
+  /// Why a buyer should care, in plain language.
+  valueProposition      String?  @db.Text
+  /// The smallest next step we ask for: "a 15-minute call".
+  callToAction          String   @default("A 15-minute call")
+  typicalDealValueCents Int?
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaigns    Campaign[]
+
+  @@index([clientId, isActive])
+}
+
+enum Seniority {
+  OWNER
+  C_LEVEL
+  VP
+  DIRECTOR
+  MANAGER
+  SENIOR
+  ENTRY
+  UNKNOWN
+}
+
+/**
+ * What a good customer looks like for one client. A client may have several.
+ */
+model IdealCustomerProfile {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  clientId       String  @db.Uuid
+  name           String
+  description    String? @db.Text
+
+  // Company criteria
+  industries         String[] @default([])
+  industryKeywords   String[] @default([])
+  excludedIndustries String[] @default([])
+  employeeMin        Int?
+  employeeMax        Int?
+  /// Regions, provinces, states or countries: "Ontario", "ON", "Michigan".
+  locations          String[] @default([])
+  /// Plain-language requirements research checks for: "Ships physical goods".
+  requiredAttributes String[] @default([])
+
+  // Contact criteria
+  targetTitles             String[]    @default([])
+  targetDepartments        String[]    @default([])
+  targetSeniorities        Seniority[] @default([])
+  /// Below this headcount the owner is usually the buyer.
+  smallCompanyMaxEmployees Int?
+  smallCompanyTitles       String[]    @default([])
+
+  // Signals that make an account timely
+  preferredSignals SignalType[] @default([])
+  signalKeywords   String[]     @default([])
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  accounts     Account[]
+  campaigns    Campaign[]
+
+  @@index([clientId, isActive])
+}
+
+enum ProofPointKind {
+  CASE_STUDY
+  TESTIMONIAL
+  CUSTOMER
+  RESULT
+  CERTIFICATION
+  CAPABILITY
+  OTHER
+}
+
+/**
+ * Statements the client can stand behind about itself. A draft may make a
+ * claim about the sender only if it comes from an approved proof point —
+ * the sender-side equivalent of a verified research citation.
+ */
+model ProofPoint {
+  id                  String         @id @default(uuid()) @db.Uuid
+  organizationId      String         @db.Uuid
+  clientId            String         @db.Uuid
+  kind                ProofPointKind @default(CAPABILITY)
+  title               String
+  /// Exactly how it may be said: "We run daily dedicated lanes Toronto–Detroit."
+  statement           String         @db.Text
+  customerName        String?
+  industry            String?
+  sourceUrl           String?
+  evidenceNote        String?
+  approvedForOutreach Boolean        @default(false)
+  approvedAt          DateTime?
+  approvedById        String?        @db.Uuid
+  isActive            Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, isActive])
+}
+
+/**
+ * How Foundry approaches a kind of campaign. Workspace templates
+ * (clientId = null) are copied onto clients and edited there. Nothing about
+ * an industry is hard-coded in the application; it lives in these rows.
+ */
+model Playbook {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  clientId       String? @db.Uuid
+  name           String
+  slug           String
+  description    String? @db.Text
+  industryFocus  String?
+
+  targetAccountTypes String[]     @default([])
+  targetTitles       String[]     @default([])
+  targetDepartments  String[]     @default([])
+  usefulSignals      SignalType[] @default([])
+  signalKeywords     String[]     @default([])
+  /// Factual claim types a draft may make without human review.
+  approvedClaimTypes ClaimType[]  @default([])
+
+  /// [{ key, name, description }]
+  messagingAngles       Json?
+  /// [{ order, delayDays, purpose, instructions }]
+  sequenceTemplate      Json?
+  callOpener            String?  @db.Text
+  discoveryQuestions    String[] @default([])
+  /// [{ objection: ObjectionType, response }]
+  objectionHandling     Json?
+  qualificationCriteria String[] @default([])
+  autoApproveThreshold  Float    @default(0.92)
+
+  isTemplate       Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  sourcePlaybookId String?  @db.Uuid
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaigns    Campaign[]
+
+  @@unique([organizationId, slug])
+  @@index([clientId])
+}
+
+// ---------------------------------------------------------------------------
+// Accounts (companies) and contacts (people)
+// ---------------------------------------------------------------------------
+
+enum AccountStatus {
   DISCOVERED
-  RESEARCHING
-  RESEARCHED
-  DRAFTED
-  APPROVED
-  CONTACTED
+  ENRICHED
+  QUALIFIED
+  ACTIVE_OUTREACH
   ENGAGED
+  CALLING
   MEETING_BOOKED
-  PROPOSAL_SENT
   WON
   LOST
   DISQUALIFIED
-  SUPPRESSED
 }
 
-enum LeadTemperature {
+enum EnrichmentStatus {
+  NOT_STARTED
+  PENDING
+  ENRICHED
+  PARTIAL
+  FAILED
+}
+
+enum Temperature {
   COLD
   WARM
   HOT
 }
 
-enum LeadSource {
+enum DataSource {
   MANUAL
   CSV_IMPORT
   GOOGLE_PLACES
@@ -185,88 +480,115 @@ enum LeadSource {
   REFERRAL
   INBOUND
   OTHER
+  PROVIDER
+  RESEARCH
+  CLIENT_PROVIDED
 }
 
-model Lead {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
+/**
+ * A company one client may sell to.
+ */
+model Account {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  clientId       String @db.Uuid
 
-  companyName  String
-  legalName    String?
-  websiteUrl   String?
-  domain       String?          // normalized, used for dedupe
-  linkedinUrl  String?
-  phone        String?
-  industry     String?
-  naicsCode    String?
+  name          String
+  legalName     String?
+  websiteUrl    String?
+  domain        String? // normalized, used for dedupe within a client
+  linkedinUrl   String?
+  phone         String?
+  industry      String?
+  naicsCode     String?
   employeeCount Int?
-  employeeRange String?         // "1-10", "11-50" when exact is unknown
+  employeeRange String? // "11-50" when exact is unknown
+  revenueRange  String?
+  description   String? @db.Text
+  foundedYear   Int?
 
-  addressLine  String?
-  city         String?
-  region       String?          // province / state
-  postalCode   String?
-  country      String?  @default("CA")
-  latitude     Float?
-  longitude    Float?
+  addressLine String?
+  city        String?
+  region      String? // province / state
+  postalCode  String?
+  country     String? @default("CA")
+  latitude    Float?
+  longitude   Float?
+  timezone    String?
 
-  techStack    String[] @default([])
-  keywords     String[] @default([])
-  tags         String[] @default([])
+  techStack String[] @default([])
+  keywords  String[] @default([])
+  tags      String[] @default([])
 
-  status       LeadStatus      @default(DISCOVERED)
-  temperature  LeadTemperature @default(COLD)
-  score        Int             @default(0)   // 0-100, see server/scoring.ts
-  scoreBreakdown Json?
+  status           AccountStatus    @default(DISCOVERED)
+  enrichmentStatus EnrichmentStatus @default(NOT_STARTED)
+  enrichedAt       DateTime?
+  researchSummary  String?          @db.Text
+  /// The client ICP this account was scored against.
+  icpId            String?          @db.Uuid
+
+  /// Overall opportunity score, 0-100. See services/scoring/.
+  score               Int         @default(0)
+  /// Fit component (0-40), denormalized for sorting and analytics.
+  fitScore            Int         @default(0)
+  /// Engagement component (0-10).
+  engagementScore     Int         @default(0)
+  scoreBreakdown      Json?
+  /// Null means the score is stale and the worker will recompute it.
+  scoredAt            DateTime?
+  scoreOverride       Int?
+  scoreOverrideReason String?
+  scoreOverriddenById String?     @db.Uuid
+  scoreOverriddenAt   DateTime?
+  temperature         Temperature @default(COLD)
   estimatedValueCents Int?
-  notes        String?
+  notes               String?
+  disqualifiedReason  String?
 
-  source       LeadSource @default(MANUAL)
-  sourceRef    String?    // provider-side id, for re-sync
-  discoveryRunId String?  @db.Uuid
-
-  ownerId      String?    @db.Uuid
+  source         DataSource @default(MANUAL)
+  sourceRef      String? // provider-side id, for re-sync
+  discoveryRunId String?    @db.Uuid
+  ownerId        String?    @db.Uuid
 
   // Compliance
-  suppressedAt   DateTime?
-  suppressReason String?
+  doNotContact    Boolean   @default(false)
+  suppressedAt    DateTime?
+  suppressReason  String?
   lastContactedAt DateTime?
+  lastEngagedAt   DateTime?
   nextFollowUpAt  DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  owner        User?         @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  discoveryRun DiscoveryRun? @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  icp          IdealCustomerProfile? @relation(fields: [icpId], references: [id], onDelete: SetNull)
+  owner        User?                 @relation("AccountOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  discoveryRun DiscoveryRun?         @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
 
-  contacts     Contact[]
-  research     Research?
-  activities   Activity[]
-  tasks        Task[]
-  messages     Message[]
-  enrollments  CampaignEnrollment[]
-  proposals    Proposal[]
-  portfolios   PortfolioSite[]
-  meetings     Meeting[]
+  contacts    Contact[]
+  research    Research?
+  activities  Activity[]
+  tasks       Task[]
+  messages    Message[]
+  enrollments CampaignEnrollment[]
+  proposals   Proposal[]
+  portfolios  PortfolioSite[]
+  meetings    Meeting[]
+  signals     Signal[]
+  calls       Call[]
+  callTasks   CallTask[]
+  provenance  DataProvenance[]
 
-  @@unique([organizationId, domain])
-  @@index([organizationId, status])
-  @@index([organizationId, score(sort: Desc)])
+  @@unique([clientId, domain])
+  @@index([organizationId, clientId, status])
+  @@index([clientId, score(sort: Desc)])
   @@index([organizationId, industry])
   @@index([organizationId, city])
   @@index([organizationId, nextFollowUpAt])
-}
-
-enum ContactRole {
-  OWNER
-  DECISION_MAKER
-  OPERATIONS
-  FINANCE
-  IT
-  OFFICE_MANAGER
-  OTHER
+  @@index([scoredAt])
 }
 
 enum EmailVerification {
@@ -277,51 +599,127 @@ enum EmailVerification {
   CATCH_ALL
 }
 
+enum PhoneStatus {
+  UNVERIFIED
+  VALID
+  INVALID
+  WRONG_NUMBER
+}
+
+enum ContactStatus {
+  ACTIVE
+  BOUNCED
+  LEFT_COMPANY
+  WRONG_PERSON
+}
+
+/**
+ * The legal basis on file for contacting someone. Recorded, never inferred —
+ * Foundry does not decide what the law allows.
+ */
+enum ConsentBasis {
+  UNKNOWN
+  IMPLIED_PUBLISHED
+  IMPLIED_RELATIONSHIP
+  EXPRESS
+}
+
+/**
+ * A person at an account.
+ */
 model Contact {
-  id       String @id @default(uuid()) @db.Uuid
-  leadId   String @db.Uuid
+  id             String @id @default(uuid()) @db.Uuid
   organizationId String @db.Uuid
+  clientId       String @db.Uuid
+  accountId      String @db.Uuid
 
-  firstName String?
-  lastName  String?
-  title     String?
-  role      ContactRole @default(OTHER)
-  email     String?
+  firstName       String?
+  lastName        String?
+  title           String?
+  department      String?
+  seniority       Seniority @default(UNKNOWN)
+  isDecisionMaker Boolean   @default(false)
+
+  email             String?
   emailVerification EmailVerification @default(UNVERIFIED)
-  phone     String?
-  linkedinUrl String?
-  isPrimary Boolean @default(false)
+  emailVerifiedAt   DateTime?
+  phone             String?
+  phoneStatus       PhoneStatus       @default(UNVERIFIED)
+  directPhone       String?
+  mobilePhone       String?
+  linkedinUrl       String?
+  city              String?
+  region            String?
+  country           String?
+  timezone          String?
+  isPrimary         Boolean           @default(false)
+  status            ContactStatus     @default(ACTIVE)
+
   // Where this came from — required for defensible outreach.
-  sourceUrl String?
+  source         DataSource @default(MANUAL)
+  sourceProvider String?
+  sourceRef      String?
+  sourceUrl      String?
+  sourcedAt      DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  score          Int   @default(0)
+  scoreBreakdown Json?
 
-  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lastContactedAt DateTime?
+  lastRepliedAt   DateTime?
+  lastCalledAt    DateTime?
+  callAttempts    Int       @default(0)
 
-  @@unique([leadId, email])
+  // Compliance
+  doNotEmail     Boolean      @default(false)
+  doNotCall      Boolean      @default(false)
+  unsubscribedAt DateTime?
+  suppressedAt   DateTime?
+  suppressReason String?
+  consentBasis   ConsentBasis @default(UNKNOWN)
+  consentNote    String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account      Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  enrollments  CampaignEnrollment[]
+  calls        Call[]
+  callTask     CallTask?
+  meetings     Meeting[]
+  activities   Activity[]
+  provenance   DataProvenance[]
+
+  @@unique([accountId, email])
   @@index([organizationId, email])
+  @@index([clientId, score(sort: Desc)])
 }
 
 model DiscoveryRun {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @db.Uuid
+  clientId       String?    @db.Uuid
+  icpId          String?    @db.Uuid
   name           String
-  provider       LeadSource
-  filters        Json      // industry, geo, size, keywords, tech
-  status         JobStatus @default(QUEUED)
-  requested      Int       @default(0)
-  found          Int       @default(0)
-  imported       Int       @default(0)
-  duplicates     Int       @default(0)
-  costCents      Int       @default(0)
+  provider       DataSource
+  filters        Json // industry, geo, size, keywords, tech
+  status         JobStatus  @default(QUEUED)
+  requested      Int        @default(0)
+  found          Int        @default(0)
+  imported       Int        @default(0)
+  duplicates     Int        @default(0)
+  costCents      Int        @default(0)
   error          String?
   startedAt      DateTime?
   finishedAt     DateTime?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime   @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  leads        Lead[]
+  accounts     Account[]
 
   @@index([organizationId, status])
 }
@@ -329,65 +727,140 @@ model DiscoveryRun {
 enum JobStatus {
   QUEUED
   RUNNING
-  SUCCEEDED
+  COMPLETED
   FAILED
   CANCELLED
+  RETRYING
 }
 
 // ---------------------------------------------------------------------------
-// MODULE 2 — AI company research
+// Signals, research and evidence
 // ---------------------------------------------------------------------------
 
-model Research {
-  id       String @id @default(uuid()) @db.Uuid
-  leadId   String @unique @db.Uuid
-  organizationId String @db.Uuid
+enum SignalType {
+  HIRING
+  FUNDING
+  EXPANSION
+  NEW_LOCATION
+  NEW_CONTRACT
+  NEW_PRODUCT
+  TECHNOLOGY_CHANGE
+  LEADERSHIP_CHANGE
+  REGULATORY_EVENT
+  CUSTOM_SIGNAL
+}
 
-  status   JobStatus @default(QUEUED)
+/**
+ * How far a piece of evidence has been checked.
+ */
+enum EvidenceStatus {
+  VERIFIED // quote located on the source page, or independently confirmed
+  PROVIDER_REPORTED // returned by a data provider, not independently checked
+  UNVERIFIED // entered by hand or imported
+  REJECTED // disproven: quote not found, email bounced, wrong number
+}
+
+/**
+ * Something about an account that may make outreach relevant now.
+ */
+model Signal {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  clientId       String @db.Uuid
+  accountId      String @db.Uuid
+
+  type        SignalType
+  title       String
+  summary     String?    @db.Text
+  sourceUrl   String?
+  sourceQuote String?    @db.Text
+  sourceTitle String?
+
+  source           DataSource     @default(RESEARCH)
+  provider         String?
+  providerRecordId String?        @db.Uuid
+  detectedAt       DateTime       @default(now())
+  /// When the event itself happened, if the source says.
+  eventDate        DateTime?
+  confidence       Float          @default(0.5)
+  evidenceStatus   EvidenceStatus @default(UNVERIFIED)
+  metadata         Json?
+
+  dismissedAt   DateTime?
+  dismissedById String?   @db.Uuid
+  dismissReason String?
+  createdById   String?   @db.Uuid
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account      Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  claims       MessageClaim[]
+
+  @@index([accountId, detectedAt(sort: Desc)])
+  @@index([clientId, type, detectedAt])
+}
+
+model Research {
+  id             String  @id @default(uuid()) @db.Uuid
+  accountId      String  @unique @db.Uuid
+  organizationId String  @db.Uuid
+  clientId       String  @db.Uuid
+  /// The offer the research was framed around.
+  offerId        String? @db.Uuid
+
+  status JobStatus @default(QUEUED)
 
   // Raw evidence — every generated claim must trace back to one of these.
-  pagesCrawled Json?    // [{url, title, fetchedAt, chars}]
-  rawExtract   String?  @db.Text
+  pagesCrawled Json? // [{id, url, title, fetchedAt, chars}]
+  rawExtract   String? @db.Text
 
-  companySummary   String? @db.Text
+  companySummary   String?  @db.Text
   servicesOffered  String[] @default([])
   detectedSoftware String[] @default([])
-  observedSignals  Json?    // {bookingForm:false, careersPage:true, ...}
+  observedSignals  Json? // {careersPage:true, ...}
 
-  // Generated, always paired with sourceUrl citations in `citations`
-  painPoints        Json?   // [{title, rationale, confidence, sourceUrls[]}]
-  opportunities     Json?   // [{title, workflow, tooling[], effortDays, sourceUrls[]}]
-  talkingPoints     String[] @default([])
-  citations         Json?
+  /// Verified facts with claim types: [{id, claimType, statement, citations[]}]
+  facts     Json?
+  /// Why this account might care about the client's offer, grounded.
+  relevance Json?
+
+  // Legacy (automation-agency research); read by proposals.
+  painPoints    Json?
+  opportunities Json?
+  talkingPoints String[] @default([])
+  citations     Json?
 
   estimatedHoursSavedPerMonth Int?
   estimatedAnnualSavingsCents Int?
-  roiAssumptions              Json?   // shown in UI so numbers are never a black box
-  confidence                  Float?  // 0-1
+  roiAssumptions              Json?
+  confidence                  Float? // 0-1
 
-  model       String?
+  model         String?
   promptVersion String?
-  tokensIn    Int?
-  tokensOut   Int?
-  costCents   Int?
-  error       String?
+  tokensIn      Int?
+  tokensOut     Int?
+  costCents     Int?
+  error         String?
 
   refreshedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, status])
 }
 
 // ---------------------------------------------------------------------------
-// MODULE 3 — Industry solution library
+// Industry solution library (legacy agency tooling)
 // ---------------------------------------------------------------------------
 
 model SolutionTemplate {
   id             String  @id @default(uuid()) @db.Uuid
-  organizationId String? @db.Uuid   // null = built-in, shipped with the platform
+  organizationId String? @db.Uuid // null = built-in, shipped with the platform
   slug           String
   industry       String
   title          String
@@ -397,16 +870,16 @@ model SolutionTemplate {
   accentColor    String  @default("#4F46E5")
 
   // The demo itself is data-driven so one renderer serves every industry.
-  spec           Json    // {kpis[], charts[], workflows[], portals[], modules[]}
-  sampleData     Json    // deterministic seed data powering the charts
-  workflowDiagram Json?  // nodes/edges for the automation diagram renderer
+  spec            Json // {kpis[], charts[], workflows[], portals[], modules[]}
+  sampleData      Json // deterministic seed data powering the charts
+  workflowDiagram Json? // nodes/edges for the automation diagram renderer
 
-  isPublished    Boolean @default(false)
-  version        Int     @default(1)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isPublished Boolean  @default(false)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization?   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   portfolios   PortfolioSite[]
 
   @@unique([organizationId, slug])
@@ -414,24 +887,24 @@ model SolutionTemplate {
 }
 
 // ---------------------------------------------------------------------------
-// MODULES 4-6 — Personalization, campaigns, follow-up
+// Campaigns, messages, verification
 // ---------------------------------------------------------------------------
 
 model Mailbox {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
   provider       MailProvider @default(RESEND)
   fromName       String
   fromEmail      String
   replyToEmail   String?
   // Domain auth status, refreshed from provider
-  spfVerified    Boolean @default(false)
-  dkimVerified   Boolean @default(false)
-  dmarcVerified  Boolean @default(false)
-  dailyCap       Int     @default(50)
-  warmupStage    Int     @default(0)
-  isActive       Boolean @default(true)
-  createdAt      DateTime @default(now())
+  spfVerified    Boolean      @default(false)
+  dkimVerified   Boolean      @default(false)
+  dmarcVerified  Boolean      @default(false)
+  dailyCap       Int          @default(50)
+  warmupStage    Int          @default(0)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   messages     Message[]
@@ -456,55 +929,91 @@ enum CampaignStatus {
   ARCHIVED
 }
 
+/**
+ * REVIEW_ALL            — every draft waits for a human.
+ * AUTO_APPROVE_VERIFIED — drafts whose verification clears the campaign
+ * threshold, and whose factual claims are all of
+ * approved types, are approved by policy; the rest
+ * go to review. The send gate runs either way.
+ */
+enum ApprovalMode {
+  REVIEW_ALL
+  AUTO_APPROVE_VERIFIED
+}
+
 model Campaign {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  clientId       String         @db.Uuid
+  icpId          String?        @db.Uuid
+  offerId        String?        @db.Uuid
+  playbookId     String?        @db.Uuid
   name           String
   status         CampaignStatus @default(DRAFT)
-  mailboxId      String? @db.Uuid
+  mailboxId      String?        @db.Uuid
 
   objective      String?
   industryFocus  String?
-  // Personalization brief handed to the model for every lead in the campaign.
-  personaBrief   String? @db.Text
-  offerBrief     String? @db.Text
-  toneGuidelines String? @db.Text
+  // Personalization brief handed to the model for every contact.
+  personaBrief   String?  @db.Text
+  offerBrief     String?  @db.Text
+  toneGuidelines String?  @db.Text
   bannedPhrases  String[] @default([])
 
-  // Sending window, org timezone
-  sendDays       Int[]  @default([1,2,3,4,5])
-  sendStartHour  Int    @default(8)
-  sendEndHour    Int    @default(16)
-  dailyCap       Int    @default(30)
+  // Sending window. Timezone falls back to the client's.
+  timezone      String?
+  sendDays      Int[]   @default([1, 2, 3, 4, 5])
+  sendStartHour Int     @default(8)
+  sendEndHour   Int     @default(16)
+  dailyCap      Int     @default(30)
 
-  requireApproval Boolean @default(true)   // cannot be disabled on TRIAL/SOLO
-  /** Whether contextual (unpersonalized) drafts may be generated at all. */
-  allowContextual Boolean @default(true)
-  /** Hard ceiling on contextual sends per day, separate from the overall cap. */
-  contextualDailyCap Int @default(10)
+  approvalMode          ApprovalMode @default(REVIEW_ALL)
+  autoApproveThreshold  Float        @default(0.92)
+  approvedClaimTypes    ClaimType[]  @default([])
+  maxContactsPerAccount Int          @default(1)
+  /// Put engaged contacts into the call queue.
+  callFollowUp          Boolean      @default(true)
+
+  /**
+   * Whether contextual (unpersonalized) drafts may be generated at all.
+   */
+  allowContextual    Boolean @default(true)
+  /**
+   * Hard ceiling on contextual sends per day, separate from the overall cap.
+   */
+  contextualDailyCap Int     @default(10)
 
   startedAt   DateTime?
   completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  mailbox      Mailbox?     @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  icp          IdealCustomerProfile? @relation(fields: [icpId], references: [id], onDelete: SetNull)
+  offer        Offer?                @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  playbook     Playbook?             @relation(fields: [playbookId], references: [id], onDelete: SetNull)
+  mailbox      Mailbox?              @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
   steps        CampaignStep[]
   enrollments  CampaignEnrollment[]
   messages     Message[]
+  calls        Call[]
+  callTasks    CallTask[]
+  meetings     Meeting[]
+  usageRecords UsageRecord[]
 
   @@index([organizationId, status])
+  @@index([clientId, status])
 }
 
 model CampaignStep {
-  id         String @id @default(uuid()) @db.Uuid
-  campaignId String @db.Uuid
-  order      Int
+  id           String  @id @default(uuid()) @db.Uuid
+  campaignId   String  @db.Uuid
+  order        Int
   // Delay measured from the previous step's send, in hours. Step 0 = 0.
-  delayHours Int    @default(0)
-  purpose    String // "opener" | "value-add" | "case-study" | "breakup"
-  instructions String @db.Text  // fed to the personalization engine
+  delayHours   Int     @default(0)
+  purpose      String // "opener" | "follow-up" | "new-angle" | "breakup"
+  instructions String  @db.Text // fed to the personalization engine
   stopOnReply  Boolean @default(true)
 
   campaign Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -524,30 +1033,35 @@ enum EnrollmentStatus {
   REMOVED
 }
 
+/**
+ * One contact moving through one campaign's sequence.
+ */
 model CampaignEnrollment {
-  id         String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  campaignId String @db.Uuid
-  leadId     String @db.Uuid
-  contactId  String? @db.Uuid
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  campaignId     String  @db.Uuid
+  accountId      String  @db.Uuid
+  contactId      String? @db.Uuid
 
-  status         EnrollmentStatus @default(PENDING)
-  currentStep    Int      @default(0)
-  nextActionAt   DateTime?
-  exitReason     String?
-  enrolledAt     DateTime @default(now())
-  completedAt    DateTime?
+  status       EnrollmentStatus @default(PENDING)
+  currentStep  Int              @default(0)
+  nextActionAt DateTime?
+  exitReason   String?
+  enrolledAt   DateTime         @default(now())
+  completedAt  DateTime?
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@unique([campaignId, leadId])
+  @@unique([campaignId, contactId])
   @@index([organizationId, status, nextActionAt])
+  @@index([accountId])
 }
 
 enum MessageStatus {
   GENERATING
-  DRAFT          // awaiting human review — the default resting state
+  DRAFT // awaiting human review
   NEEDS_EDIT
   APPROVED
   SCHEDULED
@@ -570,9 +1084,9 @@ enum MessageDirection {
 
 /**
  * How much the draft actually knows about the recipient.
- * VERIFIED   — every specific claim traces to a grounded research citation.
- * CONTEXTUAL — research found nothing usable; the draft speaks to the industry
- *              and location only and makes no company-specific claims.
+ * VERIFIED   — every specific claim traces to verified evidence.
+ * CONTEXTUAL — nothing usable was found; the draft speaks to the industry and
+ * the sender's own approved proof points only.
  * NONE       — no personalization at all. Blocked from sending by default.
  */
 enum PersonalizationTier {
@@ -582,18 +1096,36 @@ enum PersonalizationTier {
 }
 
 /**
- * How much of this draft is grounded in the recipient's own website.
- * VERIFIED    — every specific claim traces to a research citation.
- * CONTEXTUAL  — research found nothing usable; the draft speaks to the
- *               industry and location only, from the agency's own context
- *               library. Still ledger-backed, never invented.
+ * Outcome of claim-level verification on a draft.
  */
+enum VerificationStatus {
+  VERIFIED
+  PARTIALLY_VERIFIED
+  REVIEW_REQUIRED
+  UNSUPPORTED
+  BLOCKED
+}
 
+enum ApprovalSource {
+  HUMAN
+  POLICY
+}
+
+enum ReplyClass {
+  UNCLASSIFIED
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+  OUT_OF_OFFICE
+  REFERRAL
+  UNSUBSCRIBE
+}
 
 model Message {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  leadId         String @db.Uuid
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  clientId       String  @db.Uuid
+  accountId      String  @db.Uuid
   contactId      String? @db.Uuid
   campaignId     String? @db.Uuid
   campaignStepId String? @db.Uuid
@@ -602,63 +1134,96 @@ model Message {
   direction MessageDirection @default(OUTBOUND)
   status    MessageStatus    @default(DRAFT)
 
-  subject   String?
-  bodyText  String? @db.Text
-  bodyHtml  String? @db.Text
+  subject  String?
+  bodyText String? @db.Text
+  bodyHtml String? @db.Text
 
-  // Personalization provenance — every draft records what it was built from,
-  // so a reviewer can verify each personalized claim before approving.
+  // Personalization provenance — every draft records what it was built from.
   personalizationTier  PersonalizationTier @default(VERIFIED)
-  /** Why this fell back to CONTEXTUAL — shown in the review queue. */
+  /**
+   * Why this fell back to CONTEXTUAL — shown in the review queue.
+   */
   contextualReason     String?
-  personalizationFacts Json?   // [{factId, statement, sourceUrl, sentence}]
-  /** Specific claims the linter could not tie to a ledger fact. */
+  personalizationFacts Json? // [{factId, statement, sourceUrl, claim}]
+  /**
+   * Specific claims the linter could not tie to a ledger fact.
+   */
   unverifiedClaims     Json?
-  /** Full lint output (blockers and warnings) from the last draft or edit; gates approve/send. */
+  /**
+   * Full lint output (blockers and warnings); gates approve/send.
+   */
   lintFindings         Json?
-  model         String?
-  promptVersion String?
-  generationCostCents Int?
-  revisionOf    String? @db.Uuid
-  editedByHuman Boolean @default(false)
 
-  approvedById String?  @db.Uuid
-  approvedAt   DateTime?
-  scheduledFor DateTime?
-  sentAt       DateTime?
+  // Claim-level verification
+  verificationStatus  VerificationStatus?
+  verificationScore   Float?
+  verificationSummary Json?
+  verifiedAt          DateTime?
+
+  model               String?
+  promptVersion       String?
+  generationCostCents Int?
+  revisionOf          String? @db.Uuid
+  editedByHuman       Boolean @default(false)
+
+  approvedById   String?         @db.Uuid
+  approvedAt     DateTime?
+  approvalSource ApprovalSource?
+  /// Snapshot of the policy that approved it: threshold, claim types, score.
+  approvalPolicy Json?
+  scheduledFor   DateTime?
+  sentAt         DateTime?
+
+  // Learning features, captured at send time
+  stepOrder          Int?
+  angle              String?
+  ctaType            String?
+  variantKey         String?
+  signalIds          String[] @default([])
+  accountScoreAtSend Int?
+  contactScoreAtSend Int?
+
+  // Inbound only
+  replyClass        ReplyClass?
+  replyClassifiedAt DateTime?
 
   providerMessageId String? @unique
   threadId          String?
   inReplyTo         String?
 
-  openCount  Int @default(0)
-  clickCount Int @default(0)
+  openCount     Int       @default(0)
+  clickCount    Int       @default(0)
   firstOpenedAt DateTime?
-  bounceType String?
+  bounceType    String?
   failureReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead         Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  campaign     Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  campaignStep CampaignStep? @relation(fields: [campaignStepId], references: [id], onDelete: SetNull)
-  mailbox      Mailbox?      @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account      Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact      Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaign     Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignStep CampaignStep?  @relation(fields: [campaignStepId], references: [id], onDelete: SetNull)
+  mailbox      Mailbox?       @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
   events       MessageEvent[]
+  claims       MessageClaim[]
 
   @@index([organizationId, status])
   @@index([organizationId, status, personalizationTier])
   @@index([organizationId, scheduledFor])
-  @@index([leadId, createdAt])
+  @@index([clientId, direction, sentAt])
+  @@index([accountId, createdAt])
+  @@index([contactId, createdAt])
   @@index([threadId])
 }
 
 model MessageEvent {
-  id        String   @id @default(uuid()) @db.Uuid
-  messageId String   @db.Uuid
-  type      String   // delivered | opened | clicked | bounced | complained | replied
-  payload   Json?
+  id         String   @id @default(uuid()) @db.Uuid
+  messageId  String   @db.Uuid
+  type       String // delivered | opened | clicked | bounced | complained | replied
+  payload    Json?
   occurredAt DateTime @default(now())
 
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
@@ -666,9 +1231,91 @@ model MessageEvent {
   @@index([messageId, occurredAt])
 }
 
+/**
+ * Kinds of factual statement a draft can make about a prospect.
+ */
+enum ClaimType {
+  JOB_TITLE
+  COMPANY_LOCATION
+  COMPANY_INDUSTRY
+  COMPANY_SIZE
+  PRODUCTS_SERVICES
+  SERVICE_AREA
+  HIRING
+  EXPANSION
+  NEW_LOCATION
+  FUNDING
+  NEW_CONTRACT
+  NEW_PRODUCT
+  TECHNOLOGY_USED
+  LEADERSHIP_CHANGE
+  CUSTOMER_OR_PARTNER
+  AWARD_OR_CERTIFICATION
+  REGULATORY_EVENT
+  OTHER_FACT
+}
+
+enum ClaimKind {
+  PROSPECT_FACT // about the recipient; needs evidence
+  SENDER_PROOF // about the client; needs an approved proof point
+  GENERAL_COPY // sales copy that asserts nothing checkable
+}
+
+enum ClaimStatus {
+  SUPPORTED
+  PARTIALLY_SUPPORTED
+  UNSUPPORTED
+  CONTRADICTED
+  STALE
+  NOT_REQUIRED
+}
+
+/**
+ * One checkable statement in a draft and the evidence behind it.
+ */
+model MessageClaim {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  messageId      String      @db.Uuid
+  text           String      @db.Text
+  kind           ClaimKind
+  claimType      ClaimType?
+  status         ClaimStatus
+  supportScore   Float       @default(0)
+  /// Whether claimType was in the campaign's approved list at verification.
+  approvedType   Boolean     @default(false)
+  factId         String?
+  signalId       String?     @db.Uuid
+  proofPointId   String?     @db.Uuid
+  sourceUrl      String?
+  sourceQuote    String?     @db.Text
+  evidenceDate   DateTime?
+  freshnessDays  Int?
+  reason         String?
+  createdAt      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  message      Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  signal       Signal?      @relation(fields: [signalId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([organizationId, claimType, status])
+}
+
+// ---------------------------------------------------------------------------
+// Compliance
+// ---------------------------------------------------------------------------
+
 enum SuppressionScope {
   EMAIL
   DOMAIN
+  PHONE
+}
+
+enum SuppressionChannel {
+  ALL
+  EMAIL
+  PHONE
 }
 
 enum SuppressionReason {
@@ -679,37 +1326,63 @@ enum SuppressionReason {
   DO_NOT_CONTACT
   COMPETITOR
   EXISTING_CLIENT
+  DO_NOT_CALL
 }
 
+enum SuppressionSource {
+  UNSUBSCRIBE_LINK
+  ONE_CLICK
+  EMAIL_REPLY
+  BOUNCE_WEBHOOK
+  COMPLAINT_WEBHOOK
+  CALL_OUTCOME
+  MANUAL
+  IMPORT
+  SYSTEM
+}
+
+/**
+ * Who not to contact, on which channel. clientId = null applies to every
+ * client in the workspace (the default for opt-outs, bounces and complaints);
+ * a client-scoped entry only blocks that client's outreach (e.g. their
+ * existing customers).
+ */
 model Suppression {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  scope          SuppressionScope  @default(EMAIL)
-  value          String            // lowercased email or bare domain
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  clientId       String?            @db.Uuid
+  scope          SuppressionScope   @default(EMAIL)
+  channel        SuppressionChannel @default(ALL)
+  value          String // lowercased email, bare domain, or E.164-ish digits
   reason         SuppressionReason
+  source         SuppressionSource  @default(MANUAL)
   note           String?
-  createdAt      DateTime @default(now())
+  contactId      String?            @db.Uuid
+  campaignId     String?            @db.Uuid
+  createdById    String?            @db.Uuid
+  createdAt      DateTime           @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, scope, value])
+  @@index([organizationId, scope, value])
   @@index([value])
 }
 
 // Signed, single-use-per-recipient opt-out links (CAN-SPAM / CASL / GDPR).
 model UnsubscribeToken {
-  id        String   @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  email     String
-  token     String   @unique
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  email          String
+  token          String    @unique
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
 
   @@index([organizationId, email])
 }
 
 // ---------------------------------------------------------------------------
-// MODULE 7 — CRM
+// Activity, calls, meetings
 // ---------------------------------------------------------------------------
 
 enum ActivityType {
@@ -724,24 +1397,34 @@ enum ActivityType {
   PROPOSAL_VIEWED
   RESEARCH_COMPLETED
   SYSTEM
+  SIGNAL_DETECTED
+  ENRICHMENT
+  SUPPRESSION
+  SCORE_OVERRIDE
 }
 
 model Activity {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  leadId         String @db.Uuid
-  userId         String? @db.Uuid
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  clientId       String       @db.Uuid
+  accountId      String       @db.Uuid
+  contactId      String?      @db.Uuid
+  campaignId     String?      @db.Uuid
+  userId         String?      @db.Uuid
   type           ActivityType
   title          String
-  body           String? @db.Text
+  body           String?      @db.Text
   metadata       Json?
-  occurredAt     DateTime @default(now())
+  occurredAt     DateTime     @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([leadId, occurredAt(sort: Desc)])
+  @@index([accountId, occurredAt(sort: Desc)])
+  @@index([contactId, occurredAt(sort: Desc)])
   @@index([organizationId, type, occurredAt])
 }
 
@@ -753,46 +1436,239 @@ enum TaskStatus {
 }
 
 model Task {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  leadId         String? @db.Uuid
-  assigneeId     String? @db.Uuid
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @db.Uuid
+  accountId      String?    @db.Uuid
+  assigneeId     String?    @db.Uuid
   title          String
-  description    String? @db.Text
+  description    String?    @db.Text
   status         TaskStatus @default(OPEN)
-  priority       Int       @default(2)  // 1 high, 2 normal, 3 low
+  priority       Int        @default(2) // 1 high, 2 normal, 3 low
   dueAt          DateTime?
   completedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead     Lead? @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  assignee User? @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  account      Account?     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  assignee     User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, dueAt])
 }
 
-model Meeting {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  leadId         String @db.Uuid
-  title          String
-  startsAt       DateTime
-  endsAt         DateTime
-  location       String?
-  externalRef    String?   // Cal.com / Google Calendar event id
-  outcome        String?   @db.Text
-  noShow         Boolean   @default(false)
-  createdAt      DateTime  @default(now())
+enum CallDirection {
+  OUTBOUND
+  INBOUND
+}
 
-  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+enum CallOutcome {
+  NO_ANSWER
+  VOICEMAIL
+  CONNECTED
+  NOT_INTERESTED
+  CALL_BACK
+  WRONG_PERSON
+  WRONG_NUMBER
+  REFERRED
+  INTERESTED
+  QUALIFIED
+  MEETING_BOOKED
+  DO_NOT_CALL
+}
+
+enum ObjectionType {
+  TOO_EXPENSIVE
+  ALREADY_HAVE_PROVIDER
+  BAD_TIMING
+  NO_NEED
+  SEND_INFORMATION
+  NOT_DECISION_MAKER
+  OTHER
+}
+
+/**
+ * One dial and what happened. Snapshots of the queue priority and reasons at
+ * the moment of the call are kept so the ranking can later be judged against
+ * outcomes.
+ */
+model Call {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  clientId       String        @db.Uuid
+  accountId      String        @db.Uuid
+  contactId      String?       @db.Uuid
+  campaignId     String?       @db.Uuid
+  callTaskId     String?       @db.Uuid
+  callerId       String?       @db.Uuid
+  direction      CallDirection @default(OUTBOUND)
+  phoneNumber    String?
+
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  durationSeconds Int?
+
+  outcome       CallOutcome
+  objections    ObjectionType[] @default([])
+  objectionNote String?
+  notes         String?         @db.Text
+  callbackAt    DateTime?
+  /// { name, title, email, phone } when the outcome is REFERRED.
+  referredTo    Json?
+
+  provider       String  @default("manual")
+  providerCallId String?
+  recordingUrl   String?
+
+  queuePriorityAtCall Int?
+  queueReasonsAtCall  Json?
+  accountScoreAtCall  Int?
+  contactScoreAtCall  Int?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  caller       User?        @relation("Caller", fields: [callerId], references: [id], onDelete: SetNull)
+  meeting      Meeting?
+
+  @@index([organizationId, clientId, startedAt])
+  @@index([contactId, startedAt])
+  @@index([callerId, startedAt])
+}
+
+enum CallTaskStatus {
+  OPEN
+  SNOOZED
+  COMPLETED
+  CANCELLED
+}
+
+enum CallTaskCategory {
+  CALLBACK_DUE
+  REPLIED
+  ENGAGED
+  SIGNAL
+  HIGH_FIT
+  MANUAL
+}
+
+/**
+ * A contact's place in the call queue. One row per contact; the history of
+ * attempts lives in Call. Priority and reasons are recomputed by
+ * services/call-queue whenever engagement, signals or outcomes change.
+ */
+model CallTask {
+  id              String           @id @default(uuid()) @db.Uuid
+  organizationId  String           @db.Uuid
+  clientId        String           @db.Uuid
+  accountId       String           @db.Uuid
+  contactId       String           @unique @db.Uuid
+  campaignId      String?          @db.Uuid
+  assigneeId      String?          @db.Uuid
+  status          CallTaskStatus   @default(OPEN)
+  category        CallTaskCategory
+  priority        Int              @default(0)
+  /// [{ code, label, detail, points }] — "why call now".
+  reasons         Json
+  dueAt           DateTime?
+  snoozedUntil    DateTime?
+  attempts        Int              @default(0)
+  lastAttemptAt   DateTime?
+  lastOutcome     CallOutcome?
+  completedAt     DateTime?
+  completedReason String?
+  computedAt      DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  assignee     User?        @relation("CallTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, clientId, status, priority(sort: Desc)])
+  @@index([assigneeId, status])
+}
+
+enum MeetingStatus {
+  BOOKED
+  CONFIRMED
+  RESCHEDULED
+  ATTENDED
+  NO_SHOW
+  CANCELLED
+}
+
+enum MeetingOutcome {
+  PENDING
+  QUALIFIED_OPPORTUNITY
+  NOT_QUALIFIED
+  WON
+  LOST
+}
+
+enum MeetingSource {
+  CALL
+  EMAIL_REPLY
+  CALENDAR_LINK
+  INBOUND
+  MANUAL
+}
+
+model Meeting {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  clientId       String  @db.Uuid
+  accountId      String  @db.Uuid
+  contactId      String? @db.Uuid
+  campaignId     String? @db.Uuid
+  callId         String? @unique @db.Uuid
+  bookedById     String? @db.Uuid
+
+  title       String
+  startsAt    DateTime
+  endsAt      DateTime
+  timezone    String?
+  location    String?
+  meetingUrl  String?
+  externalRef String? // calendar event id
+
+  source  MeetingSource  @default(MANUAL)
+  status  MeetingStatus  @default(BOOKED)
+  outcome MeetingOutcome @default(PENDING)
+
+  /// Shown to the client: why this prospect was qualified.
+  qualificationNotes  String?   @db.Text
+  /// Internal only.
+  notes               String?   @db.Text
+  estimatedValueCents Int?
+  actualValueCents    Int?
+  currency            String    @default("CAD")
+  outcomeRecordedAt   DateTime?
+  cancelledReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  call         Call?        @relation(fields: [callId], references: [id], onDelete: SetNull)
+  bookedBy     User?        @relation("MeetingBooker", fields: [bookedById], references: [id], onDelete: SetNull)
 
   @@index([organizationId, startsAt])
+  @@index([clientId, startsAt])
 }
 
 // ---------------------------------------------------------------------------
-// MODULE 8 — Proposals
+// Proposals and prospect microsites (legacy agency tooling)
 // ---------------------------------------------------------------------------
 
 enum ProposalStatus {
@@ -805,86 +1681,82 @@ enum ProposalStatus {
 }
 
 model Proposal {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  leadId         String @db.Uuid
-  number         String    // ORG-2026-0042
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  accountId      String         @db.Uuid
+  number         String // ORG-2026-0042
   title          String
   status         ProposalStatus @default(DRAFT)
 
-  scope          Json     // [{phase, deliverables[], weeks}]
-  lineItems      Json     // [{label, qty, unitCents, recurring}]
-  subtotalCents  Int      @default(0)
-  taxCents       Int      @default(0)
-  totalCents     Int      @default(0)
-  recurringMonthlyCents Int @default(0)
-  currency       String   @default("CAD")
+  scope                 Json // [{phase, deliverables[], weeks}]
+  lineItems             Json // [{label, qty, unitCents, recurring}]
+  subtotalCents         Int    @default(0)
+  taxCents              Int    @default(0)
+  totalCents            Int    @default(0)
+  recurringMonthlyCents Int    @default(0)
+  currency              String @default("CAD")
 
-  timeline       Json?
-  roiSummary     Json?
-  diagram        Json?
-  terms          String?  @db.Text
+  timeline   Json?
+  roiSummary Json?
+  diagram    Json?
+  terms      String? @db.Text
 
-  pdfUrl         String?
-  shareToken     String   @unique
-  viewCount      Int      @default(0)
-  firstViewedAt  DateTime?
-  expiresAt      DateTime?
-  acceptedAt     DateTime?
-  signatureName  String?
-  signatureIp    String?
+  pdfUrl        String?
+  shareToken    String    @unique
+  viewCount     Int       @default(0)
+  firstViewedAt DateTime?
+  expiresAt     DateTime?
+  acceptedAt    DateTime?
+  signatureName String?
+  signatureIp   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
 }
 
-// ---------------------------------------------------------------------------
-// MODULE 9 — Portfolio / prospect microsites
-// ---------------------------------------------------------------------------
-
 model PortfolioSite {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  leadId         String @db.Uuid
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  accountId      String  @db.Uuid
   templateId     String? @db.Uuid
 
-  subdomain  String  @unique   // acme-dental -> acme-dental.demos.yourdomain.com
-  customDomain String? @unique
-  headline   String
-  subheadline String?
-  logoUrl    String?
+  subdomain       String  @unique // acme-dental -> acme-dental.demos.yourdomain.com
+  customDomain    String? @unique
+  headline        String
+  subheadline     String?
+  logoUrl         String?
   /**
    * Using a prospect's logo without asking is a trademark problem and a bad
    * first impression. A site can only render a logo when consent is recorded.
    */
-  logoConsent    Boolean @default(false)
+  logoConsent     Boolean @default(false)
   logoConsentNote String?
-  accentColor String  @default("#4F46E5")
-  content    Json     // hydrated template spec with lead-specific copy
-  showProposal Boolean @default(true)
-  showScheduler Boolean @default(true)
-  schedulerUrl String?
+  accentColor     String  @default("#4F46E5")
+  content         Json // hydrated template spec with account-specific copy
+  showProposal    Boolean @default(true)
+  showScheduler   Boolean @default(true)
+  schedulerUrl    String?
 
-  isPublished Boolean  @default(false)
-  publishedAt DateTime?
-  expiresAt   DateTime?
+  isPublished  Boolean   @default(false)
+  publishedAt  DateTime?
+  expiresAt    DateTime?
   passwordHash String?
 
-  viewCount     Int @default(0)
-  uniqueVisitors Int @default(0)
-  firstViewedAt DateTime?
+  viewCount      Int       @default(0)
+  uniqueVisitors Int       @default(0)
+  firstViewedAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead         Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  account      Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   template     SolutionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   views        PortfolioView[]
 
@@ -892,13 +1764,13 @@ model PortfolioSite {
 }
 
 model PortfolioView {
-  id        String   @id @default(uuid()) @db.Uuid
-  siteId    String   @db.Uuid
-  visitorHash String  // salted hash of IP+UA; no raw PII stored
-  referrer  String?
-  path      String?
-  durationMs Int?
-  viewedAt  DateTime @default(now())
+  id          String   @id @default(uuid()) @db.Uuid
+  siteId      String   @db.Uuid
+  visitorHash String // salted hash of IP+UA; no raw PII stored
+  referrer    String?
+  path        String?
+  durationMs  Int?
+  viewedAt    DateTime @default(now())
 
   site PortfolioSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
@@ -906,24 +1778,207 @@ model PortfolioView {
 }
 
 // ---------------------------------------------------------------------------
-// MODULE 10 — Admin, ops, observability
+// Connectors, provenance, jobs, cost
+// ---------------------------------------------------------------------------
+
+enum ProviderRecordStatus {
+  SUCCESS
+  NOT_FOUND
+  ERROR
+}
+
+/**
+ * Every request to an external data provider and what came back. Doubles as
+ * the cache that stops Foundry paying twice for the same lookup.
+ */
+model ProviderRecord {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  clientId       String?              @db.Uuid
+  provider       String
+  /// company.enrich | contact.search | email.find | email.verify | phone.find | website.crawl
+  operation      String
+  /// Normalized key the request was made for: a domain, an email, a name@domain.
+  lookupKey      String
+  externalId     String?
+  status         ProviderRecordStatus
+  request        Json?
+  response       Json?
+  normalized     Json?
+  confidence     Float?
+  costMillicents Int                  @default(0)
+  error          String?
+  accountId      String?              @db.Uuid
+  contactId      String?              @db.Uuid
+  requestedAt    DateTime             @default(now())
+  refreshedAt    DateTime             @default(now())
+  expiresAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, provider, operation, lookupKey, requestedAt(sort: Desc)])
+}
+
+/**
+ * Where one field's current value came from. Superseded values are kept.
+ */
+model DataProvenance {
+  id               String         @id @default(uuid()) @db.Uuid
+  organizationId   String         @db.Uuid
+  accountId        String?        @db.Uuid
+  contactId        String?        @db.Uuid
+  field            String
+  value            String?
+  source           DataSource
+  provider         String?
+  providerRecordId String?        @db.Uuid
+  sourceUrl        String?
+  status           EvidenceStatus @default(UNVERIFIED)
+  confidence       Float?
+  retrievedAt      DateTime       @default(now())
+  isCurrent        Boolean        @default(true)
+  createdById      String?        @db.Uuid
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account?     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, field])
+  @@index([contactId, field])
+}
+
+/**
+ * Per-workspace enablement and order of a provider within its capability.
+ */
+model ConnectorSetting {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  provider       String
+  enabled        Boolean   @default(true)
+  /// Lower runs first in a fallback chain.
+  priority       Int       @default(100)
+  settings       Json?
+  lastCheckedAt  DateTime?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+}
+
+enum JobType {
+  ACCOUNT_ENRICHMENT
+  CONTACT_ENRICHMENT
+  RESEARCH
+  VERIFICATION
+  CAMPAIGN_SCHEDULING
+  ANALYTICS
+  PROVIDER_SYNC
+  CALL_QUEUE_REFRESH
+  RESCORE
+  IMPORT
+}
+
+/**
+ * Generic background job, claimed by the worker with SKIP LOCKED.
+ */
+model Job {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String?   @db.Uuid
+  clientId       String?   @db.Uuid
+  type           JobType
+  status         JobStatus @default(QUEUED)
+  payload        Json?
+  result         Json?
+  error          String?
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  runAt          DateTime  @default(now())
+  lockedAt       DateTime?
+  lockedBy       String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  entityType     String?
+  entityId       String?
+  /// Prevents enqueueing the same pending work twice.
+  dedupeKey      String?
+  createdById    String?   @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAt])
+  @@index([organizationId, type, createdAt])
+  @@index([dedupeKey])
+}
+
+enum UsageType {
+  ENRICHMENT_REQUEST
+  AI_RESEARCH
+  AI_PERSONALIZATION
+  AI_VERIFICATION
+  AI_OTHER
+  EMAIL_SENT
+  EMAIL_VERIFICATION
+  SMS
+  PHONE_LOOKUP
+  CALL_MINUTES
+  EXTERNAL_DATA
+}
+
+/**
+ * One billable unit of work, attributed as precisely as it can be.
+ */
+model UsageRecord {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @db.Uuid
+  clientId         String?   @db.Uuid
+  campaignId       String?   @db.Uuid
+  accountId        String?   @db.Uuid
+  contactId        String?   @db.Uuid
+  provider         String
+  type             UsageType
+  quantity         Int       @default(1)
+  /// Thousandths of a cent, so sub-cent email costs add up correctly.
+  costMillicents   Int       @default(0)
+  currency         String    @default("USD")
+  aiRunId          String?   @db.Uuid
+  providerRecordId String?   @db.Uuid
+  messageId        String?   @db.Uuid
+  metadata         Json?
+  occurredAt       DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, occurredAt])
+  @@index([clientId, occurredAt])
+  @@index([provider, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Admin, ops, observability
 // ---------------------------------------------------------------------------
 
 model AiRun {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  kind           String // research | personalize | proposal | portfolio | classify
-  entityId       String? @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  kind           String // research | personalize | verify | proposal | portfolio | classify
+  entityId       String?   @db.Uuid
   provider       String // anthropic | openai
   model          String
   promptVersion  String
   status         JobStatus @default(QUEUED)
-  tokensIn       Int  @default(0)
-  tokensOut      Int  @default(0)
-  costCents      Int  @default(0)
+  tokensIn       Int       @default(0)
+  tokensOut      Int       @default(0)
+  costCents      Int       @default(0)
   latencyMs      Int?
   error          String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -931,10 +1986,10 @@ model AiRun {
 }
 
 model AuditLog {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  userId         String? @db.Uuid
-  action         String   // lead.delete, message.approve, campaign.activate
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String?  @db.Uuid
+  action         String // account.delete, message.approve, campaign.activate
   entityType     String
   entityId       String?
   before         Json?
@@ -950,17 +2005,17 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-// Idempotency ledger for every inbound webhook (Stripe, Resend, Clerk, n8n).
+// Idempotency ledger for every inbound webhook (Stripe, Resend, Clerk).
 model WebhookEvent {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String? @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String?   @db.Uuid
   provider       String
   externalId     String
   type           String
   payload        Json
   processedAt    DateTime?
   error          String?
-  receivedAt     DateTime @default(now())
+  receivedAt     DateTime  @default(now())
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -969,41 +2024,18 @@ model WebhookEvent {
 }
 
 model Invoice {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  leadId         String? @db.Uuid
-  number         String
-  stripeInvoiceId String? @unique
-  amountCents    Int
-  currency       String  @default("CAD")
-  status         String  // draft | open | paid | void | uncollectible
-  dueAt          DateTime?
-  paidAt         DateTime?
-  createdAt      DateTime @default(now())
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  accountId       String?   @db.Uuid
+  number          String
+  stripeInvoiceId String?   @unique
+  amountCents     Int
+  currency        String    @default("CAD")
+  status          String // draft | open | paid | void | uncollectible
+  dueAt           DateTime?
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
-}
-
-/**
- * The agency's own verified claims, used when a prospect's site yields nothing
- * citable. These are statements the agency can stand behind about its own work,
- * written and owned by the operator — not model output. A CONTEXTUAL draft may
- * reference these and nothing else.
- */
-model IndustryContext {
-  id             String  @id @default(uuid()) @db.Uuid
-  organizationId String  @db.Uuid
-  industry       String
-  /** e.g. "We've built intake automations for three dental practices in the GTA." */
-  statement      String  @db.Text
-  /** Optional proof the operator can point to if asked. */
-  evidenceNote   String?
-  isActive       Boolean @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@index([organizationId, industry, isActive])
 }

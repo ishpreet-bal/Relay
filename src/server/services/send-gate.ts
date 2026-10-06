@@ -1,12 +1,16 @@
 import { db } from '@/lib/db';
 import { addMinutes, startOfDay, subHours } from 'date-fns';
 import type { Message } from '@prisma/client';
+import { findSuppression } from './suppression';
 
 /**
  * The send gate is the single choke point every outbound email passes through.
  * Nothing in the codebase calls the email provider directly — it calls this.
  * Each check returns a human-readable reason, which is what the reviewer sees
  * in the UI when a message is held back.
+ *
+ * Approval can now come from a person or from policy (a fully verified draft
+ * in a campaign that allows it). Either way, every check below still runs.
  */
 export type GateVerdict =
   | { allowed: true; sendAt: Date }
@@ -14,6 +18,7 @@ export type GateVerdict =
 
 export type GateBlockCode =
   | 'NOT_APPROVED'
+  | 'UNVERIFIED_CLAIMS'
   | 'NO_RECIPIENT'
   | 'SUPPRESSED'
   | 'DUPLICATE_RECENT'
@@ -27,29 +32,35 @@ export type GateBlockCode =
 const MIN_DAYS_BETWEEN_CONTACT = 25;
 
 export async function evaluateSend(message: Message, now = new Date()): Promise<GateVerdict> {
-  // 1. A human must have approved it. No exceptions, no config flag.
+  // 1. Approved, by a person or by policy.
   if (message.status !== 'APPROVED' && message.status !== 'SCHEDULED') {
     return { allowed: false, code: 'NOT_APPROVED', reason: 'Waiting for review' };
   }
 
-  const contact = message.contactId
-    ? await db.contact.findUnique({ where: { id: message.contactId } })
-    : null;
-  const email = contact?.email?.toLowerCase().trim();
-  if (!email) {
-    return { allowed: false, code: 'NO_RECIPIENT', reason: 'No verified email on the contact' };
+  // 2. A draft with unsupported or contradicted claims only leaves if a person
+  // approved it and took responsibility for the wording. Policy never can.
+  if ((message.verificationStatus === 'BLOCKED' || message.verificationStatus === 'UNSUPPORTED') && message.approvalSource !== 'HUMAN') {
+    return { allowed: false, code: 'UNVERIFIED_CLAIMS', reason: 'Contains claims that could not be verified' };
   }
 
-  // 2. Suppression list, checked by exact address and by bare domain.
-  const domain = email.split('@')[1];
-  const suppressed = await db.suppression.findFirst({
-    where: {
-      organizationId: message.organizationId,
-      OR: [
-        { scope: 'EMAIL', value: email },
-        { scope: 'DOMAIN', value: domain },
-      ],
-    },
+  const contact = message.contactId
+    ? await db.contact.findUnique({
+        where: { id: message.contactId },
+        include: { account: { select: { doNotContact: true, domain: true, deletedAt: true } } },
+      })
+    : null;
+  const email = contact?.email?.toLowerCase().trim();
+  if (!contact || !email || contact.deletedAt || contact.account.deletedAt) {
+    return { allowed: false, code: 'NO_RECIPIENT', reason: 'No email address on the contact' };
+  }
+
+  // 3. Do-not-contact, on the person, the account, or the suppression list
+  // (by address and by domain, workspace-wide or for this client).
+  if (contact.doNotEmail || contact.account.doNotContact) {
+    return { allowed: false, code: 'SUPPRESSED', reason: 'Marked do-not-email' };
+  }
+  const suppressed = await findSuppression({
+    organizationId: message.organizationId, clientId: message.clientId, channel: 'EMAIL', email,
   });
   if (suppressed) {
     return {
@@ -59,9 +70,8 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     };
   }
 
-  // 3. Never contact the same person twice inside the cooling-off window, even
-  // across different campaigns. This is the check that keeps a growing team
-  // from accidentally triple-emailing one office manager.
+  // 4. Never contact the same person twice inside the cooling-off window
+  // outside of their sequence — across campaigns and across clients.
   const recent = await db.message.findFirst({
     where: {
       organizationId: message.organizationId,
@@ -72,33 +82,28 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     },
     orderBy: { sentAt: 'desc' },
   });
-  if (recent && !message.campaignStepId) {
+  if (recent && !(message.campaignStepId && recent.campaignId === message.campaignId)) {
     return {
       allowed: false,
       code: 'DUPLICATE_RECENT',
-      reason: `Contacted ${MIN_DAYS_BETWEEN_CONTACT} days ago or less`,
+      reason: `Contacted in the last ${MIN_DAYS_BETWEEN_CONTACT} days`,
     };
   }
 
-  // 4. Unsubscribe affordance must be present in the rendered body.
+  // 5. Unsubscribe affordance must be present in the rendered body.
   if (!message.bodyHtml?.includes('{{unsubscribe_url}}') && !message.bodyHtml?.includes('/u/')) {
     return { allowed: false, code: 'MISSING_UNSUBSCRIBE', reason: 'No opt-out link in the body' };
   }
 
   const org = await db.organization.findUniqueOrThrow({ where: { id: message.organizationId } });
 
-  // 5. Volume caps — org-wide per day and per hour.
+  // 6. Volume caps — workspace-wide per day and per hour.
   const sentToday = await db.message.count({
-    where: {
-      organizationId: org.id,
-      direction: 'OUTBOUND',
-      sentAt: { gte: startOfDay(now) },
-    },
+    where: { organizationId: org.id, direction: 'OUTBOUND', sentAt: { gte: startOfDay(now) } },
   });
   if (sentToday >= org.dailySendCap) {
     return { allowed: false, code: 'DAILY_CAP', reason: `Daily limit of ${org.dailySendCap} reached` };
   }
-
   const sentLastHour = await db.message.count({
     where: { organizationId: org.id, direction: 'OUTBOUND', sentAt: { gte: subHours(now, 1) } },
   });
@@ -106,15 +111,11 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     return { allowed: false, code: 'HOURLY_CAP', reason: `Hourly limit of ${org.hourlySendCap} reached` };
   }
 
-  // 6. Mailbox health — an unauthenticated domain torches deliverability.
+  // 7. Mailbox health — an unauthenticated domain torches deliverability.
   if (message.mailboxId) {
     const mailbox = await db.mailbox.findUniqueOrThrow({ where: { id: message.mailboxId } });
     if (!mailbox.spfVerified || !mailbox.dkimVerified) {
-      return {
-        allowed: false,
-        code: 'DOMAIN_UNAUTHENTICATED',
-        reason: 'SPF and DKIM are not verified for this sending domain',
-      };
+      return { allowed: false, code: 'DOMAIN_UNAUTHENTICATED', reason: 'SPF and DKIM are not verified for this sending domain' };
     }
     const mailboxSentToday = await db.message.count({
       where: { mailboxId: mailbox.id, sentAt: { gte: startOfDay(now) } },
@@ -125,7 +126,7 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     }
   }
 
-  // 7. Sending window, plus jitter so a batch never looks machine-timed.
+  // 8. Jitter, so a batch never looks machine-timed.
   const sendAt = addMinutes(now, Math.floor(Math.random() * org.minMinutesBetweenSends) + 1);
   return { allowed: true, sendAt };
 }

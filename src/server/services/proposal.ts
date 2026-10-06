@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { db } from '@/lib/db';
 import { addDays } from 'date-fns';
 import { estimateRoi } from './roi';
-import { logActivity } from './crm';
+import { logActivity } from './activity';
 
 /**
  * Proposal generation.
@@ -38,7 +38,7 @@ const PHASE_SHAPE = [
 
 export async function buildProposal(params: {
   organizationId: string;
-  leadId: string;
+  accountId: string;
   userId: string | null;
   title?: string;
   /** Which researched opportunities to include, by index. Defaults to all. */
@@ -47,8 +47,8 @@ export async function buildProposal(params: {
 }) {
   const [org, lead] = await Promise.all([
     db.organization.findUniqueOrThrow({ where: { id: params.organizationId } }),
-    db.lead.findFirstOrThrow({
-      where: { id: params.leadId, organizationId: params.organizationId, deletedAt: null },
+    db.account.findFirstOrThrow({
+      where: { id: params.accountId, organizationId: params.organizationId, deletedAt: null },
       include: { research: true },
     }),
   ]);
@@ -120,9 +120,9 @@ export async function buildProposal(params: {
   const proposal = await db.proposal.create({
     data: {
       organizationId: params.organizationId,
-      leadId: params.leadId,
+      accountId: params.accountId,
       number,
-      title: params.title ?? `Automation proposal for ${lead.companyName}`,
+      title: params.title ?? `Automation proposal for ${lead.name}`,
       status: 'DRAFT',
       scope: scope as never,
       lineItems: lineItems as never,
@@ -155,7 +155,7 @@ export async function buildProposal(params: {
 
   await logActivity({
     organizationId: params.organizationId,
-    leadId: params.leadId,
+    accountId: params.accountId,
     userId: params.userId,
     type: 'SYSTEM',
     title: `Proposal ${number} drafted`,
@@ -197,7 +197,7 @@ export async function recordProposalView(shareToken: string) {
   if (!proposal.firstViewedAt) {
     await logActivity({
       organizationId: proposal.organizationId,
-      leadId: proposal.leadId,
+      accountId: proposal.accountId,
       type: 'PROPOSAL_VIEWED',
       title: `Proposal ${proposal.number} opened`,
       body: 'The prospect opened the proposal for the first time.',
@@ -229,13 +229,13 @@ export async function acceptProposal(params: { shareToken: string; signatureName
     },
   });
 
-  await db.lead.update({
-    where: { id: proposal.leadId },
+  await db.account.update({
+    where: { id: proposal.accountId },
     data: { status: 'WON', temperature: 'HOT' },
   });
   await logActivity({
     organizationId: proposal.organizationId,
-    leadId: proposal.leadId,
+    accountId: proposal.accountId,
     type: 'SYSTEM',
     title: `Proposal ${proposal.number} accepted`,
     body: `Accepted by ${params.signatureName}.`,

@@ -9,13 +9,13 @@ export const templatesRouter = router({
    * Platform templates (organizationId null) plus this workspace's own
    * customizations. A workspace copy shadows the built-in of the same slug.
    */
-  list: permissionProcedure('lead:read')
+  list: permissionProcedure('proposal:read')
     .input(z.object({ industry: z.string().max(80).optional() }).default({}))
     .query(async ({ ctx, input }) => {
       const templates = await ctx.db.solutionTemplate.findMany({
         where: {
           isPublished: true,
-          OR: [{ organizationId: null }, { organizationId: ctx.session.organizationId }],
+          OR: [{ organizationId: null }, { organizationId: ctx.access.organizationId }],
           ...(input.industry ? { industry: input.industry } : {}),
         },
         orderBy: [{ industry: 'asc' }],
@@ -33,13 +33,13 @@ export const templatesRouter = router({
       return [...bySlug.values()];
     }),
 
-  bySlug: permissionProcedure('lead:read')
+  bySlug: permissionProcedure('proposal:read')
     .input(z.object({ slug: z.string().max(80) }))
     .query(async ({ ctx, input }) => {
       const templates = await ctx.db.solutionTemplate.findMany({
         where: {
           slug: input.slug,
-          OR: [{ organizationId: null }, { organizationId: ctx.session.organizationId }],
+          OR: [{ organizationId: null }, { organizationId: ctx.access.organizationId }],
         },
       });
       const template = templates.find((t) => t.organizationId) ?? templates[0];
@@ -65,7 +65,7 @@ export const templatesRouter = router({
       if (!source) throw new TRPCError({ code: 'NOT_FOUND' });
 
       const existing = await ctx.db.solutionTemplate.findFirst({
-        where: { slug: input.slug, organizationId: ctx.session.organizationId },
+        where: { slug: input.slug, organizationId: ctx.access.organizationId },
       });
       if (existing) return existing;
 
@@ -74,7 +74,7 @@ export const templatesRouter = router({
       return ctx.db.solutionTemplate.create({
         data: {
           ...rest,
-          organizationId: ctx.session.organizationId,
+          organizationId: ctx.access.organizationId,
           version: 1,
           spec: rest.spec as Prisma.InputJsonValue,
           sampleData: rest.sampleData as Prisma.InputJsonValue,
@@ -95,7 +95,7 @@ export const templatesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const owned = await ctx.db.solutionTemplate.count({
-        where: { id, organizationId: ctx.session.organizationId },
+        where: { id, organizationId: ctx.access.organizationId },
       });
       // Guards against editing a built-in through a guessed id.
       if (!owned) throw new TRPCError({ code: 'FORBIDDEN', message: 'Fork this template before editing it.' });

@@ -1,24 +1,43 @@
 import { router } from '../init';
-import { leadsRouter } from './leads';
+import { sessionRouter } from './session';
+import { clientsRouter } from './clients';
+import { playbooksRouter } from './playbooks';
+import { accountsRouter } from './accounts';
+import { contactsRouter } from './contacts';
 import { researchRouter } from './research';
 import { messagesRouter } from './messages';
+import { campaignsRouter } from './campaigns';
+import { callsRouter } from './calls';
+import { meetingsRouter } from './meetings';
 import { suppressionRouter } from './suppression';
 import { analyticsRouter } from './analytics';
-import { campaignsRouter } from './campaigns';
+import { portalRouter } from './portal';
+import { opsRouter } from './ops';
+import { teamRouter } from './team';
+import { adminRouter } from './admin';
 import { templatesRouter } from './templates';
 import { proposalsRouter } from './proposals';
-import { adminRouter } from './admin';
 
 export const appRouter = router({
-  leads: leadsRouter,
+  session: sessionRouter,
+  clients: clientsRouter,
+  playbooks: playbooksRouter,
+  accounts: accountsRouter,
+  contacts: contactsRouter,
   research: researchRouter,
   messages: messagesRouter,
+  campaigns: campaignsRouter,
+  calls: callsRouter,
+  meetings: meetingsRouter,
   suppression: suppressionRouter,
   analytics: analyticsRouter,
-  campaigns: campaignsRouter,
+  portal: portalRouter,
+  ops: opsRouter,
+  team: teamRouter,
+  admin: adminRouter,
+  // Legacy agency tooling
   templates: templatesRouter,
   proposals: proposalsRouter,
-  admin: adminRouter,
 });
 
 export type AppRouter = typeof appRouter;

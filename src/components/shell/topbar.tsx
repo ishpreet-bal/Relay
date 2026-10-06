@@ -4,18 +4,23 @@ import { OrganizationSwitcher, UserButton } from '@clerk/nextjs';
 import { useTheme } from 'next-themes';
 import { Moon, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { ClientSwitcher } from './client-switcher';
 
-export function Topbar({ title, actions }: { title: string; actions?: React.ReactNode }) {
+export function Topbar({ title, actions, showClientSwitcher = true }: {
+  title: string;
+  actions?: React.ReactNode;
+  showClientSwitcher?: boolean;
+}) {
   return (
-    <header className="h-14 shrink-0 border-b border-hairline bg-surface flex items-center gap-3 px-5">
-      <h1 className="text-[15px] font-semibold tracking-display flex-1">{title}</h1>
+    <header className="h-14 shrink-0 border-b border-hairline bg-surface flex items-center gap-3 px-4 md:px-5">
+      <h1 className="text-[15px] font-semibold tracking-display flex-1 truncate">{title}</h1>
       {actions}
+      {showClientSwitcher && <ClientSwitcher />}
       <ThemeToggle />
-      <div className="w-px h-5 bg-hairline" />
-      <OrganizationSwitcher
-        hidePersonal
-        appearance={{ elements: { rootBox: 'flex', organizationSwitcherTrigger: 'text-[13px]' } }}
-      />
+      <div className="w-px h-5 bg-hairline hidden sm:block" />
+      <div className="hidden sm:flex">
+        <OrganizationSwitcher hidePersonal appearance={{ elements: { rootBox: 'flex', organizationSwitcherTrigger: 'text-[13px]' } }} />
+      </div>
       <UserButton />
     </header>
   );
@@ -25,7 +30,6 @@ function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-
   const isDark = resolvedTheme === 'dark';
   return (
     <button

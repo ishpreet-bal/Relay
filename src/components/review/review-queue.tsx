@@ -1,74 +1,69 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Inbox } from 'lucide-react';
+import type { VerificationStatus } from '@prisma/client';
 import { trpc } from '@/lib/trpc/client';
+import { useActiveClient } from '@/components/shell/active-client';
+import { VERIFICATION_LABELS } from '@/lib/domain';
+import { EmptyState, ErrorNote, Loading } from '@/components/ui/states';
 import { cn } from '@/lib/utils';
 import { DraftCard } from './draft-card';
-import type { PersonalizationTier } from '@prisma/client';
 
-const TIERS: Array<{ value: PersonalizationTier; label: string }> = [
-  { value: 'VERIFIED', label: 'Researched' },
-  { value: 'CONTEXTUAL', label: 'Industry only' },
-];
+const FILTERS: VerificationStatus[] = ['BLOCKED', 'UNSUPPORTED', 'PARTIALLY_VERIFIED', 'REVIEW_REQUIRED', 'VERIFIED'];
 
-export function ReviewQueue({ canApprove, canSend }: { canApprove: boolean; canSend: boolean }) {
-  const [tiers, setTiers] = useState<PersonalizationTier[]>([]);
-  const summary = trpc.messages.queueSummary.useQuery();
+/**
+ * Drafts that a person needs to look at, worst-verified first. Drafts that
+ * met their campaign's policy were sent without coming here; everything in
+ * this list says why it didn't.
+ */
+export function ReviewQueue({ canApprove, canSend, campaignId }: { canApprove: boolean; canSend: boolean; campaignId?: string }) {
+  const { clientId } = useActiveClient();
+  const [verification, setVerification] = useState<VerificationStatus[]>([]);
+  const summary = trpc.messages.queueSummary.useQuery({ clientId });
   const queue = trpc.messages.reviewQueue.useQuery({
-    status: ['DRAFT', 'NEEDS_EDIT'],
-    tier: tiers.length ? tiers : undefined,
-    limit: 25,
+    clientId, campaignId, status: ['DRAFT', 'NEEDS_EDIT'], verification: verification.length ? verification : undefined, limit: 25,
   });
 
-  const countFor = (tier: PersonalizationTier) =>
-    summary.data?.filter((s) => s.tier === tier).reduce((n, s) => n + s.count, 0) ?? 0;
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of summary.data ?? []) if (s.status === 'DRAFT' || s.status === 'NEEDS_EDIT') m.set(s.verification ?? 'NONE', (m.get(s.verification ?? 'NONE') ?? 0) + s.count);
+    return m;
+  }, [summary.data]);
 
   return (
     <div className="space-y-4">
-      {/* Filtering by tier is the whole point of tracking it: an operator can
-          work all the researched drafts first, then decide separately whether
-          the industry-only batch is worth sending at all. */}
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setTiers([])}
-                aria-pressed={tiers.length === 0}
-                className={cn('h-7 px-2.5 rounded-full text-micro border transition-colors',
-                  tiers.length === 0 ? 'border-accent bg-accent-soft text-accent' : 'border-hairline text-muted hover:bg-raised')}>
-          All
-        </button>
-        {TIERS.map((t) => {
-          const active = tiers.includes(t.value);
-          return (
-            <button key={t.value} type="button" aria-pressed={active}
-                    onClick={() => setTiers(active ? tiers.filter((x) => x !== t.value) : [...tiers, t.value])}
-                    className={cn('h-7 px-2.5 rounded-full text-micro border transition-colors inline-flex items-center gap-1.5',
-                      active ? 'border-accent bg-accent-soft text-accent' : 'border-hairline text-muted hover:bg-raised')}>
-              {t.label}
-              <span className="num opacity-60">{countFor(t.value)}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {queue.isPending && <p className="text-micro text-muted">Loading drafts…</p>}
-
-      {queue.data?.items.length === 0 && (
-        <div className="card p-12 text-center">
-          <Inbox className="size-7 mx-auto text-muted mb-3" strokeWidth={1.5} />
-          <h2 className="font-display font-semibold mb-1">Nothing waiting for review</h2>
-          <p className="text-sm text-muted max-w-sm mx-auto">
-            Drafts appear here after they&apos;re generated. Nothing sends without passing
-            through this screen first.
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-4">
-        {queue.data?.items.map((m) => (
-          <DraftCard key={m.id} message={m} canApprove={canApprove} canSend={canSend}
-                     onDone={() => queue.refetch()} />
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by verification">
+        <Chip active={!verification.length} onClick={() => setVerification([])}>All</Chip>
+        {FILTERS.map((v) => (
+          <Chip key={v} active={verification.includes(v)} onClick={() => setVerification(verification.includes(v) ? verification.filter((x) => x !== v) : [...verification, v])}>
+            {VERIFICATION_LABELS[v]} <span className="num opacity-60">{counts.get(v) ?? 0}</span>
+          </Chip>
         ))}
       </div>
+
+      <ErrorNote error={queue.error} />
+      {queue.isPending ? <Loading label="Loading drafts…" /> : !queue.data?.items.length ? (
+        <EmptyState icon={Inbox} title="Nothing waiting for review">
+          Drafts land here when they need a person: a claim couldn&apos;t be verified, the campaign reviews everything, or the
+          writer flagged something to fix.
+        </EmptyState>
+      ) : (
+        <div className="space-y-4">
+          {queue.data.items.map((m) => <DraftCard key={m.id} message={m} canApprove={canApprove} canSend={canSend} onDone={() => queue.refetch()} />)}
+          {queue.data.nextCursor && <p className="text-micro text-muted text-center">Showing the 25 that most need attention. Clear these to see more.</p>}
+        </div>
+      )}
     </div>
+  );
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" aria-pressed={active} onClick={onClick}
+            className={cn('h-7 px-2.5 rounded-full text-micro border transition-colors inline-flex items-center gap-1.5',
+              active ? 'border-accent bg-accent-soft text-accent' : 'border-hairline text-muted hover:bg-raised')}>
+      {children}
+    </button>
   );
 }

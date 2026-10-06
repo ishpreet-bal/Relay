@@ -1,8 +1,8 @@
 import { auth } from '@clerk/nextjs/server';
 import { cache } from 'react';
-import { db } from './db';
-import { assertCan, type Permission } from './rbac';
 import type { Role } from '@prisma/client';
+import { db } from './db';
+import { assertCan, isInternalRole, type Permission } from './rbac';
 
 export interface Session {
   userId: string;
@@ -10,7 +10,12 @@ export interface Session {
   organizationId: string;
   organizationSlug: string;
   role: Role;
+  /** Set for client users; their only window into the workspace. */
+  clientId: string | null;
+  /** Foundry staff (admins, operators, analysts, callers). */
+  isInternal: boolean;
   email: string;
+  name: string;
 }
 
 /**
@@ -23,9 +28,15 @@ export const getSession = cache(async (): Promise<Session | null> => {
 
   const membership = await db.membership.findFirst({
     where: { user: { clerkUserId }, organization: { clerkOrgId, deletedAt: null } },
-    include: { user: true, organization: true },
+    include: { user: true, organization: true, client: { select: { id: true, archivedAt: true } } },
   });
   if (!membership) return null;
+
+  const internal = isInternalRole(membership.role);
+  // A client user whose client was archived loses access with it.
+  const clientId = !internal && membership.client && !membership.client.archivedAt
+    ? membership.client.id
+    : null;
 
   return {
     userId: membership.userId,
@@ -33,7 +44,10 @@ export const getSession = cache(async (): Promise<Session | null> => {
     organizationId: membership.organizationId,
     organizationSlug: membership.organization.slug,
     role: membership.role,
+    clientId,
+    isInternal: internal,
     email: membership.user.email,
+    name: [membership.user.firstName, membership.user.lastName].filter(Boolean).join(' ') || membership.user.email,
   };
 });
 

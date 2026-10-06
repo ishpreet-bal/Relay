@@ -17,7 +17,7 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
   const proposal = await db.proposal.findUnique({
     where: { shareToken: token },
     include: {
-      lead: { select: { companyName: true } },
+      account: { select: { name: true } },
       organization: { select: { brandName: true, name: true, brandPrimary: true, websiteUrl: true } },
     },
   });
@@ -40,7 +40,7 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
         <p className="eyebrow mb-2" style={{ color: accent }}>{agency}</p>
         <h1 className="text-3xl font-semibold mb-2">{proposal.title}</h1>
         <p className="text-muted mb-8">
-          Prepared for {proposal.lead.companyName} · Proposal {proposal.number}
+          Prepared for {proposal.account.name} · Proposal {proposal.number}
         </p>
 
         <div className="grid sm:grid-cols-3 gap-3 mb-10">

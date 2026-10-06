@@ -9,7 +9,7 @@ import { db } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 interface Content {
-  companyName: string;
+  name: string;
   city: string | null;
   industry: string | null;
   summary: string | null;
@@ -45,7 +45,7 @@ export default async function PortfolioSitePage({ params }: { params: Promise<{ 
 
   const proposal = site.showProposal
     ? await db.proposal.findFirst({
-        where: { leadId: site.leadId, status: { in: ['SENT', 'VIEWED', 'ACCEPTED'] } },
+        where: { accountId: site.accountId, status: { in: ['SENT', 'VIEWED', 'ACCEPTED'] } },
         orderBy: { createdAt: 'desc' },
         select: { shareToken: true, number: true },
       })
@@ -57,7 +57,7 @@ export default async function PortfolioSitePage({ params }: { params: Promise<{ 
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center gap-3">
           {/* Only rendered when consent was explicitly recorded. */}
           {site.logoConsent && site.logoUrl && (
-            <img src={site.logoUrl} alt={`${content.companyName} logo`} className="h-7 w-auto" />
+            <img src={site.logoUrl} alt={`${content.name} logo`} className="h-7 w-auto" />
           )}
           <span className="text-micro text-muted flex-1">Prepared by {agency}</span>
         </div>
@@ -126,7 +126,7 @@ export default async function PortfolioSitePage({ params }: { params: Promise<{ 
             A real example built for {site.template!.industry.toLowerCase()} operations. The data below is
             sample data, not yours.
           </p>
-          <SolutionDemo spec={spec.data} accent={accent} title={`${content.companyName} — operations`} />
+          <SolutionDemo spec={spec.data} accent={accent} title={`${content.name} — operations`} />
         </section>
       )}
 
@@ -155,7 +155,7 @@ export default async function PortfolioSitePage({ params }: { params: Promise<{ 
 
       <footer className="border-t border-hairline">
         <div className="max-w-4xl mx-auto px-6 py-6 flex flex-wrap gap-3 justify-between text-[11px] text-muted">
-          <span>Prepared by {agency} for {content.companyName}.</span>
+          <span>Prepared by {agency} for {content.name}.</span>
           {site.expiresAt && <span>This page comes down on {site.expiresAt.toLocaleDateString('en-CA')}.</span>}
         </div>
       </footer>
