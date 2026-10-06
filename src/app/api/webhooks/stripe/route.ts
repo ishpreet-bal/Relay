@@ -13,12 +13,14 @@ import { stripe, syncSubscription, recordInvoice } from '@/server/services/billi
  */
 export async function POST(req: Request) {
   const raw = await req.text();
+  const secret = env().STRIPE_WEBHOOK_SECRET;
+  if (!secret) return new Response('Billing webhooks are not configured', { status: 503 });
   const signature = (await headers()).get('stripe-signature');
   if (!signature) return new Response('Missing stripe-signature', { status: 400 });
 
   let event: Stripe.Event;
   try {
-    event = stripe().webhooks.constructEvent(raw, signature, env().STRIPE_WEBHOOK_SECRET);
+    event = stripe().webhooks.constructEvent(raw, signature, secret);
   } catch (err) {
     return new Response(
       `Signature verification failed: ${err instanceof Error ? err.message : 'unknown'}`,

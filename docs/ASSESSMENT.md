@@ -124,39 +124,49 @@ client that owns its existing leads, campaigns and meetings.
   and nobody could ever become OWNER, so billing was unreachable.
 - Sidebar linked to a non-existent `/drafts` route.
 
-**Documented, not yet fixed:**
+**Also fixed during the work:**
 
-- **There is no row-level security.** `ARCHITECTURE.md` describes RLS policies
-  and `withTenant()`; no migration creates a policy and nothing calls
-  `withTenant()`. Isolation rests entirely on application-layer filters. This
-  work makes those filters structural (scoped services and procedures) and
-  enables RLS with no policies on every table, which closes the Supabase Data
-  API (PostgREST) path for the `anon`/`authenticated` roles without affecting
-  the Prisma connection (table owner). Full per-tenant RLS policies remain a
-  hardening phase.
-- `assertWithinPlan` is defined but never enforced.
-- `claim-linter.ts` and `industry-context.ts` are unused duplicates of logic in
-  `lint.ts` / `personalize.ts`.
-- The worker's sequencer sleeps `minMinutesBetweenSends` minutes inside the
-  loop, blocking all other organizations while it waits.
+- `ARCHITECTURE.md` described RLS policies and a `withTenant()` helper that
+  did not exist in the database. RLS is now enabled with no policies on every
+  table, which closes the Supabase Data API (PostgREST) for the
+  `anon`/`authenticated` roles without affecting the app's owner connection;
+  the unused, misleading `withTenant()` was removed and the docs describe what
+  is actually enforced.
+- `claim-linter.ts` and `industry-context.ts` (unused duplicates) were removed.
+- The sequencer no longer sleeps inside the loop between sends; pacing is a
+  schedule, so one workspace cannot stall the others.
+- Job listings no longer include workspace-less system jobs.
+- Provider keys (AI, email, billing) were mandatory at boot, so one missing
+  key broke unrelated features such as unsubscribe links. They are now
+  optional and surface as "not configured".
+- There was no way to add a sending mailbox in the UI, although campaigns
+  require one; Settings now manages mailboxes and checks SPF/DKIM through the
+  provider.
+
+**Still open:**
+
+- Per-tenant RLS *policies* (a second, database-level lock behind the service
+  layer) are not written. Isolation is enforced by `AccessContext` scoping in
+  every service, procedure and raw query, and is covered by tests and a
+  cross-client check, but a missed filter would not be caught by Postgres.
+- `assertWithinPlan` (workspace plan limits) is defined but not enforced.
 - Opens are unreliable (Apple Mail privacy) and are used only as a weak
-  engagement input, never as a success metric.
+  engagement input, never as a success metric — by design, not a defect.
 
 ## 7. Implementation phases
 
-Each phase leaves the build, lint, typecheck and tests green and is committed
-separately.
+Each step was committed with the build, lint, typecheck and tests green.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Critical fixes above; this assessment | this change |
-| 1 | Core domain schema and migration; role model; client scoping | this change |
-| 2 | Accounts and contacts (list, detail, create, import), scoring, provider interfaces, provenance | this change |
-| 3 | Offer-aware research, signals, claim verification, review statuses | this change |
-| 4 | ICP-driven campaigns, contact-level enrollment, approval policy | this change |
-| 5 | Call queue, call prep, outcomes, callbacks, meetings | this change |
-| 6 | Client portal | this change |
-| 7 | Funnel analytics with breakdowns | this change |
-| 8 | Real connectors (contact data, email verification, calendar, phone, CRM) added one at a time as credentials become available | interfaces only |
+| 0 | Critical fixes above; this assessment | Done |
+| 1 | Core domain schema and migration; role model; client scoping | Done. Migration verified on a copy of old-schema data and on an empty database |
+| 2 | Accounts and contacts (list, detail, create, import), scoring, provider interfaces, provenance | Done |
+| 3 | Offer-aware research, signals, claim verification, review statuses | Done. Verification is lexical (quotes, numbers, dates); it does not judge meaning |
+| 4 | ICP-driven campaigns, contact-level enrollment, approval policy | Done |
+| 5 | Call queue, call prep, outcomes, callbacks, meetings | Done. No dialer or calendar: callers dial from their phone and send invites from their own calendar |
+| 6 | Client portal | Done |
+| 7 | Funnel analytics with breakdowns | Done. Counts only; no predictions |
+| 8 | Connectors | Apollo (company, contacts, email finding) and Resend (sending, domain status) implemented; Apollo not yet exercised against a live account. Email verification, calendar, phone and CRM are interfaces only |
 
 See `ARCHITECTURE.md` for the resulting architecture.
