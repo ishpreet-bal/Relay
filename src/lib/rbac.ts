@@ -66,17 +66,17 @@ const OPERATOR: Permission[] = [
   'proposal:write', 'proposal:send', 'portfolio:write', 'portfolio:publish',
 ];
 
-const FOUNDRY_ADMIN: Permission[] = [
+const RELAY_ADMIN: Permission[] = [
   ...OPERATOR,
   'client:manage', 'account:delete', 'settings:write', 'member:manage',
   'audit:read', 'connector:manage',
 ];
 
-const SUPER_ADMIN: Permission[] = [...FOUNDRY_ADMIN, 'billing:manage'];
+const SUPER_ADMIN: Permission[] = [...RELAY_ADMIN, 'billing:manage'];
 
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   SUPER_ADMIN: new Set(SUPER_ADMIN),
-  FOUNDRY_ADMIN: new Set(FOUNDRY_ADMIN),
+  RELAY_ADMIN: new Set(RELAY_ADMIN),
   OPERATOR: new Set(OPERATOR),
   ANALYST: new Set(ANALYST),
   CALLER: new Set(CALLER),
@@ -84,7 +84,7 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   CLIENT_MEMBER: new Set(CLIENT_MEMBER),
 };
 
-export const INTERNAL_ROLES: readonly Role[] = ['SUPER_ADMIN', 'FOUNDRY_ADMIN', 'OPERATOR', 'ANALYST', 'CALLER'];
+export const INTERNAL_ROLES: readonly Role[] = ['SUPER_ADMIN', 'RELAY_ADMIN', 'OPERATOR', 'ANALYST', 'CALLER'];
 export const CLIENT_ROLES: readonly Role[] = ['CLIENT_ADMIN', 'CLIENT_MEMBER'];
 
 export function isInternalRole(role: Role): boolean {
@@ -93,7 +93,7 @@ export function isInternalRole(role: Role): boolean {
 
 export const ROLE_LABELS: Record<Role, string> = {
   SUPER_ADMIN: 'Owner',
-  FOUNDRY_ADMIN: 'Admin',
+  RELAY_ADMIN: 'Admin',
   OPERATOR: 'Operator',
   ANALYST: 'Analyst',
   CALLER: 'Caller',
@@ -103,7 +103,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   SUPER_ADMIN: 'Everything, including billing and the team.',
-  FOUNDRY_ADMIN: 'Runs operations across every client.',
+  RELAY_ADMIN: 'Runs operations across every client.',
   OPERATOR: 'Runs campaigns: approves and sends, manages prospects.',
   ANALYST: 'Research, enrichment and drafting. Cannot send.',
   CALLER: 'Call queue, call outcomes and meeting booking.',

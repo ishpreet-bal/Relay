@@ -1,4 +1,4 @@
-# Foundry — architecture assessment and evolution plan
+# Relay — architecture assessment and evolution plan
 
 Written 2026-10-06, before the repositioning from "research-first cold email
 for AI automation agencies" to "outbound sales operating system for
@@ -56,14 +56,14 @@ Postgres (Supabase), Clerk for identity, a separate long-running Node worker
 | Agency-fit score | ICP-relative score: Fit 40 / Contact 20 / Signals 20 / Engagement 10 / Data 10, every point with a reason | The score must mean "fit for *this client's* ICP" |
 | "Every message is manually approved" | Approval policy per campaign: auto-approve messages whose verification score clears a threshold and whose factual claims are all of approved types; everything else goes to review | Manual approval of every email does not scale |
 | Research prompt about automation pain points | Offer-aware research: facts, typed signals and relevance to the client's offer, every one quote-verified | The research question is now "why would this account care about what our client sells?" |
-| Agency roles | SUPER_ADMIN, FOUNDRY_ADMIN, OPERATOR, ANALYST, CALLER, CLIENT_ADMIN, CLIENT_MEMBER, with a client scope | Three parties use the system: Foundry staff, callers, clients |
+| Agency roles | SUPER_ADMIN, RELAY_ADMIN, OPERATOR, ANALYST, CALLER, CLIENT_ADMIN, CLIENT_MEMBER, with a client scope | Three parties use the system: Relay staff, callers, clients |
 | Enrollment per lead | Enrollment per contact; a reply from anyone at the account stops the account | Multi-threading accounts |
 
 ## 4. Data model changes
 
 New entities (all carry `organizationId`; client-owned ones carry `clientId`):
 
-- **Client** — the business Foundry sells for; **Offer**, **IdealCustomerProfile**
+- **Client** — the business Relay sells for; **Offer**, **IdealCustomerProfile**
   (company criteria, contact criteria, preferred signals), **ProofPoint**
   (case studies, testimonials, customers — the only "sender" claims a draft may make).
 - **Playbook** — reusable, admin-configurable approach (targets, titles,

@@ -7,7 +7,7 @@ import type { Session } from '@/lib/auth';
 import { recordAudit } from '@/lib/audit';
 
 /**
- * Client users always see their own client. Foundry staff with portal access
+ * Client users always see their own client. Relay staff with portal access
  * can open any client's portal ("view as client") by passing its id; the
  * view is the same curated, read-only one the client sees.
  */

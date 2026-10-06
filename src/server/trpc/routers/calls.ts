@@ -51,7 +51,7 @@ export const callsRouter = router({
   /** People a call task can be assigned to. */
   callers: permissionProcedure('call:assign').query(({ ctx }) =>
     ctx.db.membership.findMany({
-      where: { organizationId: ctx.access.organizationId, role: { in: ['CALLER', 'OPERATOR', 'FOUNDRY_ADMIN', 'SUPER_ADMIN'] } },
+      where: { organizationId: ctx.access.organizationId, role: { in: ['CALLER', 'OPERATOR', 'RELAY_ADMIN', 'SUPER_ADMIN'] } },
       select: { user: { select: { id: true, firstName: true, lastName: true, email: true } }, role: true },
     }),
   ),

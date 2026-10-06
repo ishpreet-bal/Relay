@@ -11,7 +11,7 @@ import { rescoreAccount } from './scoring';
 import { MEETING_STATUSES, MEETING_OUTCOMES } from '@/lib/domain';
 
 /**
- * Meetings are where Foundry's work becomes the client's pipeline. Scheduling
+ * Meetings are where Relay's work becomes the client's pipeline. Scheduling
  * status (booked → attended / no-show / cancelled) is tracked separately from
  * the commercial outcome (qualified opportunity → won / lost), and both feed
  * analytics, because "meetings booked" and "revenue created" are different

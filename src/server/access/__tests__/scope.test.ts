@@ -64,6 +64,6 @@ describe('role permissions', () => {
 
   it('reserves billing for the owner', () => {
     expect(can('SUPER_ADMIN', 'billing:manage')).toBe(true);
-    expect(can('FOUNDRY_ADMIN', 'billing:manage')).toBe(false);
+    expect(can('RELAY_ADMIN', 'billing:manage')).toBe(false);
   });
 });

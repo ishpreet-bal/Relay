@@ -8,11 +8,11 @@ import { DomainError, NotFoundError } from '@/server/errors';
 
 /**
  * Who works in the workspace and in what capacity. Clerk owns identity;
- * Foundry owns roles. A role change here is the only way access changes —
+ * Relay owns roles. A role change here is the only way access changes —
  * Clerk role syncs never touch it (see the Clerk webhook).
  */
 
-export const ROLES = ['SUPER_ADMIN', 'FOUNDRY_ADMIN', 'OPERATOR', 'ANALYST', 'CALLER', 'CLIENT_ADMIN', 'CLIENT_MEMBER'] as const satisfies readonly Role[];
+export const ROLES = ['SUPER_ADMIN', 'RELAY_ADMIN', 'OPERATOR', 'ANALYST', 'CALLER', 'CLIENT_ADMIN', 'CLIENT_MEMBER'] as const satisfies readonly Role[];
 
 export async function listMembers(organizationId: string) {
   return db.membership.findMany({
@@ -70,7 +70,7 @@ export const inviteSchema = z.object({
 });
 
 /**
- * Sends a Clerk organization invitation carrying the intended Foundry role in
+ * Sends a Clerk organization invitation carrying the intended Relay role in
  * its public metadata. When the person accepts, the membership webhook reads
  * it back — after re-validating it, since metadata is only a request.
  */
@@ -84,8 +84,8 @@ export async function inviteMember(access: AccessContext, inviterClerkUserId: st
     organizationId: org.clerkOrgId,
     emailAddress: input.email,
     inviterUserId: inviterClerkUserId,
-    role: input.role === 'FOUNDRY_ADMIN' ? 'org:admin' : 'org:member',
-    publicMetadata: { foundryRole: input.role, ...(clientId ? { clientId } : {}) },
+    role: input.role === 'RELAY_ADMIN' ? 'org:admin' : 'org:member',
+    publicMetadata: { relayRole: input.role, ...(clientId ? { clientId } : {}) },
   });
   return { id: invitation.id, email: input.email, role: input.role };
 }
@@ -100,8 +100,8 @@ export async function initialAssignment(organizationId: string, clerkRole: unkno
   const existing = await db.membership.count({ where: { organizationId } });
   if (existing === 0) return { role: 'SUPER_ADMIN', clientId: null };
 
-  const meta = (metadata ?? {}) as { foundryRole?: unknown; clientId?: unknown };
-  const requested = ROLES.find((r) => r === meta.foundryRole);
+  const meta = (metadata ?? {}) as { relayRole?: unknown; clientId?: unknown };
+  const requested = ROLES.find((r) => r === meta.relayRole);
   if (requested && requested !== 'SUPER_ADMIN') {
     try {
       const clientId = await validateAssignment(organizationId, requested, typeof meta.clientId === 'string' ? meta.clientId : null);
@@ -110,6 +110,6 @@ export async function initialAssignment(organizationId: string, clerkRole: unkno
       // An invitation pointing at a client that no longer exists falls through.
     }
   }
-  if (clerkRole === 'org:admin') return { role: 'FOUNDRY_ADMIN', clientId: null };
+  if (clerkRole === 'org:admin') return { role: 'RELAY_ADMIN', clientId: null };
   return { role: 'CLIENT_MEMBER', clientId: null };
 }

@@ -2,7 +2,7 @@ import type { ApprovalMode, ClaimType, PersonalizationTier } from '@prisma/clien
 import type { VerificationResult } from './types';
 
 /**
- * The automation policy: "Foundry automatically sends messages that satisfy
+ * The automation policy: "Relay automatically sends messages that satisfy
  * approved policies. Uncertain messages go into review."
  *
  * A draft is approved by policy only when every condition holds. Each failed

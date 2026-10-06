@@ -22,7 +22,7 @@ export async function pageSession(permission: Permission): Promise<Session> {
   return session;
 }
 
-export const ACTIVE_CLIENT_COOKIE = 'fdy_client';
+export const ACTIVE_CLIENT_COOKIE = 'relay_client';
 
 /**
  * The client an internal user has selected in the switcher, or null for "all

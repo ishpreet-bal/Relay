@@ -8,7 +8,7 @@ import { Sidebar, MobileNav } from '@/components/shell/sidebar';
 import { ActiveClientProvider } from '@/components/shell/active-client';
 
 /**
- * The internal workspace, for Foundry staff. Client users are sent to their
+ * The internal workspace, for Relay staff. Client users are sent to their
  * portal; nothing under this layout is reachable without an internal role.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

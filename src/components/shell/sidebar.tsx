@@ -114,8 +114,8 @@ export function MobileNav({ role, counts }: { role: Role; counts: { review: numb
 function Brand() {
   return (
     <div className="h-14 flex items-center gap-2.5 px-4 border-b border-hairline">
-      <div className="size-6 rounded bg-accent grid place-items-center text-white font-display text-[13px] font-bold">F</div>
-      <span className="font-display font-semibold tracking-display">Foundry</span>
+      <div className="size-6 rounded bg-accent grid place-items-center text-white font-display text-[13px] font-bold">R</div>
+      <span className="font-display font-semibold tracking-display">Relay</span>
     </div>
   );
 }

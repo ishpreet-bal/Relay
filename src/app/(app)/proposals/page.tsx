@@ -41,7 +41,7 @@ export default async function ProposalsPage() {
             <div className="card p-12 text-center">
               <h2 className="font-display font-semibold mb-1">No proposals yet</h2>
               <p className="text-sm text-muted max-w-md mx-auto">
-                Proposals belong to Foundry&apos;s earlier automation-agency workflow. Existing proposals stay
+                Proposals belong to Relay&apos;s earlier automation-agency workflow. Existing proposals stay
                 here and their links keep working; new ones are no longer generated.
               </p>
             </div>

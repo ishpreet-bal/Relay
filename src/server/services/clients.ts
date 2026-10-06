@@ -8,7 +8,7 @@ import { markScoresStale } from './scoring';
 import { SIGNAL_TYPES, SENIORITIES } from '@/lib/domain';
 
 /**
- * Clients and what Foundry needs to know to sell for them: the business, its
+ * Clients and what Relay needs to know to sell for them: the business, its
  * offers, its ideal customers, and the proof points outreach may cite.
  * Prospecting and messaging both depend on these, so they are first-class
  * records rather than free text on a campaign.
@@ -37,7 +37,7 @@ export const clientProfileSchema = z.object({
   primaryContactPhone: text(40),
 });
 
-/** Fields only Foundry staff set. */
+/** Fields only Relay staff set. */
 export const clientInternalSchema = z.object({
   status: z.enum(['ONBOARDING', 'ACTIVE', 'PAUSED', 'CHURNED']).optional(),
   notes: text(8000),
@@ -82,7 +82,7 @@ export async function findClient(access: AccessContext, id: string) {
 
 /**
  * Updates a client. Client users may edit their business profile; internal
- * fields (status, notes) are dropped unless the caller is Foundry staff.
+ * fields (status, notes) are dropped unless the caller is Relay staff.
  */
 export async function updateClient(access: AccessContext, id: string, raw: Partial<ClientInput>, opts: { internal: boolean }) {
   await findClient(access, id);

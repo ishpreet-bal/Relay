@@ -1,7 +1,7 @@
 import type { EmailVerification, Seniority } from '@prisma/client';
 
 /**
- * Foundry is an orchestration layer over data and communication providers.
+ * Relay is an orchestration layer over data and communication providers.
  * Each capability below is an interface; providers implement the ones they
  * support and are chosen at runtime by the registry, in the order a workspace
  * configures (a fallback chain). Nothing outside src/server/connectors knows

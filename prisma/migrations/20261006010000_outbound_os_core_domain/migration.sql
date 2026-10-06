@@ -1,4 +1,4 @@
--- Foundry: outbound sales OS core domain.
+-- Relay: outbound sales OS core domain.
 --
 -- Hand-written rather than generated: Prisma would DROP "Lead" and CREATE an
 -- empty "Account". Every existing row is kept. Renames are metadata-only in
@@ -8,7 +8,7 @@
 -- Data mapping decisions (see docs/ASSESSMENT.md):
 --   * Every organization gets a "house" client that owns all pre-existing
 --     leads, contacts, campaigns, messages, research, activity and meetings.
---   * Roles: OWNER→SUPER_ADMIN, ADMIN→FOUNDRY_ADMIN, OPERATOR and ANALYST keep
+--   * Roles: OWNER→SUPER_ADMIN, ADMIN→RELAY_ADMIN, OPERATOR and ANALYST keep
 --     their names, VIEWER→CLIENT_MEMBER with no client (no data access until
 --     an admin assigns a role) — a deliberate de-escalation.
 --   * LeadStatus → AccountStatus; research progress lives on Research.status.
@@ -64,12 +64,12 @@ ALTER TYPE "JobStatus" RENAME VALUE 'SUCCEEDED' TO 'COMPLETED';
 ALTER TYPE "JobStatus" ADD VALUE 'RETRYING';
 
 -- Roles
-CREATE TYPE "Role_new" AS ENUM ('SUPER_ADMIN', 'FOUNDRY_ADMIN', 'OPERATOR', 'ANALYST', 'CALLER', 'CLIENT_ADMIN', 'CLIENT_MEMBER');
+CREATE TYPE "Role_new" AS ENUM ('SUPER_ADMIN', 'RELAY_ADMIN', 'OPERATOR', 'ANALYST', 'CALLER', 'CLIENT_ADMIN', 'CLIENT_MEMBER');
 ALTER TABLE "Membership" ALTER COLUMN "role" DROP DEFAULT;
 ALTER TABLE "Membership" ALTER COLUMN "role" TYPE "Role_new" USING (
   CASE "role"::text
     WHEN 'OWNER' THEN 'SUPER_ADMIN'
-    WHEN 'ADMIN' THEN 'FOUNDRY_ADMIN'
+    WHEN 'ADMIN' THEN 'RELAY_ADMIN'
     WHEN 'OPERATOR' THEN 'OPERATOR'
     WHEN 'ANALYST' THEN 'ANALYST'
     ELSE 'CLIENT_MEMBER'

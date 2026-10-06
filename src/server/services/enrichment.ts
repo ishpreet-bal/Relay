@@ -12,7 +12,7 @@ import { rescoreAccount } from './scoring';
 import { matchingTitle } from './scoring/text';
 
 /**
- * Enrichment through connected providers. Foundry does not keep its own
+ * Enrichment through connected providers. Relay does not keep its own
  * global contact database: it asks the configured providers in fallback
  * order, records every answer with its source and cost, reuses cached answers
  * instead of paying twice, and only fills fields a person has not already set.

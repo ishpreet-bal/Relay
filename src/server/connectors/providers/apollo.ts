@@ -15,7 +15,7 @@ import { toDomain } from '@/lib/utils';
  * connector's health check before relying on it.
  *
  * People search does not reveal emails; a reveal is a separate, credit-
- * consuming call made only for contacts Foundry decides to pursue.
+ * consuming call made only for contacts Relay decides to pursue.
  */
 
 const BASE = 'https://api.apollo.io';

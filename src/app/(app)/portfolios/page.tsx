@@ -33,7 +33,7 @@ export default async function PortfoliosPage() {
           {sites.length === 0 ? (
             <div className="card p-12 text-center">
               <h2 className="font-display font-semibold mb-1">No demo sites yet</h2>
-              <p className="text-sm text-muted">Demo sites belong to Foundry&apos;s earlier automation-agency workflow. Existing sites keep working.</p>
+              <p className="text-sm text-muted">Demo sites belong to Relay&apos;s earlier automation-agency workflow. Existing sites keep working.</p>
             </div>
           ) : (
             <ul className="card divide-y divide-hairline">

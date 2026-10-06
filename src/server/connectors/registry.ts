@@ -9,7 +9,7 @@ import { apolloConnector } from './providers/apollo';
 import { resendConnector } from './providers/resend';
 
 /**
- * Every connector Foundry knows about, including the ones designed for but
+ * Every connector Relay knows about, including the ones designed for but
  * not built yet. A connector is usable only when it is implemented, its
  * credentials are present, and the workspace has not disabled it. The UI shows
  * the honest state of each — "not configured" is never dressed up as data.

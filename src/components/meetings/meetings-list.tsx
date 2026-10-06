@@ -118,7 +118,7 @@ function UpdateDialog({ meeting: m, onClose }: { meeting: Meeting; onClose: () =
         </div>
         {status === 'CANCELLED' && <Field label="Why was it cancelled?">{(id) => <input id={id} className="input" value={cancelledReason} onChange={(e) => setCancelledReason(e.target.value)} />}</Field>}
         <Field label="Notes for the client" hint="Visible in the client's portal.">{(id) => <textarea id={id} rows={3} className="input h-auto py-2" value={qualificationNotes} onChange={(e) => setQualification(e.target.value)} />}</Field>
-        <Field label="Internal notes" hint="Only Foundry staff see these.">{(id) => <textarea id={id} rows={2} className="input h-auto py-2" value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
+        <Field label="Internal notes" hint="Only Relay staff see these.">{(id) => <textarea id={id} rows={2} className="input h-auto py-2" value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
         {outcome === 'WON' && <Field label="Deal value">{(id) => <input id={id} type="number" min={0} className="input" value={actualValue} onChange={(e) => setActualValue(e.target.value)} />}</Field>}
         <ErrorNote error={update.error} />
         <div className="flex justify-end gap-2">

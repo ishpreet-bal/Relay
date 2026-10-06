@@ -5,7 +5,7 @@ import { logger } from '@/lib/logger';
 /**
  * Every request to an external data source is recorded: which provider, what
  * was asked, what came back, what it cost. The same table is the cache that
- * stops Foundry paying twice for one lookup — see findCachedRecord.
+ * stops Relay paying twice for one lookup — see findCachedRecord.
  */
 
 export interface ProviderCall {

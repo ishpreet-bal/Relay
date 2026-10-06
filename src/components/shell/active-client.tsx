@@ -14,7 +14,7 @@ interface ActiveClient {
 
 const Ctx = createContext<ActiveClient>({ clientId: null, clients: [], activeClient: null, setClientId: () => {} });
 
-const COOKIE = 'fdy_client';
+const COOKIE = 'relay_client';
 
 /**
  * The client an internal user is focused on. Stored in a cookie so server

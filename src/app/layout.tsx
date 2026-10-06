@@ -11,7 +11,7 @@ const body = Inter({ subsets: ['latin'], variable: '--font-body' });
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: { default: 'Foundry', template: '%s · Foundry' },
+  title: { default: 'Relay', template: '%s · Relay' },
   description: 'Research-first outbound for AI automation agencies.',
 };
 

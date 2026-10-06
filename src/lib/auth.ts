@@ -12,14 +12,14 @@ export interface Session {
   role: Role;
   /** Set for client users; their only window into the workspace. */
   clientId: string | null;
-  /** Foundry staff (admins, operators, analysts, callers). */
+  /** Relay staff (admins, operators, analysts, callers). */
   isInternal: boolean;
   email: string;
   name: string;
 }
 
 /**
- * Resolves the Clerk session into a Foundry session. Cached per-request so a
+ * Resolves the Clerk session into a Relay session. Cached per-request so a
  * page rendering twelve server components issues one query, not twelve.
  */
 export const getSession = cache(async (): Promise<Session | null> => {

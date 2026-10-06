@@ -112,7 +112,7 @@ async function handle(event: { type: string; data: Record<string, any> }) {
       await db.membership.upsert({
         where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
         create: { organizationId: org.id, userId: user.id, role, clientId },
-        // Roles are managed in Foundry after the membership exists. A Clerk
+        // Roles are managed in Relay after the membership exists. A Clerk
         // role change must never silently promote or demote someone.
         update: {},
       });

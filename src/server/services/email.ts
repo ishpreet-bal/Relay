@@ -76,7 +76,7 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
           mailboxId: mailbox.id,
           failureReason: null,
           // Captured at the moment of sending so outcomes can later be
-          // compared with what Foundry believed when it acted.
+          // compared with what Relay believed when it acted.
           contactScoreAtSend: contact.score,
         },
       }),

@@ -2,7 +2,7 @@ import type { ClaimKind, ClaimStatus, ClaimType, EvidenceStatus, VerificationSta
 
 /**
  * One statement a draft is allowed to make, with the evidence behind it.
- * The ledger is the only bridge between what Foundry knows and what a draft
+ * The ledger is the only bridge between what Relay knows and what a draft
  * says: if something is not in the ledger, the draft cannot claim it.
  */
 export interface LedgerFact {
@@ -15,7 +15,7 @@ export interface LedgerFact {
   evidenceStatus: EvidenceStatus;
   /** When the event happened, if the source says. */
   eventDate: Date | null;
-  /** When Foundry found it. */
+  /** When Relay found it. */
   detectedAt: Date | null;
   /** Firmographic facts (title, location, industry) are weak personalization. */
   firmographic: boolean;

@@ -9,7 +9,7 @@ export { prioritize } from './prioritize';
 export type { QueueReason, QueueDecision } from './prioritize';
 
 /**
- * Keeps one CallTask per contact in step with what Foundry knows. Called
+ * Keeps one CallTask per contact in step with what Relay knows. Called
  * whenever something relevant changes (a reply, an open, a signal, a call)
  * and periodically by the worker, so the queue a caller opens is already
  * ranked.
@@ -239,7 +239,7 @@ export async function addToQueue(access: AccessContext, contactId: string) {
 export async function assignCallTasks(access: AccessContext, ids: string[], assigneeId: string | null) {
   if (assigneeId) {
     const member = await db.membership.findFirst({
-      where: { organizationId: access.organizationId, userId: assigneeId, role: { in: ['CALLER', 'OPERATOR', 'FOUNDRY_ADMIN', 'SUPER_ADMIN'] } },
+      where: { organizationId: access.organizationId, userId: assigneeId, role: { in: ['CALLER', 'OPERATOR', 'RELAY_ADMIN', 'SUPER_ADMIN'] } },
     });
     if (!member) throw new NotFoundError('Team member');
   }

@@ -1,10 +1,10 @@
-// Foundry — outbound sales operating system for B2B small businesses.
+// Relay — outbound sales operating system for B2B small businesses.
 // Postgres 16 (Supabase).
 //
 // Tenancy has two levels:
-//   Organization — the operating workspace (Foundry itself, today). Hard
+//   Organization — the operating workspace (Relay itself, today). Hard
 //                  boundary: every row carries organizationId.
-//   Client       — a business Foundry runs outbound for. Every prospect,
+//   Client       — a business Relay runs outbound for. Every prospect,
 //                  campaign, call and meeting belongs to exactly one client,
 //                  and client users can only ever see their own.
 // Isolation is enforced in the service layer (src/server/access). Row-level
@@ -140,14 +140,14 @@ model User {
 }
 
 /**
- * Three parties use Foundry. Internal staff (SUPER_ADMIN … CALLER) work across
+ * Three parties use Relay. Internal staff (SUPER_ADMIN … CALLER) work across
  * every client in the workspace; client users (CLIENT_*) are bound to exactly
  * one client through Membership.clientId and never see internal operations.
  * Permissions per role live in src/lib/rbac.ts.
  */
 enum Role {
   SUPER_ADMIN // billing, members, everything
-  FOUNDRY_ADMIN // runs operations across all clients
+  RELAY_ADMIN // runs operations across all clients
   OPERATOR // runs campaigns: approve, send, manage prospects
   ANALYST // research, enrichment and drafting; cannot send
   CALLER // call queue, call outcomes, meeting booking
@@ -202,7 +202,7 @@ enum ClientStatus {
 }
 
 /**
- * A business Foundry runs outbound for.
+ * A business Relay runs outbound for.
  */
 model Client {
   id             String       @id @default(uuid()) @db.Uuid
@@ -392,7 +392,7 @@ model ProofPoint {
 }
 
 /**
- * How Foundry approaches a kind of campaign. Workspace templates
+ * How Relay approaches a kind of campaign. Workspace templates
  * (clientId = null) are copied onto clients and edited there. Nothing about
  * an industry is hard-coded in the application; it lives in these rows.
  */
@@ -615,7 +615,7 @@ enum ContactStatus {
 
 /**
  * The legal basis on file for contacting someone. Recorded, never inferred —
- * Foundry does not decide what the law allows.
+ * Relay does not decide what the law allows.
  */
 enum ConsentBasis {
   UNKNOWN
@@ -1789,7 +1789,7 @@ enum ProviderRecordStatus {
 
 /**
  * Every request to an external data provider and what came back. Doubles as
- * the cache that stops Foundry paying twice for the same lookup.
+ * the cache that stops Relay paying twice for the same lookup.
  */
 model ProviderRecord {
   id             String               @id @default(uuid()) @db.Uuid
