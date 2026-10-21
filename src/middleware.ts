@@ -8,6 +8,7 @@ const isPublic = createRouteMatcher([
   '/onboarding(.*)',
   '/api/webhooks/(.*)', // signature-verified, not session-authenticated
   '/api/health',
+  '/api/cron/(.*)', // bearer-token authenticated (CRON_SECRET)
   '/u/(.*)', // unsubscribe page, must never require a login
   '/api/unsubscribe/(.*)', // RFC 8058 one-click POST from mailbox providers
   '/p/(.*)', // public proposal share links

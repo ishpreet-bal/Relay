@@ -156,7 +156,8 @@ export function searchBody(q: DiscoveryQuery) {
 const discovery: DiscoveryProvider = {
   source: 'GOOGLE_PLACES',
   queryStyle: 'text',
-  retentionDays: PLACES_RETENTION_DAYS,
+  storage: 'locate-only',
+  coordinateRetentionDays: PLACES_RETENTION_DAYS,
   // 20 results a page; three pages covers what Text Search usually returns.
   maxPages: 3,
   requestCost,

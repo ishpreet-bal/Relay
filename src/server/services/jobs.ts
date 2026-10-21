@@ -1,4 +1,4 @@
-import type { Job, JobType, Prisma } from '@prisma/client';
+import { Prisma, type Job, type JobType } from '@prisma/client';
 import { db } from '@/lib/db';
 import { NotFoundError } from '@/server/errors';
 
@@ -47,14 +47,15 @@ export async function enqueueJob(params: {
   });
 }
 
-export async function claimJobs(workerId: string, limit: number): Promise<Job[]> {
+export async function claimJobs(workerId: string, limit: number, types?: JobType[]): Promise<Job[]> {
+  const only = types?.length ? Prisma.sql`AND type::text IN (${Prisma.join(types)})` : Prisma.empty;
   const claimed = await db.$queryRaw<Array<{ id: string }>>`
     UPDATE "Job"
     SET status = 'RUNNING', "lockedAt" = NOW(), "lockedBy" = ${workerId}, "startedAt" = NOW(),
         attempts = attempts + 1, "updatedAt" = NOW()
     WHERE id IN (
       SELECT id FROM "Job"
-      WHERE status IN ('QUEUED', 'RETRYING') AND "runAt" <= NOW()
+      WHERE status IN ('QUEUED', 'RETRYING') AND "runAt" <= NOW() ${only}
       ORDER BY "runAt" ASC
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
@@ -63,6 +64,38 @@ export async function claimJobs(workerId: string, limit: number): Promise<Job[]>
   `;
   if (!claimed.length) return [];
   return db.job.findMany({ where: { id: { in: claimed.map((c) => c.id) } } });
+}
+
+/**
+ * Claims one specific job, also taking it over when its holder has gone
+ * quiet for `staleAfterMs` (a serverless step that hit its time limit).
+ */
+export async function claimJob(id: string, workerId: string, staleAfterMs: number): Promise<Job | null> {
+  const staleBefore = new Date(Date.now() - staleAfterMs);
+  const claimed = await db.$queryRaw<Array<{ id: string }>>`
+    UPDATE "Job"
+    SET status = 'RUNNING', "lockedAt" = NOW(), "lockedBy" = ${workerId}, "startedAt" = COALESCE("startedAt", NOW()),
+        attempts = attempts + 1, "updatedAt" = NOW()
+    WHERE id = (
+      SELECT id FROM "Job"
+      WHERE id = ${id}::uuid
+        AND (status IN ('QUEUED', 'RETRYING') OR (status = 'RUNNING' AND "lockedAt" < ${staleBefore}))
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id;
+  `;
+  return claimed.length ? db.job.findUnique({ where: { id } }) : null;
+}
+
+/**
+ * Puts a job that made progress but isn't finished back in the queue. The
+ * attempt is not counted: only failures use up attempts.
+ */
+export async function requeueJob(id: string, runAt = new Date()) {
+  return db.job.update({
+    where: { id },
+    data: { status: 'QUEUED', runAt, lockedAt: null, lockedBy: null, attempts: { decrement: 1 }, error: null },
+  });
 }
 
 export async function completeJob(id: string, result?: Prisma.InputJsonValue) {

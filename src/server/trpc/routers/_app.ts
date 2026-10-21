@@ -4,6 +4,7 @@ import { clientsRouter } from './clients';
 import { playbooksRouter } from './playbooks';
 import { accountsRouter } from './accounts';
 import { contactsRouter } from './contacts';
+import { discoveryRouter } from './discovery';
 import { researchRouter } from './research';
 import { messagesRouter } from './messages';
 import { campaignsRouter } from './campaigns';
@@ -25,6 +26,7 @@ export const appRouter = router({
   playbooks: playbooksRouter,
   accounts: accountsRouter,
   contacts: contactsRouter,
+  discovery: discoveryRouter,
   research: researchRouter,
   messages: messagesRouter,
   campaigns: campaignsRouter,

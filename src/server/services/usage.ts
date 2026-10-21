@@ -30,6 +30,8 @@ export async function recordUsage(params: UsageAttribution & {
   messageId?: string;
   metadata?: Prisma.InputJsonValue;
   occurredAt?: Date;
+  /** The cost is a list-price estimate, not what the provider reported. */
+  isEstimate?: boolean;
 }) {
   try {
     await db.usageRecord.create({
@@ -48,6 +50,7 @@ export async function recordUsage(params: UsageAttribution & {
         messageId: params.messageId ?? null,
         metadata: params.metadata,
         occurredAt: params.occurredAt ?? new Date(),
+        isEstimate: params.isEstimate ?? false,
       },
     });
   } catch (err) {

@@ -160,7 +160,8 @@ const discovery: DiscoveryProvider = {
   source: 'APOLLO',
   queryStyle: 'structured',
   // Storage of Apollo data is governed by your Apollo subscription terms.
-  retentionDays: null,
+  storage: 'licensed',
+  coordinateRetentionDays: null,
   maxPages: 5,
   requestCost: () => ({ millicents: creditMillicents() * searchCreditsPerPage(), isEstimate: true }),
   async search(q): Promise<ProviderResult<DiscoveryPage>> {

@@ -169,10 +169,14 @@ export interface DiscoveryProvider {
    */
   queryStyle: 'text' | 'structured';
   /**
-   * Days the source's terms allow its content to be kept before it must be
-   * refreshed or removed. null when the subscription licenses storage.
+   * licensed: results may be stored as the account record (under your
+   * subscription's terms).
+   * locate-only: results may only be used to find the business; the record
+   * is built from its own website, and only the source's id is kept.
    */
-  retentionDays: number | null;
+  storage: 'licensed' | 'locate-only';
+  /** Days this source's coordinates may be cached, when it allows that at all. */
+  coordinateRetentionDays: number | null;
   /** Most pages one query may be paged through. */
   maxPages: number;
   /** Cost of one request, and whether that figure is an estimate. */
