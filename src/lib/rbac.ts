@@ -28,6 +28,8 @@ export const PERMISSIONS = [
   'analytics:read', 'portal:read',
   // Operations
   'ops:read', 'connector:manage',
+  // Studio: customer applications
+  'studio:read', 'studio:write', 'studio:run', 'studio:deploy', 'studio:secrets',
   // Legacy agency tooling (proposals, demo sites)
   'proposal:read', 'proposal:write', 'proposal:send',
   'portfolio:read', 'portfolio:write', 'portfolio:publish',
@@ -38,9 +40,10 @@ export const PERMISSIONS = [
 export type Permission = (typeof PERMISSIONS)[number];
 
 /** Client users see results, not machinery. */
-const CLIENT_MEMBER: Permission[] = ['portal:read', 'client:read'];
+const CLIENT_MEMBER: Permission[] = ['portal:read', 'client:read', 'studio:read', 'studio:run'];
 
-const CLIENT_ADMIN: Permission[] = [...CLIENT_MEMBER, 'clientProfile:write'];
+/** A customer's admin can also connect their own systems to their applications. */
+const CLIENT_ADMIN: Permission[] = [...CLIENT_MEMBER, 'clientProfile:write', 'studio:secrets'];
 
 /** Callers get exactly what a sales conversation needs. */
 const CALLER: Permission[] = [
@@ -54,6 +57,7 @@ const ANALYST: Permission[] = [
   'message:read', 'message:draft', 'campaign:read', 'campaign:write',
   'suppression:read', 'analytics:read', 'ops:read',
   'proposal:read', 'portfolio:read', 'settings:read',
+  'studio:read', 'studio:run',
 ];
 
 // Only OPERATOR and above can put mail on the wire or change what the system
@@ -64,12 +68,15 @@ const OPERATOR: Permission[] = [
   'call:assign', 'suppression:write', 'account:override',
   'clientProfile:write', 'playbook:write', 'portal:read',
   'proposal:write', 'proposal:send', 'portfolio:write', 'portfolio:publish',
+  'studio:write',
 ];
 
 const RELAY_ADMIN: Permission[] = [
   ...OPERATOR,
   'client:manage', 'account:delete', 'settings:write', 'member:manage',
   'audit:read', 'connector:manage',
+  // Production deployments and customer credentials stay with admins.
+  'studio:deploy', 'studio:secrets',
 ];
 
 const SUPER_ADMIN: Permission[] = [...RELAY_ADMIN, 'billing:manage'];

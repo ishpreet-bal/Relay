@@ -20,6 +20,7 @@ import { createAccount } from './accounts';
 import { screenAccounts, type Trigger } from './pipeline/gates';
 import { refreshAccount } from './pipeline/refresh';
 import { runDeepResearch } from './pipeline/deep';
+import { runExecution } from '@/server/studio/executor';
 
 /**
  * Executing queued work, shared by everything that can drive it: the
@@ -81,6 +82,21 @@ const HANDLERS: Partial<Record<JobType, Handler>> = {
   RETENTION_SWEEP: () => sweepRetention(),
   MAINTENANCE: () => backfillCompanyKeys(),
   SYNTHETIC_TASK: (job) => runSyntheticTask(job),
+  WORKFLOW_EXECUTION: async (job) => {
+    try {
+      const r = await runExecution(job.entityId!);
+      return r.done ? { executionId: job.entityId } : new Continue(r.retryAt ?? new Date(), r.reason ?? null);
+    } catch (err) {
+      // Out of retries: the customer sees a failed run, not one stuck running.
+      if (job.attempts >= job.maxAttempts) {
+        await db.workflowExecution.updateMany({
+          where: { id: job.entityId!, status: { in: ['QUEUED', 'RUNNING'] } },
+          data: { status: 'FAILED', error: (err instanceof Error ? err.message : String(err)).slice(0, 1000), finishedAt: new Date() },
+        });
+      }
+      throw err;
+    }
+  },
 };
 
 async function withTimeout<T>(work: Promise<T>, ms: number, onLateSettle: () => void): Promise<T> {

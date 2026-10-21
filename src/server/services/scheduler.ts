@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { enqueuePendingScreening } from './pipeline/gates';
 import { enqueueDueRefresh } from './pipeline/refresh';
+import { runDueSchedules } from '@/server/studio/applications';
 
 /**
  * Housekeeping on a clock: start due discovery runs, release jobs whose
@@ -30,5 +31,7 @@ export async function scheduledMaintenance(now = new Date()) {
       logger.error('scheduler.pipeline_failed', { organizationId: org.id, error: err });
     }
   }
-  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs };
+  // Studio: scheduled customer workflows (they run on the studio queue).
+  const schedules = await runDueSchedules(now).catch((err) => { logger.error('scheduler.studio_failed', { error: err }); return { started: 0 }; });
+  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, workflowsStarted: schedules.started };
 }

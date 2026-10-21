@@ -93,6 +93,7 @@ model Organization {
   activities        Activity[]
   discoveryRuns     DiscoveryRun[]
   discoveryProfiles DiscoveryProfile[]
+  applications      ClientApplication[]
   duplicates        DuplicateCandidate[]
   savedViews        SavedView[]
   aiRuns            AiRun[]
@@ -267,6 +268,7 @@ model Client {
   research          Research[]
   activities        Activity[]
   discoveryProfiles DiscoveryProfile[]
+  applications      ClientApplication[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
@@ -2372,6 +2374,217 @@ model SystemAlert {
 
   @@unique([organizationId, dedupeKey])
   @@index([resolvedAt, lastSeenAt])
+}
+
+// ---------------------------------------------------------------------------
+// Studio: customer applications assembled from versioned templates and
+// tested modules. A customer is a Client; every row below carries clientId.
+// ---------------------------------------------------------------------------
+
+/// A reusable application template (built in when organizationId is null).
+model AppTemplate {
+  id                        String    @id @default(uuid()) @db.Uuid
+  organizationId            String?   @db.Uuid
+  slug                      String
+  name                      String
+  industry                  String
+  description               String    @db.Text
+  /// Use cases it covers, for solution matching.
+  useCases                  String[]  @default([])
+  /// Estimates used for proposals until real delivery data replaces them.
+  buildHoursEstimate        Int?
+  monthlyInfraCentsEstimate Int?
+  recommendedSetupCents     Int?
+  recommendedMonthlyCents   Int?
+  knownLimitations          String[]  @default([])
+  archivedAt                DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  versions     AppTemplateVersion[]
+  applications ClientApplication[]
+
+  @@unique([organizationId, slug])
+  @@index([industry])
+}
+
+/// One immutable release of a template's manifest.
+model AppTemplateVersion {
+  id            String    @id @default(uuid()) @db.Uuid
+  templateId    String    @db.Uuid
+  /// Semantic version, e.g. 1.2.0. A major bump means existing apps need review to upgrade.
+  version       String
+  manifest      Json
+  changelog     String?   @db.Text
+  /// DRAFT, PUBLISHED or RETIRED.
+  status        String    @default("DRAFT")
+  /// When the template's own tests last passed for this version.
+  testsPassedAt DateTime?
+  createdById   String?   @db.Uuid
+  createdAt     DateTime  @default(now())
+  publishedAt   DateTime?
+
+  template AppTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+}
+
+/// A customer's application: a template version plus that customer's configuration.
+model ClientApplication {
+  id                    String    @id @default(uuid()) @db.Uuid
+  organizationId        String    @db.Uuid
+  clientId              String    @db.Uuid
+  templateId            String?   @db.Uuid
+  templateVersionId     String?   @db.Uuid
+  name                  String
+  slug                  String
+  /// DRAFT, TESTING, ACTIVE, PAUSED or ARCHIVED.
+  status                String    @default("DRAFT")
+  /// SHARED (multi-tenant runtime) or DEDICATED (own environment, priced separately).
+  deployment            String    @default("SHARED")
+  activeConfigVersionId String?   @db.Uuid
+  maxExecutionsPerDay   Int       @default(500)
+  maxConcurrent         Int       @default(2)
+  /// Last scheduled run per workflow key, so a schedule fires once per slot.
+  scheduleState         Json?
+  /// SHA-256 of the token the customer's systems send to trigger workflows.
+  webhookTokenHash      String?
+  createdById           String?   @db.Uuid
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  archivedAt            DateTime?
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  template     AppTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  configs      AppConfigVersion[]
+  executions   WorkflowExecution[]
+  deployments  AppDeployment[]
+  records      AppRecord[]
+
+  @@unique([clientId, slug])
+  @@index([organizationId, status])
+}
+
+/// One version of an application's configuration. Deployed versions are
+/// never edited; a change is a new version, and rollback redeploys an old one.
+model AppConfigVersion {
+  id                String   @id @default(uuid()) @db.Uuid
+  applicationId     String   @db.Uuid
+  clientId          String   @db.Uuid
+  version           Int
+  /// The customer's settings on top of the template.
+  overrides         Json
+  /// Template manifest + overrides, as validated.
+  manifest          Json
+  templateVersionId String?  @db.Uuid
+  /// DRAFT, VALID, INVALID, DEPLOYED or SUPERSEDED.
+  status            String   @default("DRAFT")
+  validationErrors  Json?
+  notes             String?
+  createdById       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+
+  application ClientApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, version])
+}
+
+/// A deployment of one configuration version to an environment.
+model AppDeployment {
+  id                      String   @id @default(uuid()) @db.Uuid
+  applicationId           String   @db.Uuid
+  clientId                String   @db.Uuid
+  configVersionId         String   @db.Uuid
+  previousConfigVersionId String?  @db.Uuid
+  /// SANDBOX or PRODUCTION.
+  environment             String
+  /// DEPLOY or ROLLBACK.
+  kind                    String   @default("DEPLOY")
+  status                  String   @default("SUCCEEDED")
+  notes                   String?
+  deployedById            String?  @db.Uuid
+  createdAt               DateTime @default(now())
+
+  application ClientApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+}
+
+/// A customer's connection to one of their systems. Secrets are encrypted
+/// at rest and never returned to a browser.
+model IntegrationConnection {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  clientId        String    @db.Uuid
+  /// rest_api, webhook, email_smtp, google_workspace, microsoft_365, database, file_import.
+  provider        String
+  label           String
+  /// Non-secret settings: base URL, allowed hosts, scopes.
+  config          Json      @default("{}")
+  encryptedSecret String?
+  /// CONNECTED, NEEDS_REAUTH, ERROR or DISCONNECTED.
+  status          String    @default("CONNECTED")
+  /// Test connections may be called by test runs; production ones never are.
+  isSandbox       Boolean   @default(false)
+  lastCheckedAt   DateTime?
+  lastError       String?
+  createdById     String?   @db.Uuid
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([clientId, provider])
+}
+
+/// One run of a workflow in a customer application.
+model WorkflowExecution {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  clientId        String    @db.Uuid
+  applicationId   String    @db.Uuid
+  configVersionId String    @db.Uuid
+  workflowKey     String
+  /// MANUAL, SCHEDULE, WEBHOOK, RECORD or TEST.
+  trigger         String
+  /// Test runs use synthetic data and never call production connections.
+  isTest          Boolean   @default(false)
+  /// QUEUED, RUNNING, WAITING_APPROVAL, SUCCEEDED, FAILED or CANCELLED.
+  status          String    @default("QUEUED")
+  input           Json?
+  output          Json?
+  steps           Json?
+  error           String?
+  jobId           String?   @db.Uuid
+  idempotencyKey  String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  durationMs      Int?
+  createdAt       DateTime  @default(now())
+
+  application ClientApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, idempotencyKey])
+  @@index([applicationId, createdAt])
+  @@index([clientId, status])
+}
+
+/// Business records an application keeps (claims, bookings, quotes…), in
+/// the collections its manifest defines.
+model AppRecord {
+  id                   String   @id @default(uuid()) @db.Uuid
+  clientId             String   @db.Uuid
+  applicationId        String   @db.Uuid
+  collection           String
+  data                 Json
+  isTest               Boolean  @default(false)
+  createdByExecutionId String?  @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  application ClientApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, collection, createdAt])
+  @@index([clientId])
 }
 
 /// Liveness of worker processes (the long-running worker, cron ticks, page steps).
