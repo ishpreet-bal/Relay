@@ -277,7 +277,7 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 ### Brief 2
 
 - ✅ Phase A — this review
-- ⬜ Phase B — queues, throttles, breakers, attempts, dead letter, ops page, 1,000-task test
+- ✅ Phase B — queues, throttles, breakers, attempts, dead letter, ops page, 1,000-task test (see section 4)
 - ⬜ Phase C — staged qualification, freshness, research versions, budgets, forecasts
 - ⬜ Phase D — Studio foundation and two-tenant isolation test
 - ⬜ Phase E — opportunity-to-application workflow
@@ -300,3 +300,62 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 
 Set them in Vercel → Project → Settings → Environment Variables (and the
 worker's environment), then use each connector's check on the Connectors page.
+
+---
+
+## 4. Phase reports
+
+### Phase B — scalable job infrastructure (2026-10-22)
+
+**Built**
+- 15 logical queues (`server/queues/registry.ts`) in three worker groups,
+  each with concurrency, per-workspace share, starts per minute, timeout,
+  attempts and backoff base; operator overrides in `QueueSetting`; pause and
+  resume per queue.
+- Claims run under a per-queue advisory lock, so limits hold across any
+  number of workers. Timed-out work that is still running keeps its slot
+  until it settles (Node can't cancel it).
+- `JobAttempt` history for every execution (succeeded, failed, timed out,
+  continued, abandoned), dead letters (`deadLetteredAt`, `failureKind`),
+  retry of one job or every dead letter in a queue, idempotency keys unique
+  per queue, batch enqueue.
+- `ProviderThrottle`: per-provider requests per minute and a circuit breaker
+  (threshold, cooldown doubling to 30 min, trial request). Discovery,
+  enrichment chains and Anthropic calls go through it; a paused provider
+  defers only its own jobs, without using up their attempts, and enrichment
+  chains fall through to the next provider.
+- Usage records carry the job that incurred them (via async context), the
+  operation and duration.
+- Workers run a group (`npm run worker:studio`, `worker:intelligence`, or
+  all) and report heartbeats; the cron tick runs only serverless-safe queues.
+- System page: queues (depth, held, running/limit, oldest, done, average
+  time, error rate, dead letters, cost), provider limits and breakers,
+  workers, and a job inspector with attempts, payload, result and cost.
+
+**Migrations**: `20261022000000_queues_and_throttles` (additive; backfills
+each existing job's queue and marks existing failures as dead letters).
+
+**Tests** (`src/server/queues/__tests__/queue.int.test.ts`, real Postgres)
+- 1,000 synthetic tasks, 4 workers, queue concurrency 8, with injected
+  failures before writes (100), after writes (40), attempts beyond the 2 s
+  timeout (5), permanent failures (4), a worker that claimed 8 and died, a
+  duplicate enqueue of all 1,000, and 100 company pairs written by two tasks.
+  Result, three consecutive runs on this machine: 14.9–18.0 s (56–67 tasks/s),
+  never more than 8 concurrent, 996 completed and 4 dead letters, 1,040
+  writes producing exactly 897 company records, every attempt recorded.
+- Per-workspace share, pause, per-minute rate, provider budget deferral, and
+  breaker open → other work unaffected → trial success closes it.
+
+**Bugs the load test found and fixed**
+- Matching could miss the exact match when many companies share a first
+  word (the candidate scan was capped across all keys). Strong keys are now
+  looked up separately, and an account holding the domain always matches.
+- A timed-out attempt released its slot while its work kept running.
+
+**Limits of what was measured**: one machine, local Postgres, synthetic
+handlers doing one account write each. Throughput against Supabase through
+its pooler, with real provider latency, is not measured yet (phase G). The
+operations UI was type-checked and built but not exercised in a browser
+(sign-in needs Clerk credentials).
+
+**New dependencies**: none.

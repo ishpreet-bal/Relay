@@ -17,7 +17,9 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "worker": "tsx src/server/worker.ts"
+    "worker": "tsx src/server/worker.ts",
+    "worker:intelligence": "tsx src/server/worker.ts --group=intelligence",
+    "worker:studio": "tsx src/server/worker.ts --group=studio"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

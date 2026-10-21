@@ -7,6 +7,7 @@ import { costCents, costMillicents, MODELS } from './pricing';
 import { assertBudget } from './budget';
 import { recordUsage, type UsageAttribution } from '@/server/services/usage';
 import { logger } from '@/lib/logger';
+import { ProviderUnavailableError, reportProviderResult, takeProviderSlot } from '@/server/queues/throttle';
 import type { UsageType } from '@prisma/client';
 
 export interface CompletionRequest {
@@ -91,7 +92,7 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
   try {
     let result: CompletionResult;
     try {
-      result = await withRetries(() => callAnthropic(req, primary), 3);
+      result = await withRetries(() => throttledAnthropic(req, primary), 3);
     } catch (primaryError) {
       const fallback = req.fallbackModel ?? MODELS.fallbackResearch;
       if (!openai()) throw primaryError;
@@ -134,6 +135,29 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
   }
 }
 
+/**
+ * One Anthropic call under the shared request budget and breaker. Only the
+ * provider's own faults (network, 408/409/429/5xx) count toward opening the
+ * breaker; a bad request is ours, not theirs.
+ */
+async function throttledAnthropic(req: CompletionRequest, model: string) {
+  await takeProviderSlot('anthropic');
+  try {
+    const result = await callAnthropic(req, model);
+    await reportProviderResult('anthropic', { ok: true });
+    return result;
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    if (!status || RETRYABLE.has(status)) {
+      await reportProviderResult('anthropic', {
+        ok: false, error: err instanceof Error ? err.message : String(err),
+        retryAfter: status === 429 ? new Date(Date.now() + 30_000) : undefined,
+      });
+    }
+    throw err;
+  }
+}
+
 async function withRetries<T>(fn: () => Promise<T>, attempts: number): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -141,6 +165,8 @@ async function withRetries<T>(fn: () => Promise<T>, attempts: number): Promise<T
       return await fn();
     } catch (err) {
       lastError = err;
+      // A paused provider won't recover in seconds; let the caller reschedule.
+      if (err instanceof ProviderUnavailableError) throw err;
       const status = (err as { status?: number })?.status;
       if (status && !RETRYABLE.has(status)) throw err;
       if (i === attempts - 1) break;

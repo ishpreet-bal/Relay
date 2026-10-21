@@ -1,18 +1,96 @@
 import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import { router, permissionProcedure } from '../init';
-import { cancelJob, jobSummary, listJobs, retryJob } from '@/server/services/jobs';
+import { cancelJob, getJob, jobSummary, listJobs, queueStats, retryDeadLetters, retryJob } from '@/server/services/jobs';
+import { QUEUES, QUEUE_NAMES, type QueueName } from '@/server/queues/registry';
+import { queueRuntime, setQueueOverride } from '@/server/queues/settings';
+import { listProviderThrottles, setProviderThrottle } from '@/server/queues/throttle';
 import { connectorById, connectorStates } from '@/server/connectors/registry';
 import { costSummary } from '@/server/services/usage';
 import { NotFoundError } from '@/server/errors';
 import { recordAudit } from '@/lib/audit';
 
 const JOB_STATUSES = ['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'RETRYING'] as const;
+const queueName = z.enum(QUEUE_NAMES as [QueueName, ...QueueName[]]);
+
+/** Queue limits and provider budgets apply to every workspace on this deployment. */
+function assertPlatformOwner(role: string) {
+  if (role !== 'SUPER_ADMIN') throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the workspace owner can change platform-wide queue and provider limits.' });
+}
 
 /** Operations: background work, connectors, and what everything costs. */
 export const opsRouter = router({
   jobs: permissionProcedure('ops:read')
-    .input(z.object({ status: z.array(z.enum(JOB_STATUSES)).optional(), limit: z.number().int().min(1).max(200).default(100) }).default({}))
+    .input(z.object({
+      status: z.array(z.enum(JOB_STATUSES)).optional(),
+      queue: queueName.optional(),
+      deadLetter: z.boolean().optional(),
+      limit: z.number().int().min(1).max(200).default(100),
+    }).default({}))
     .query(({ ctx, input }) => listJobs(ctx.access.organizationId, input)),
+
+  job: permissionProcedure('ops:read')
+    .input(z.object({ id: z.string().uuid() }))
+    .query(({ ctx, input }) => getJob(ctx.access.organizationId, input.id)),
+
+  /** Every queue: its effective limits and this workspace's depth, speed, errors and cost. */
+  queues: permissionProcedure('ops:read').query(async ({ ctx }) => {
+    const stats = await queueStats(ctx.access.organizationId);
+    return Promise.all(QUEUE_NAMES.filter((n) => n !== 'synthetic').map(async (name) => ({
+      ...(await queueRuntime(name)),
+      stats: stats.find((s) => s.queue === name) ?? null,
+    })));
+  }),
+
+  setQueue: permissionProcedure('settings:write')
+    .input(z.object({
+      queue: queueName,
+      paused: z.boolean().optional(),
+      pausedReason: z.string().max(200).nullish(),
+      concurrency: z.number().int().min(1).max(64).nullish(),
+      perOrgConcurrency: z.number().int().min(1).max(64).nullish(),
+      maxPerMinute: z.number().int().min(1).max(10_000).nullish(),
+      timeoutMs: z.number().int().min(5_000).max(30 * 60_000).nullish(),
+      maxAttempts: z.number().int().min(1).max(20).nullish(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      assertPlatformOwner(ctx.session.role);
+      const { queue, ...override } = input;
+      const row = await setQueueOverride(queue, override, ctx.session.userId);
+      await recordAudit({ session: ctx.session, action: 'queue.update', entityType: 'QueueSetting', entityId: queue, after: override });
+      return row;
+    }),
+
+  retryDeadLetters: permissionProcedure('settings:write')
+    .input(z.object({ queue: queueName }))
+    .mutation(async ({ ctx, input }) => {
+      const n = await retryDeadLetters(ctx.access.organizationId, input.queue);
+      await recordAudit({ session: ctx.session, action: 'queue.retry_dead_letters', entityType: 'QueueSetting', entityId: input.queue, after: { retried: n } });
+      return { retried: n };
+    }),
+
+  providers: permissionProcedure('ops:read').query(() => listProviderThrottles()),
+
+  setProvider: permissionProcedure('settings:write')
+    .input(z.object({
+      provider: z.string().min(1).max(60),
+      maxPerMinute: z.number().int().min(1).max(100_000).nullish(),
+      failureThreshold: z.number().int().min(1).max(100).optional(),
+      reset: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      assertPlatformOwner(ctx.session.role);
+      const { provider, ...data } = input;
+      const row = await setProviderThrottle(provider, { ...data, maxPerMinute: data.maxPerMinute === undefined ? undefined : data.maxPerMinute });
+      await recordAudit({ session: ctx.session, action: data.reset ? 'provider.reset_breaker' : 'provider.update', entityType: 'ProviderThrottle', entityId: provider, after: data });
+      return row;
+    }),
+
+  workers: permissionProcedure('ops:read').query(({ ctx }) =>
+    ctx.db.workerHeartbeat.findMany({ orderBy: { lastSeenAt: 'desc' }, take: 20 }),
+  ),
+
+  queueDefinitions: permissionProcedure('ops:read').query(() => QUEUES),
 
   jobSummary: permissionProcedure('ops:read').query(({ ctx }) => jobSummary(ctx.access.organizationId)),
 

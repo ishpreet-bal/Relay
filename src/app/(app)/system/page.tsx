@@ -6,5 +6,6 @@ export const metadata = { title: 'System' };
 
 export default async function Page() {
   const session = await pageSession('ops:read');
-  return <SystemPage canRetry={can(session.role, 'settings:write')} />;
+  // Queue limits and provider budgets are platform-wide: owner only.
+  return <SystemPage canRetry={can(session.role, 'settings:write')} canControl={session.role === 'SUPER_ADMIN'} />;
 }
