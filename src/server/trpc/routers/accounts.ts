@@ -12,6 +12,9 @@ import { enrichAccount, discoverContacts } from '@/server/services/enrichment';
 import { addManualSignal, dismissSignal, manualSignalSchema } from '@/server/services/signals';
 import { messageThread } from '@/server/services/review';
 import { ACCOUNT_STATUSES } from '@/lib/domain';
+import { dismissDuplicate, listDuplicateCandidates, mergeAccounts } from '@/server/services/companies/merge';
+import { createSavedView, deleteSavedView, listSavedViews, savedViewInputSchema, SAVED_VIEW_SCOPES } from '@/server/services/saved-views';
+import { can } from '@/lib/rbac';
 import { recordAudit } from '@/lib/audit';
 
 export const accountsRouter = router({
@@ -140,4 +143,38 @@ export const accountsRouter = router({
       await recordAudit({ session: ctx.session, action: 'account.import', entityType: 'Client', entityId: input.clientId, after: { ...result, failed: result.failed.length } });
       return result;
     }),
+
+  // Possible duplicates and merging
+  duplicates: permissionProcedure('account:read')
+    .input(z.object({ clientId: z.string().uuid().nullish() }).default({}))
+    .query(({ ctx, input }) => listDuplicateCandidates(ctx.access, input.clientId)),
+
+  duplicateCount: permissionProcedure('account:read')
+    .input(z.object({ clientId: z.string().uuid().nullish() }).default({}))
+    .query(async ({ ctx, input }) => (await listDuplicateCandidates(ctx.access, input.clientId)).length),
+
+  merge: permissionProcedure('account:override')
+    .input(z.object({ keepId: z.string().uuid(), mergeId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await mergeAccounts(ctx.access, ctx.session.userId, input.keepId, input.mergeId);
+      await recordAudit({ session: ctx.session, action: 'account.merge', entityType: 'Account', entityId: input.keepId, after: input });
+      return result;
+    }),
+
+  dismissDuplicate: permissionProcedure('account:write')
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(({ ctx, input }) => dismissDuplicate(ctx.access, ctx.session.userId, input.id)),
+
+  // Saved list views
+  savedViews: permissionProcedure('account:read')
+    .input(z.object({ scope: z.enum(SAVED_VIEW_SCOPES) }))
+    .query(({ ctx, input }) => listSavedViews(ctx.access, input.scope)),
+
+  saveView: permissionProcedure('account:read')
+    .input(savedViewInputSchema)
+    .mutation(({ ctx, input }) => createSavedView(ctx.access, input)),
+
+  deleteView: permissionProcedure('account:read')
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(({ ctx, input }) => deleteSavedView(ctx.access, input.id, can(ctx.session.role, 'settings:write'))),
 });

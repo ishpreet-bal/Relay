@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, Plus, Search, Upload, Phone, Radio, Users } from 'lucide-react';
+import { Building2, Download, Plus, Search, Upload, Phone, Radio, Users } from 'lucide-react';
 import type { AccountStatus } from '@prisma/client';
 import { trpc } from '@/lib/trpc/client';
 import { useActiveClient } from '@/components/shell/active-client';
@@ -16,6 +16,7 @@ import { AccountStatusPill } from '@/components/domain/pills';
 import { ACCOUNT_STATUSES, ACCOUNT_STATUS_LABELS, personName } from '@/lib/domain';
 import { cn, formatCompact } from '@/lib/utils';
 import { ImportDialog } from './import-dialog';
+import { SavedViews } from './saved-views';
 import { AccountFormDialog } from './account-form-dialog';
 import { EnrollDialog } from '@/components/campaigns/enroll-dialog';
 
@@ -94,6 +95,12 @@ export function AccountsWorkspace({ canWrite, canImport, canEnroll, canResearch 
         actions={
           <div className="flex items-center gap-2">
             {canImport && (
+              <a className="btn-ghost h-8 text-micro" href={`/api/export/accounts?filters=${encodeURIComponent(JSON.stringify(input))}`}
+                 title="Download the filtered list as CSV">
+                <Download className="size-3.5" /> Export
+              </a>
+            )}
+            {canImport && (
               <button type="button" className="btn-outline h-8 text-micro" onClick={() => setDialog('import')}>
                 <Upload className="size-3.5" /> Import
               </button>
@@ -109,6 +116,8 @@ export function AccountsWorkspace({ canWrite, canImport, canEnroll, canResearch 
       <PageBody width="full">
         <div className="flex flex-col lg:flex-row gap-5">
           <aside className="lg:w-56 shrink-0 space-y-4" aria-label="Filters">
+            <SavedViews scope="accounts" current={filters as unknown as Record<string, unknown>}
+                        onApply={(f) => { const next = { ...EMPTY, ...(f as Partial<Filters>) }; setFilters(next); setSearch(next.search); }} />
             <label className="relative block">
               <span className="sr-only">Search accounts</span>
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted" />

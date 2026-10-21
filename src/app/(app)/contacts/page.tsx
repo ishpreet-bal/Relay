@@ -6,5 +6,5 @@ export const metadata = { title: 'Contacts' };
 
 export default async function ContactsPage() {
   const session = await pageSession('account:read');
-  return <ContactsWorkspace canEnroll={can(session.role, 'campaign:write')} />;
+  return <ContactsWorkspace canEnroll={can(session.role, 'campaign:write')} canExport={can(session.role, 'account:import')} />;
 }

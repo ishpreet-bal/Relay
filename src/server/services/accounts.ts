@@ -1,13 +1,15 @@
 import { z } from 'zod';
 import { Prisma, type AccountStatus } from '@prisma/client';
 import { db } from '@/lib/db';
-import { toDomain } from '@/lib/utils';
 import { clientFilter, assertClientAccess, type AccessContext } from '@/server/access/scope';
 import { NotFoundError } from '@/server/errors';
 import { logActivity } from './activity';
 import { recordProvenance, TRACKED_ACCOUNT_FIELDS } from './provenance';
 import { rescoreAccount } from './scoring';
 import { createContactRecord, contactInputSchema } from './contacts';
+import { canonicalDomain, normalizeCompanyName, socialNetworkOf } from './companies/normalize';
+import { fillableFields } from './companies/match';
+import { lockCompanyKey, matchCompany } from './companies/dedup';
 import { ACCOUNT_STATUSES, DATA_SOURCES } from '@/lib/domain';
 
 export { ACCOUNT_STATUSES, DATA_SOURCES };
@@ -66,7 +68,7 @@ export const accountFilterSchema = z.object({
 });
 export type AccountFilter = z.infer<typeof accountFilterSchema>;
 
-function buildWhere(access: AccessContext, f: AccountFilter): Prisma.AccountWhereInput {
+export function buildWhere(access: AccessContext, f: AccountFilter): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = { ...clientFilter(access, f.clientId), deletedAt: null };
   const and: Prisma.AccountWhereInput[] = [];
 
@@ -181,6 +183,8 @@ export async function getAccountDetail(access: AccessContext, id: string) {
 
 const optionalText = (max: number) => z.string().trim().max(max).optional().nullable().transform((v) => v || null);
 
+const SOCIAL_NETWORKS = ['facebook', 'instagram', 'linkedin', 'x', 'tiktok', 'youtube'] as const;
+
 export const accountFieldsSchema = z.object({
   name: z.string().trim().min(1).max(200),
   websiteUrl: optionalText(300),
@@ -191,11 +195,16 @@ export const accountFieldsSchema = z.object({
   employeeRange: optionalText(40),
   revenueRange: optionalText(60),
   description: optionalText(4000),
+  businessModel: optionalText(120),
+  foundedYear: z.number().int().min(1800).max(2100).optional().nullable(),
   addressLine: optionalText(200),
   city: optionalText(80),
   region: optionalText(80),
   postalCode: optionalText(20),
   country: optionalText(80),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
+  socialProfiles: z.record(z.enum(SOCIAL_NETWORKS), z.string().url().max(300)).optional().nullable(),
   tags: z.array(z.string().max(40)).max(30).default([]),
   notes: optionalText(5000),
 });
@@ -204,33 +213,70 @@ export const accountInputSchema = accountFieldsSchema.extend({
   clientId: z.string().uuid(),
   source: z.enum(DATA_SOURCES).default('MANUAL'),
   sourceRef: optionalText(200),
+  /** Stable ids at outside sources: the strongest duplicate check there is. */
+  identifiers: z.array(z.object({ provider: z.string().min(1).max(40), externalId: z.string().min(1).max(200) })).max(10).default([]),
   contacts: z.array(contactInputSchema).max(25).default([]),
 });
 export type AccountInput = z.input<typeof accountInputSchema>;
 
+/** Where the data came from, for provenance and retention. */
+export interface AccountSourceInfo {
+  provider?: string | null;
+  sourceUrl?: string | null;
+  discoveryRunId?: string | null;
+  /** Days the source allows its data to be kept (e.g. Google Places content). */
+  retentionDays?: number | null;
+  /** What to call this source in the activity timeline. */
+  label?: string;
+}
+
 export type CreateAccountResult =
-  | { status: 'created'; accountId: string }
-  | { status: 'duplicate'; accountId: string }
+  | { status: 'created'; accountId: string; review?: { candidateId: string; score: number } }
+  | { status: 'duplicate'; accountId: string; filled: string[]; score: number }
   | { status: 'excluded'; reason: string };
 
 function isExistingCustomer(client: { existingCustomers: string[] }, name: string, domain: string | null) {
-  const n = name.toLowerCase().trim();
+  const n = normalizeCompanyName(name);
   return client.existingCustomers.some((c) => {
-    const v = c.toLowerCase().trim();
-    return (domain && toDomain(v) === domain) || v === n;
+    const v = c.trim();
+    return (domain && canonicalDomain(v) === domain) || normalizeCompanyName(v) === n;
   });
 }
 
+/** Website and social profile, sorted out: a Facebook page is not a website. */
+function splitWebsite(websiteUrl: string | null | undefined, social: Record<string, string> | null | undefined) {
+  const network = socialNetworkOf(websiteUrl);
+  if (websiteUrl && network) {
+    return { websiteUrl: null, domain: null, socialProfiles: { ...(social ?? {}), [network]: websiteUrl } };
+  }
+  return { websiteUrl: websiteUrl ?? null, domain: canonicalDomain(websiteUrl), socialProfiles: social ?? null };
+}
+
+// Fields a matched record may be enriched with. Never name or status: those
+// are what a person sees and decides on.
+const ENRICHABLE = [
+  'websiteUrl', 'domain', 'linkedinUrl', 'phone', 'industry', 'employeeCount', 'employeeRange', 'revenueRange',
+  'description', 'businessModel', 'foundedYear', 'addressLine', 'city', 'region', 'postalCode', 'latitude', 'longitude',
+] as const;
+
 /**
- * Creates an account (and any contacts supplied with it) for one client.
- * Dedupes on domain within the client — the same company can be a prospect
- * for two clients without them sharing a record. The client's existing
- * customers are never created as prospects.
+ * Creates an account (and any contacts supplied with it) for one client, or
+ * recognises it as one already there.
+ *
+ * Matching (services/companies) runs under a per-company lock, so concurrent
+ * imports and discovery jobs cannot both insert the same business:
+ *   - a strong match enriches the existing record — empty fields only, never
+ *     overwriting what is already known — and adds the new source's ids;
+ *   - a borderline match creates the record and flags the pair for a person;
+ *   - otherwise it is new.
+ * The same company can be a prospect for two clients without sharing a
+ * record. A client's existing customers are never created as prospects.
  */
 export async function createAccount(
   access: AccessContext,
   userId: string | null,
   raw: AccountInput,
+  sourceInfo: AccountSourceInfo = {},
 ): Promise<CreateAccountResult> {
   const input = accountInputSchema.parse(raw);
   assertClientAccess(access, input.clientId);
@@ -241,38 +287,101 @@ export async function createAccount(
   });
   if (!client) throw new NotFoundError('Client');
 
-  const domain = toDomain(input.websiteUrl);
+  const site = splitWebsite(input.websiteUrl, input.socialProfiles);
+  const domain = site.domain;
   if (isExistingCustomer(client, input.name, domain)) {
     return { status: 'excluded', reason: 'Already a customer of this client' };
   }
 
-  const result = await db.$transaction(async (tx) => {
-    const existing = domain
-      ? await tx.account.findFirst({ where: { clientId: client.id, domain }, select: { id: true } })
-      : await tx.account.findFirst({
-          where: { clientId: client.id, name: { equals: input.name, mode: 'insensitive' }, city: input.city, deletedAt: null },
-          select: { id: true },
-        });
-    if (existing) return { status: 'duplicate' as const, accountId: existing.id };
+  const normalizedName = normalizeCompanyName(input.name);
+  const retentionUntil = sourceInfo.retentionDays ? new Date(Date.now() + sourceInfo.retentionDays * 86_400_000) : null;
+  const provenanceFrom = {
+    source: input.source,
+    provider: sourceInfo.provider ?? null,
+    sourceUrl: sourceInfo.sourceUrl ?? null,
+    createdById: userId,
+    retentionUntil,
+  };
 
-    const { contacts, clientId, source, sourceRef, ...fields } = input;
+  const result = await db.$transaction(async (tx) => {
+    await lockCompanyKey(tx, client.id, domain ?? normalizedName);
+    const decision = await matchCompany(tx, client.id, {
+      normalizedName,
+      domain,
+      city: input.city,
+      region: input.region,
+      addressLine: input.addressLine,
+      phone: input.phone,
+      identifiers: input.identifiers,
+      contactEmails: input.contacts.map((c) => c.email).filter((e): e is string => !!e),
+    });
+
+    if (decision.action === 'match') {
+      const existing = await tx.account.findUniqueOrThrow({ where: { id: decision.match.id } });
+      const incoming = {
+        ...input, websiteUrl: site.websiteUrl, domain,
+      } as Partial<typeof existing>;
+      const patch = fillableFields(existing, incoming, ENRICHABLE);
+      // A domain another account of this client already holds cannot be added.
+      if (patch.domain && await tx.account.count({ where: { clientId: client.id, domain: patch.domain } })) {
+        delete patch.domain;
+        delete patch.websiteUrl;
+      }
+      const socialPatch = site.socialProfiles
+        ? { ...(site.socialProfiles), ...((existing.socialProfiles as Record<string, string> | null) ?? {}) }
+        : undefined;
+      if (Object.keys(patch).length || socialPatch) {
+        await tx.account.update({
+          where: { id: existing.id },
+          data: { ...(patch as Prisma.AccountUncheckedUpdateInput), ...(socialPatch ? { socialProfiles: socialPatch } : {}) },
+        });
+        await recordProvenance(
+          { organizationId: access.organizationId, accountId: existing.id },
+          pick(patch as Record<string, unknown>, Object.keys(patch).filter((k) => (TRACKED_ACCOUNT_FIELDS as readonly string[]).includes(k))),
+          provenanceFrom,
+          tx,
+        );
+      }
+      await addIdentifiers(tx, access.organizationId, client.id, existing.id, input.identifiers);
+      for (const contact of input.contacts) {
+        await createContactRecord(tx, {
+          organizationId: access.organizationId, clientId: client.id, accountId: existing.id,
+          input: { ...contact, source: contact.source ?? input.source }, isPrimary: false, userId,
+        });
+      }
+      if (Object.keys(patch).length) {
+        await logActivity({
+          organizationId: access.organizationId, clientId: client.id, accountId: existing.id, userId, type: 'ENRICHMENT',
+          title: `Matched from ${sourceInfo.label ?? input.source.toLowerCase().replace(/_/g, ' ')}`,
+          body: `Added ${Object.keys(patch).join(', ')}. ${decision.score.reasons[0]?.label ?? ''}`.trim(), tx,
+        });
+      }
+      return { status: 'duplicate' as const, accountId: existing.id, filled: Object.keys(patch), score: decision.score.score };
+    }
+
+    const { contacts, clientId, source, sourceRef, identifiers, socialProfiles: _s, ...fields } = input;
+    void _s;
     const account = await tx.account.create({
       data: {
         ...fields,
+        websiteUrl: site.websiteUrl,
+        socialProfiles: site.socialProfiles ?? undefined,
         organizationId: access.organizationId,
         clientId,
         domain,
+        normalizedName,
         country: fields.country ?? 'CA',
         source,
         sourceRef,
+        discoveryRunId: sourceInfo.discoveryRunId ?? null,
         ownerId: userId,
       },
     });
-
+    await addIdentifiers(tx, access.organizationId, clientId, account.id, identifiers);
     await recordProvenance(
       { organizationId: access.organizationId, accountId: account.id },
       pick(account, TRACKED_ACCOUNT_FIELDS),
-      { source, createdById: userId },
+      provenanceFrom,
       tx,
     );
     for (const [i, contact] of contacts.entries()) {
@@ -285,15 +394,43 @@ export async function createAccount(
         userId,
       });
     }
+    let review: { candidateId: string; score: number } | undefined;
+    if (decision.action === 'review') {
+      await tx.duplicateCandidate.create({
+        data: {
+          organizationId: access.organizationId, clientId, accountId: account.id, candidateId: decision.match.id,
+          score: decision.score.score,
+          reasons: { reasons: decision.score.reasons, conflict: decision.score.conflict } as unknown as Prisma.InputJsonValue,
+          source: sourceInfo.label ?? source,
+        },
+      });
+      review = { candidateId: decision.match.id, score: decision.score.score };
+    }
     await logActivity({
       organizationId: access.organizationId, clientId, accountId: account.id, userId, type: 'SYSTEM',
-      title: 'Account added', body: `Source: ${source.toLowerCase().replace(/_/g, ' ')}`, tx,
+      title: 'Account added',
+      body: `Source: ${sourceInfo.label ?? source.toLowerCase().replace(/_/g, ' ')}${review ? ' · possible duplicate flagged for review' : ''}`,
+      tx,
     });
-    return { status: 'created' as const, accountId: account.id };
+    return { status: 'created' as const, accountId: account.id, review };
   });
 
-  if (result.status === 'created') await rescoreAccount(result.accountId);
+  if (result.status === 'created' || result.filled.length) await rescoreAccount(result.accountId);
   return result;
+}
+
+async function addIdentifiers(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  clientId: string,
+  accountId: string,
+  identifiers: Array<{ provider: string; externalId: string }>,
+) {
+  if (!identifiers.length) return;
+  await tx.discoveryIdentifier.createMany({
+    data: identifiers.map((i) => ({ organizationId, clientId, accountId, provider: i.provider, externalId: i.externalId })),
+    skipDuplicates: true,
+  });
 }
 
 export async function updateAccount(
@@ -304,18 +441,27 @@ export async function updateAccount(
 ) {
   const before = await findAccount(access, id);
   const patch = accountFieldsSchema.partial().parse(data);
-  const domain = patch.websiteUrl !== undefined ? toDomain(patch.websiteUrl) : undefined;
+  const site = patch.websiteUrl !== undefined
+    ? splitWebsite(patch.websiteUrl, patch.socialProfiles ?? (before.socialProfiles as Record<string, string> | null))
+    : null;
 
+  const { socialProfiles, ...scalars } = patch;
   const after = await db.account.update({
     where: { id },
-    data: { ...patch, ...(domain !== undefined ? { domain } : {}) },
+    data: {
+      ...scalars,
+      ...(site ? { websiteUrl: site.websiteUrl, domain: site.domain, socialProfiles: site.socialProfiles ?? undefined } : {}),
+      ...(socialProfiles !== undefined && !site ? { socialProfiles: socialProfiles ?? Prisma.DbNull } : {}),
+      ...(patch.name ? { normalizedName: normalizeCompanyName(patch.name) } : {}),
+      lastVerifiedAt: new Date(),
+    },
   });
   const changed = Object.fromEntries(
     TRACKED_ACCOUNT_FIELDS
-      .filter((f) => f in patch || (f === 'domain' && domain !== undefined))
+      .filter((f) => f in patch || (f === 'domain' && site))
       .map((f) => [f, after[f]]),
   );
-  await recordProvenance({ organizationId: access.organizationId, accountId: id }, changed, { source: 'MANUAL', createdById: userId });
+  await recordProvenance({ organizationId: access.organizationId, accountId: id }, changed, { source: 'MANUAL', createdById: userId, status: 'VERIFIED' });
   await rescoreAccount(id);
   return { before, after };
 }

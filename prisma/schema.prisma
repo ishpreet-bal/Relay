@@ -92,6 +92,9 @@ model Organization {
   tasks             Task[]
   activities        Activity[]
   discoveryRuns     DiscoveryRun[]
+  discoveryProfiles DiscoveryProfile[]
+  duplicates        DuplicateCandidate[]
+  savedViews        SavedView[]
   aiRuns            AiRun[]
   webhookEvents     WebhookEvent[]
   playbooks         Playbook[]
@@ -245,24 +248,25 @@ model Client {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  memberships  Membership[]
-  offers       Offer[]
-  icps         IdealCustomerProfile[]
-  proofPoints  ProofPoint[]
-  playbooks    Playbook[]
-  accounts     Account[]
-  contacts     Contact[]
-  campaigns    Campaign[]
-  messages     Message[]
-  signals      Signal[]
-  calls        Call[]
-  callTasks    CallTask[]
-  meetings     Meeting[]
-  suppressions Suppression[]
-  usageRecords UsageRecord[]
-  research     Research[]
-  activities   Activity[]
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships       Membership[]
+  offers            Offer[]
+  icps              IdealCustomerProfile[]
+  proofPoints       ProofPoint[]
+  playbooks         Playbook[]
+  accounts          Account[]
+  contacts          Contact[]
+  campaigns         Campaign[]
+  messages          Message[]
+  signals           Signal[]
+  calls             Call[]
+  callTasks         CallTask[]
+  meetings          Meeting[]
+  suppressions      Suppression[]
+  usageRecords      UsageRecord[]
+  research          Research[]
+  activities        Activity[]
+  discoveryProfiles DiscoveryProfile[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
@@ -493,19 +497,31 @@ model Account {
   organizationId String @db.Uuid
   clientId       String @db.Uuid
 
-  name          String
-  legalName     String?
-  websiteUrl    String?
-  domain        String? // normalized, used for dedupe within a client
-  linkedinUrl   String?
-  phone         String?
-  industry      String?
-  naicsCode     String?
-  employeeCount Int?
-  employeeRange String? // "11-50" when exact is unknown
-  revenueRange  String?
-  description   String? @db.Text
-  foundedYear   Int?
+  name            String
+  /// Lower-cased name without legal suffixes or punctuation, for matching.
+  /// See services/companies/normalize.ts.
+  normalizedName  String?
+  legalName       String?
+  websiteUrl      String?
+  domain          String? // normalized, used for dedupe within a client
+  linkedinUrl     String?
+  phone           String?
+  industry        String?
+  naicsCode       String?
+  employeeCount   Int?
+  employeeRange   String? // "11-50" when exact is unknown
+  revenueRange    String?
+  description     String?   @db.Text
+  foundedYear     Int?
+  businessModel   String?
+  /// Public business profiles only: { instagram, facebook, x, youtube, tiktok }
+  socialProfiles  Json?
+  /// When a person or a first-party source last confirmed the record.
+  lastVerifiedAt  DateTime?
+  /// A branch or location of another account (the parent company).
+  parentAccountId String?   @db.Uuid
+  /// Set when this record was merged into another; the row is then archived.
+  mergedIntoId    String?   @db.Uuid
 
   addressLine String?
   city        String?
@@ -567,7 +583,12 @@ model Account {
   icp          IdealCustomerProfile? @relation(fields: [icpId], references: [id], onDelete: SetNull)
   owner        User?                 @relation("AccountOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   discoveryRun DiscoveryRun?         @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
+  parent       Account?              @relation("AccountBranches", fields: [parentAccountId], references: [id], onDelete: SetNull)
+  branches     Account[]             @relation("AccountBranches")
 
+  identifiers DiscoveryIdentifier[]
+  duplicateOf DuplicateCandidate[]  @relation("DuplicateAccount")
+  duplicates  DuplicateCandidate[]  @relation("DuplicateCandidate")
   contacts    Contact[]
   research    Research?
   activities  Activity[]
@@ -583,6 +604,8 @@ model Account {
   provenance  DataProvenance[]
 
   @@unique([clientId, domain])
+  @@index([clientId, normalizedName])
+  @@index([parentAccountId])
   @@index([organizationId, clientId, status])
   @@index([clientId, score(sort: Desc)])
   @@index([organizationId, industry])
@@ -617,6 +640,15 @@ enum ContactStatus {
  * The legal basis on file for contacting someone. Recorded, never inferred —
  * Relay does not decide what the law allows.
  */
+enum BuyingRole {
+  DECISION_MAKER
+  INFLUENCER
+  CHAMPION
+  GATEKEEPER
+  END_USER
+  UNKNOWN
+}
+
 enum ConsentBasis {
   UNKNOWN
   IMPLIED_PUBLISHED
@@ -637,8 +669,13 @@ model Contact {
   lastName        String?
   title           String?
   department      String?
-  seniority       Seniority @default(UNKNOWN)
-  isDecisionMaker Boolean   @default(false)
+  seniority       Seniority  @default(UNKNOWN)
+  isDecisionMaker Boolean    @default(false)
+  /// Their part in a purchase decision, when known.
+  buyingRole      BuyingRole @default(UNKNOWN)
+  /// 0-1: how sure we are this is the right, current person and details.
+  confidence      Float?
+  lastVerifiedAt  DateTime?
 
   email             String?
   emailVerification EmailVerification @default(UNVERIFIED)
@@ -699,29 +736,225 @@ model Contact {
   @@index([clientId, score(sort: Desc)])
 }
 
+/**
+ * One execution of a discovery profile (or a one-off search): which sources
+ * were asked, what came back, what was created, updated, skipped or flagged,
+ * and what it cost.
+ */
 model DiscoveryRun {
-  id             String     @id @default(uuid()) @db.Uuid
-  organizationId String     @db.Uuid
-  clientId       String?    @db.Uuid
-  icpId          String?    @db.Uuid
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  clientId       String?          @db.Uuid
+  icpId          String?          @db.Uuid
+  profileId      String?          @db.Uuid
   name           String
-  provider       DataSource
+  /// Primary source for single-source runs; see `sources` for the rest.
+  provider       DataSource?
+  sources        String[]         @default([])
+  trigger        DiscoveryTrigger @default(MANUAL)
   filters        Json // industry, geo, size, keywords, tech
-  status         JobStatus  @default(QUEUED)
-  requested      Int        @default(0)
-  found          Int        @default(0)
-  imported       Int        @default(0)
-  duplicates     Int        @default(0)
-  costCents      Int        @default(0)
+  status         JobStatus        @default(QUEUED)
+  queriesRun     Int              @default(0)
+  requested      Int              @default(0)
+  /// Results returned by sources.
+  found          Int              @default(0)
+  /// New accounts created.
+  imported       Int              @default(0)
+  /// Existing accounts that matched and were enriched.
+  updated        Int              @default(0)
+  /// Already known and nothing new to add.
+  duplicates     Int              @default(0)
+  /// Skipped by rule: existing customer, excluded keyword, suppressed.
+  excluded       Int              @default(0)
+  /// Possible duplicates awaiting a person's decision.
+  needsReview    Int              @default(0)
+  failedCount    Int              @default(0)
+  costCents      Int              @default(0)
+  costMillicents Int              @default(0)
+  /// Per-source and per-query statistics.
+  details        Json?
   error          String?
+  createdById    String?          @db.Uuid
   startedAt      DateTime?
   finishedAt     DateTime?
-  createdAt      DateTime   @default(now())
+  createdAt      DateTime         @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  profile      DiscoveryProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
   accounts     Account[]
+  results      DiscoveryResult[]
 
   @@index([organizationId, status])
+  @@index([profileId, createdAt])
+}
+
+enum DiscoveryTrigger {
+  MANUAL
+  SCHEDULE
+}
+
+enum DiscoveryFrequency {
+  MANUAL
+  EVERY_6_HOURS
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+/**
+ * A saved search that the scheduler runs on its own: where, what kind of
+ * business, which sources, how often, and how much it may spend per month.
+ */
+model DiscoveryProfile {
+  id                 String             @id @default(uuid()) @db.Uuid
+  organizationId     String             @db.Uuid
+  clientId           String             @db.Uuid
+  icpId              String?            @db.Uuid
+  name               String
+  isActive           Boolean            @default(true)
+  /// Connector ids to query, in order (e.g. google_places, apollo).
+  sources            String[]           @default([])
+  country            String             @default("CA")
+  regions            String[]           @default([])
+  cities             String[]           @default([])
+  latitude           Float?
+  longitude          Float?
+  radiusKm           Int?
+  /// Business categories to look for, e.g. "machine shop", "dental clinic".
+  industries         String[]           @default([])
+  keywords           String[]           @default([])
+  /// Results whose name or category contains any of these are skipped.
+  excludeKeywords    String[]           @default([])
+  employeeMin        Int?
+  employeeMax        Int?
+  maxResultsPerRun   Int                @default(60)
+  monthlyBudgetCents Int                @default(2000)
+  frequency          DiscoveryFrequency @default(WEEKLY)
+  /// Queue website research for new accounts (uses the AI budget).
+  autoResearch       Boolean            @default(false)
+  nextRunAt          DateTime?
+  lastRunAt          DateTime?
+  lastRunStatus      JobStatus?
+  createdById        String?            @db.Uuid
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  archivedAt         DateTime?
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  runs         DiscoveryRun[]
+
+  @@index([organizationId, isActive, nextRunAt])
+}
+
+enum DiscoveryOutcome {
+  CREATED
+  UPDATED
+  DUPLICATE
+  EXCLUDED
+  NEEDS_REVIEW
+  FAILED
+}
+
+/**
+ * What one source returned for one company in one run, and what Relay did
+ * with it. The payload keeps only what is needed to explain the decision and
+ * expires with the source's retention limit.
+ */
+model DiscoveryResult {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  runId          String           @db.Uuid
+  provider       String
+  externalId     String
+  name           String
+  domain         String?
+  outcome        DiscoveryOutcome
+  matchScore     Float?
+  reason         String?
+  accountId      String?          @db.Uuid
+  payload        Json?
+  expiresAt      DateTime?
+  createdAt      DateTime         @default(now())
+
+  run DiscoveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, provider, externalId])
+  @@index([accountId])
+  @@index([expiresAt])
+}
+
+/**
+ * A stable id for an account at an outside source (a Google place id, an
+ * Apollo organization id, a registry number). The strongest dedupe key there
+ * is: the same id from the same source is the same company.
+ */
+model DiscoveryIdentifier {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  clientId       String   @db.Uuid
+  accountId      String   @db.Uuid
+  provider       String
+  externalId     String
+  createdAt      DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, provider, externalId])
+  @@index([accountId])
+}
+
+enum DuplicateStatus {
+  OPEN
+  MERGED
+  DISMISSED
+}
+
+/**
+ * Two accounts that might be the same company, waiting for a person: the
+ * evidence is not strong enough to merge automatically.
+ */
+model DuplicateCandidate {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
+  clientId       String          @db.Uuid
+  /// The newer record.
+  accountId      String          @db.Uuid
+  /// The existing record it may duplicate.
+  candidateId    String          @db.Uuid
+  score          Float
+  reasons        Json
+  source         String?
+  status         DuplicateStatus @default(OPEN)
+  resolvedById   String?         @db.Uuid
+  resolvedAt     DateTime?
+  createdAt      DateTime        @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account      @relation("DuplicateAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  candidate    Account      @relation("DuplicateCandidate", fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, candidateId])
+  @@index([organizationId, clientId, status])
+}
+
+/**
+ * A named set of list filters, private to a user or shared with the workspace.
+ */
+model SavedView {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  /// Null means shared with everyone in the workspace.
+  userId         String?  @db.Uuid
+  scope          String // "accounts" | "contacts"
+  name           String
+  filters        Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, scope])
 }
 
 enum JobStatus {
@@ -1836,6 +2069,9 @@ model DataProvenance {
   status           EvidenceStatus @default(UNVERIFIED)
   confidence       Float?
   retrievedAt      DateTime       @default(now())
+  /// Some sources (e.g. Google Places) may only be stored for a limited
+  /// time. After this the value is purged unless another source confirms it.
+  retentionUntil   DateTime?
   isCurrent        Boolean        @default(true)
   createdById      String?        @db.Uuid
 
@@ -1845,6 +2081,7 @@ model DataProvenance {
 
   @@index([accountId, field])
   @@index([contactId, field])
+  @@index([retentionUntil])
 }
 
 /**
@@ -1879,6 +2116,9 @@ enum JobType {
   CALL_QUEUE_REFRESH
   RESCORE
   IMPORT
+  DISCOVERY_RUN
+  RETENTION_SWEEP
+  MAINTENANCE
 }
 
 /**
@@ -1927,6 +2167,7 @@ enum UsageType {
   PHONE_LOOKUP
   CALL_MINUTES
   EXTERNAL_DATA
+  DISCOVERY_REQUEST
 }
 
 /**
@@ -1944,6 +2185,8 @@ model UsageRecord {
   quantity         Int       @default(1)
   /// Thousandths of a cent, so sub-cent email costs add up correctly.
   costMillicents   Int       @default(0)
+  /// True when the cost is our configured estimate, not a figure from the provider.
+  isEstimate       Boolean   @default(false)
   currency         String    @default("USD")
   aiRunId          String?   @db.Uuid
   providerRecordId String?   @db.Uuid
