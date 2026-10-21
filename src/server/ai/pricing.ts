@@ -6,19 +6,37 @@
  *
  * Last verified: update this date whenever you touch the table.
  */
-export const PRICING_LAST_VERIFIED = '2026-01-15';
+export const PRICING_LAST_VERIFIED = '2026-10-21';
 
-export interface ModelPricing { inputPerMTok: number; outputPerMTok: number }
+export interface ModelPricing {
+  inputPerMTok: number;
+  outputPerMTok: number;
+  /** Some models charge more per token once a prompt passes a size threshold. */
+  longPrompt?: { aboveInputTokens: number; inputPerMTok: number; outputPerMTok: number };
+}
 
+// Anthropic first-party list prices (platform.claude.com pricing page, read
+// 2026-10-21). Cache reads and writes are not modelled here; calls that use
+// prompt caching are slightly over-reported, never under-reported.
 export const PRICING: Record<string, ModelPricing> = {
-  // Anthropic
-  'claude-opus-4-8':          { inputPerMTok: 15.0, outputPerMTok: 75.0 },
-  'claude-sonnet-5':          { inputPerMTok: 3.0,  outputPerMTok: 15.0 },
-  'claude-haiku-4-5-20251001':{ inputPerMTok: 0.8,  outputPerMTok: 4.0 },
+  // Anthropic, current generation
+  'claude-opus-5-5':          { inputPerMTok: 4.0,  outputPerMTok: 20.0 },
+  'claude-sonnet-5-5':        { inputPerMTok: 2.0,  outputPerMTok: 10.0 },
+  'claude-haiku-5-5':         { inputPerMTok: 0.10, outputPerMTok: 0.50, longPrompt: { aboveInputTokens: 100_000, inputPerMTok: 0.50, outputPerMTok: 2.50 } },
+  // Anthropic, models this app has used
+  'claude-opus-4-8':          { inputPerMTok: 5.0,  outputPerMTok: 25.0 },
+  'claude-sonnet-5':          { inputPerMTok: 2.0,  outputPerMTok: 10.0 },
+  'claude-haiku-4-5':         { inputPerMTok: 1.0,  outputPerMTok: 5.0 },
+  'claude-haiku-4-5-20251001':{ inputPerMTok: 1.0,  outputPerMTok: 5.0 },
   // OpenAI (fallback only)
   'gpt-4o':                   { inputPerMTok: 2.5,  outputPerMTok: 10.0 },
   'gpt-4o-mini':              { inputPerMTok: 0.15, outputPerMTok: 0.6 },
 };
+
+function dollars(price: ModelPricing, tokensIn: number, tokensOut: number) {
+  const rate = price.longPrompt && tokensIn > price.longPrompt.aboveInputTokens ? price.longPrompt : price;
+  return (tokensIn / 1_000_000) * rate.inputPerMTok + (tokensOut / 1_000_000) * rate.outputPerMTok;
+}
 
 /** Returns cost in whole cents, rounded up — never under-report spend. */
 export function costCents(model: string, tokensIn: number, tokensOut: number): number {
@@ -27,17 +45,14 @@ export function costCents(model: string, tokensIn: number, tokensOut: number): n
     console.warn(`No pricing entry for "${model}" — cost recorded as 0. Add it to pricing.ts.`);
     return 0;
   }
-  const dollars =
-    (tokensIn / 1_000_000) * price.inputPerMTok +
-    (tokensOut / 1_000_000) * price.outputPerMTok;
-  return Math.ceil(dollars * 100);
+  return Math.ceil(dollars(price, tokensIn, tokensOut) * 100);
 }
 
 /** Exact cost in thousandths of a cent, for usage records. */
 export function costMillicents(model: string, tokensIn: number, tokensOut: number): number {
   const price = PRICING[model];
   if (!price) return 0;
-  return Math.round(((tokensIn / 1_000_000) * price.inputPerMTok + (tokensOut / 1_000_000) * price.outputPerMTok) * 100_000);
+  return Math.round(dollars(price, tokensIn, tokensOut) * 100_000);
 }
 
 /**
