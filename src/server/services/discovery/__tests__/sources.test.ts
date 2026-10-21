@@ -10,6 +10,8 @@ const query: DiscoveryQuery = {
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
+type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
+
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('Google Places adapter', () => {
@@ -42,7 +44,7 @@ describe('Google Places adapter', () => {
   it('searches with the field mask and key headers and charges the configured estimate', async () => {
     vi.stubEnv('GOOGLE_PLACES_API_KEY', 'test-key');
     vi.stubEnv('GOOGLE_PLACES_COST_PER_REQUEST_MILLICENTS', '3200');
-    const fetch = vi.fn(async (_url: string | URL, _init?: RequestInit) => json({ places: [{ id: 'p1', displayName: { text: 'Acme' } }], nextPageToken: 'tok' }));
+    const fetch = vi.fn<FetchLike>(async () => json({ places: [{ id: 'p1', displayName: { text: 'Acme' } }], nextPageToken: 'tok' }));
     vi.stubGlobal('fetch', fetch);
     const r = await googlePlacesConnector.discovery!.search(query);
     expect(r).toMatchObject({ status: 'SUCCESS', costMillicents: 3200, data: { nextPageToken: 'tok' } });
@@ -74,7 +76,7 @@ describe('Apollo company search adapter', () => {
   it('searches by location, keyword and size and pages by number', async () => {
     vi.stubEnv('APOLLO_API_KEY', 'k');
     vi.stubEnv('APOLLO_COST_PER_CREDIT_MILLICENTS', '2000');
-    const fetch = vi.fn(async (_url: string | URL, _init?: RequestInit) => json({
+    const fetch = vi.fn<FetchLike>(async () => json({
       organizations: [{ id: 'o1', name: 'Acme Machining', primary_domain: 'acme.example', estimated_num_employees: 40, city: 'Mississauga', state: 'Ontario', country: 'Canada' }],
       pagination: { page: 1, total_pages: 3 },
     }));
