@@ -103,7 +103,7 @@ export async function fetchPage(url: string): Promise<{ html: string; finalUrl: 
     if (!type.includes('html')) return null;
     // Guard against a 50MB page taking down the worker.
     const body = await res.text();
-    return { html: body.slice(0, 800_000), finalUrl: res.url };
+    return { html: body.slice(0, 800_000), finalUrl: res.url || url };
   } catch {
     return null;
   } finally {
