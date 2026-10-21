@@ -20,12 +20,18 @@ export function AccountFormDialog({ onClose }: { onClose: () => void }) {
   const [clientId, setClientId] = useState(activeClientId ?? '');
   const [f, setF] = useState(EMPTY);
   const [notice, setNotice] = useState<string | null>(null);
+  const [existingId, setExistingId] = useState<string | null>(null);
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) => setF((s) => ({ ...s, [k]: e.target.value }));
 
   const create = trpc.accounts.create.useMutation({
     onSuccess: (r) => {
       if (r.status === 'excluded') { setNotice(`Not added: ${r.reason.toLowerCase()}.`); return; }
-      if (r.status === 'duplicate') { setNotice('This client already has that account — opening it.'); }
+      if (r.status === 'duplicate') {
+        // Nothing new was created; say so and what (if anything) was filled in.
+        setNotice(`This client already has this company (${Math.round(r.score * 100)}% match).${r.filled.length ? ` Filled in: ${r.filled.join(', ')}.` : ' Nothing was changed.'}`);
+        setExistingId(r.accountId);
+        return;
+      }
       router.push(`/accounts/${r.accountId}`);
       onClose();
     },
@@ -35,6 +41,7 @@ export function AccountFormDialog({ onClose }: { onClose: () => void }) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setNotice(null);
+    setExistingId(null);
     create.mutate({
       clientId,
       name: f.name,
@@ -90,6 +97,9 @@ export function AccountFormDialog({ onClose }: { onClose: () => void }) {
         <ErrorNote error={create.error} />
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+          {existingId && (
+            <button type="button" className="btn-outline" onClick={() => { router.push(`/accounts/${existingId}`); onClose(); }}>Open existing account</button>
+          )}
           <button type="submit" className="btn-primary" disabled={!clientId || !f.name.trim() || create.isPending}>
             {create.isPending ? 'Adding…' : 'Add account'}
           </button>

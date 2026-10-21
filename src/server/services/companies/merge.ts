@@ -169,15 +169,37 @@ async function mergeContacts(tx: Prisma.TransactionClient, keepAccountId: string
   }
 }
 
+const openWhere = (access: AccessContext, clientId?: string | null): Prisma.DuplicateCandidateWhereInput => ({
+  ...clientFilter(access, clientId), status: 'OPEN', account: { deletedAt: null }, candidate: { deletedAt: null },
+});
+
 /** Open possible-duplicate pairs for review. */
 export function listDuplicateCandidates(access: AccessContext, clientId?: string | null) {
   return db.duplicateCandidate.findMany({
-    where: { ...clientFilter(access, clientId), status: 'OPEN', account: { deletedAt: null }, candidate: { deletedAt: null } },
+    where: openWhere(access, clientId),
     orderBy: [{ score: 'desc' }, { createdAt: 'desc' }],
     take: 100,
     include: {
       account: { select: ACCOUNT_SUMMARY },
       candidate: { select: ACCOUNT_SUMMARY },
+    },
+  });
+}
+
+export function countDuplicateCandidates(access: AccessContext, clientId?: string | null) {
+  return db.duplicateCandidate.count({ where: openWhere(access, clientId) });
+}
+
+/** Open pairs one account is part of, for the banner on its page. */
+export function duplicatesForAccount(access: AccessContext, accountId: string) {
+  return db.duplicateCandidate.findMany({
+    where: { ...openWhere(access), OR: [{ accountId }, { candidateId: accountId }] },
+    orderBy: { score: 'desc' },
+    take: 5,
+    select: {
+      id: true, score: true,
+      account: { select: { id: true, name: true } },
+      candidate: { select: { id: true, name: true } },
     },
   });
 }

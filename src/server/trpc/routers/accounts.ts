@@ -12,7 +12,7 @@ import { enrichAccount, discoverContacts } from '@/server/services/enrichment';
 import { addManualSignal, dismissSignal, manualSignalSchema } from '@/server/services/signals';
 import { messageThread } from '@/server/services/review';
 import { ACCOUNT_STATUSES } from '@/lib/domain';
-import { dismissDuplicate, listDuplicateCandidates, mergeAccounts } from '@/server/services/companies/merge';
+import { countDuplicateCandidates, dismissDuplicate, duplicatesForAccount, listDuplicateCandidates, mergeAccounts } from '@/server/services/companies/merge';
 import { createSavedView, deleteSavedView, listSavedViews, savedViewInputSchema, SAVED_VIEW_SCOPES } from '@/server/services/saved-views';
 import { can } from '@/lib/rbac';
 import { recordAudit } from '@/lib/audit';
@@ -151,7 +151,11 @@ export const accountsRouter = router({
 
   duplicateCount: permissionProcedure('account:read')
     .input(z.object({ clientId: z.string().uuid().nullish() }).default({}))
-    .query(async ({ ctx, input }) => (await listDuplicateCandidates(ctx.access, input.clientId)).length),
+    .query(({ ctx, input }) => countDuplicateCandidates(ctx.access, input.clientId)),
+
+  duplicatesOf: permissionProcedure('account:read')
+    .input(z.object({ accountId: z.string().uuid() }))
+    .query(({ ctx, input }) => duplicatesForAccount(ctx.access, input.accountId)),
 
   merge: permissionProcedure('account:override')
     .input(z.object({ keepId: z.string().uuid(), mergeId: z.string().uuid() }))

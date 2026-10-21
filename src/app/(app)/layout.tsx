@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const activeClientId = await getActiveClientId(session);
   const scope = clientFilter(access, activeClientId);
 
-  const [clients, review, calls] = await Promise.all([
+  const [clients, review, calls, duplicates] = await Promise.all([
     db.client.findMany({
       where: { organizationId: session.organizationId, archivedAt: null },
       orderBy: { name: 'asc' },
@@ -38,8 +38,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           },
         })
       : 0,
+    can(session.role, 'account:read')
+      ? db.duplicateCandidate.count({ where: { ...scope, status: 'OPEN', account: { deletedAt: null }, candidate: { deletedAt: null } } })
+      : 0,
   ]);
-  const counts = { review, calls };
+  const counts = { review, calls, duplicates };
 
   return (
     <ActiveClientProvider initialClientId={activeClientId} clients={clients}>
