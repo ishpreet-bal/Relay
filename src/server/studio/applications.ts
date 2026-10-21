@@ -3,6 +3,7 @@ import { startOfDay } from 'date-fns';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { db } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { encryptSecret } from '@/lib/crypto';
 import { assertClientAccess, clientFilter, systemAccess, type AccessContext } from '@/server/access/scope';
 import { DomainError, NotFoundError } from '@/server/errors';
@@ -29,6 +30,14 @@ import { lastFireBetween } from './cron';
 // Templates
 // ---------------------------------------------------------------------------
 
+/** JSON with sorted keys and no undefined values: Postgres JSONB doesn't keep key order. */
+function canonical(v: unknown): string {
+  const sort = (x: unknown): unknown => Array.isArray(x) ? x.map(sort)
+    : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().filter((k) => (x as Record<string, unknown>)[k] !== undefined).map((k) => [k, sort((x as Record<string, unknown>)[k])]))
+    : x;
+  return JSON.stringify(sort(v));
+}
+
 let ensured: Promise<void> | null = null;
 
 /** Makes sure the built-in templates exist at their current versions. Idempotent; runs once per process. */
@@ -49,11 +58,15 @@ async function syncBuiltinTemplates() {
     template = template
       ? await db.appTemplate.update({ where: { id: template.id }, data: fields })
       : await db.appTemplate.create({ data: { slug: t.slug, ...fields } });
-    await db.appTemplateVersion.upsert({
+    const stored = await db.appTemplateVersion.upsert({
       where: { templateId_version: { templateId: template.id, version: t.version } },
       create: { templateId: template.id, version: t.version, manifest: manifest as unknown as Prisma.InputJsonValue, status: 'PUBLISHED', publishedAt: new Date(), changelog: 'Initial release' },
       update: {},
     });
+    // Released versions never change; a code edit without a version bump is a mistake to fix, not to apply.
+    if (canonical(stored.manifest) !== canonical(manifest)) {
+      logger.warn('studio.builtin_template_drift', { slug: t.slug, version: t.version, fix: 'bump the template version in templates.ts' });
+    }
   }
 }
 
@@ -360,9 +373,9 @@ export async function decideApproval(access: AccessContext, userId: string, exec
       data: { status: data.onReject === 'fail' ? 'FAILED' : 'SUCCEEDED', error: `Rejected${note ? `: ${note}` : ''}`, finishedAt: new Date() },
     });
   }
-  await db.workflowExecution.update({ where: { id: exec.id }, data: { status: 'QUEUED' } });
-  await enqueueJob({ type: 'WORKFLOW_EXECUTION', organizationId: exec.organizationId, clientId: exec.clientId, entityType: 'WorkflowExecution', entityId: exec.id, idempotencyKey: `wf:${exec.id}:approved:${approval.id}`, priority: 5 });
-  return exec;
+  const job = await enqueueJob({ type: 'WORKFLOW_EXECUTION', organizationId: exec.organizationId, clientId: exec.clientId, entityType: 'WorkflowExecution', entityId: exec.id, idempotencyKey: `wf:${exec.id}:approved:${approval.id}`, priority: 5 });
+  // Point the run at the job that resumes it, so a page can drive it too.
+  return db.workflowExecution.update({ where: { id: exec.id }, data: { status: 'QUEUED', jobId: job?.id ?? exec.jobId } });
 }
 
 /** Starts scheduled workflows whose time has come; the slot is the idempotency key, so once per slot. */
@@ -494,12 +507,22 @@ export async function disconnect(access: AccessContext, id: string) {
 // Reading
 // ---------------------------------------------------------------------------
 
-export function listApplications(access: AccessContext, clientId?: string | null) {
-  return db.clientApplication.findMany({
+export async function listApplications(access: AccessContext, clientId?: string | null) {
+  const since = startOfDay(new Date());
+  const rows = await db.clientApplication.findMany({
     where: { ...clientFilter(access, clientId), archivedAt: null },
     orderBy: { updatedAt: 'desc' },
     include: { client: { select: { id: true, name: true } }, template: { select: { name: true, industry: true } } },
   });
+  const [today, failing] = await Promise.all([
+    db.workflowExecution.groupBy({ by: ['applicationId'], where: { applicationId: { in: rows.map((r) => r.id) }, isTest: false, createdAt: { gte: since } }, _count: true }),
+    db.workflowExecution.groupBy({ by: ['applicationId'], where: { applicationId: { in: rows.map((r) => r.id) }, isTest: false, status: 'FAILED', createdAt: { gte: since } }, _count: true }),
+  ]);
+  return rows.map(({ webhookTokenHash, ...r }) => ({
+    ...r, hasWebhookToken: !!webhookTokenHash,
+    runsToday: today.find((t) => t.applicationId === r.id)?._count ?? 0,
+    failedToday: failing.find((t) => t.applicationId === r.id)?._count ?? 0,
+  }));
 }
 
 export async function getApplication(access: AccessContext, id: string) {
@@ -513,10 +536,23 @@ export async function getApplication(access: AccessContext, id: string) {
     db.appRecord.groupBy({ by: ['collection', 'isTest'], where: { applicationId: id }, _count: true }),
     db.client.findUnique({ where: { id: app.clientId }, select: { id: true, name: true } }),
     app.templateId ? db.appTemplate.findUnique({ where: { id: app.templateId }, include: { versions: { where: { status: 'PUBLISHED' }, select: { id: true, version: true } } } }) : null,
-    app.templateVersionId ? db.appTemplateVersion.findUnique({ where: { id: app.templateVersionId }, select: { id: true, version: true } }) : null,
+    app.templateVersionId ? db.appTemplateVersion.findUnique({ where: { id: app.templateVersionId }, select: { id: true, version: true, manifest: true } }) : null,
   ]);
   const runsToday = await db.workflowExecution.count({ where: { applicationId: id, isTest: false, createdAt: { gte: since } } });
-  return { app, client, template, templateVersion, configs, deployments, executions, health: { last30Days: byStatus.map((b) => ({ status: b.status, count: b._count })), runsToday }, records: records.map((r) => ({ collection: r.collection, isTest: r.isTest, count: r._count })) };
+  // The production gate for the newest configuration: which workflows have passed a test in it.
+  const latest = configs[0];
+  const passed = latest
+    ? await db.workflowExecution.findMany({ where: { applicationId: id, configVersionId: latest.id, isTest: true, status: 'SUCCEEDED' }, select: { workflowKey: true }, distinct: ['workflowKey'] })
+    : [];
+  const gate = latest
+    ? { configVersionId: latest.id, required: (latest.manifest as unknown as Manifest).workflows?.map((w) => w.key) ?? [], passed: passed.map((p) => p.workflowKey) }
+    : null;
+  const { webhookTokenHash, ...safeApp } = app;
+  return {
+    app: { ...safeApp, hasWebhookToken: !!webhookTokenHash }, client, template, templateVersion, configs, deployments, executions, gate,
+    health: { last30Days: byStatus.map((b) => ({ status: b.status, count: b._count })), runsToday },
+    records: records.map((r) => ({ collection: r.collection, isTest: r.isTest, count: r._count })),
+  };
 }
 
 export async function listRecords(access: AccessContext, applicationId: string, collection: string, opts: { isTest?: boolean; limit?: number } = {}) {

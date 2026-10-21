@@ -151,8 +151,10 @@ describe.skipIf(!reachable)('studio tenant isolation (database)', () => {
     expect((await studio.listApplications(t.b.access)).map((x) => x.id)).toEqual([t.b.appId]);
     expect((await studio.listConnections(t.b.access)).every((c) => c.clientId === t.b.clientId)).toBe(true);
 
-    // The right customer approves; the run finishes.
-    await studio.decideApproval(t.a.access, t.a.userId, ea.id, 'APPROVE', 'Credit issued');
+    // The right customer approves; the run points at the job that resumes it, and finishes.
+    const approved = await studio.decideApproval(t.a.access, t.a.userId, ea.id, 'APPROVE', 'Credit issued');
+    const resume = await db.job.findUniqueOrThrow({ where: { id: approved.jobId! } });
+    expect([resume.status, resume.idempotencyKey]).toEqual(['QUEUED', expect.stringMatching(/:approved:/)]);
     await drain();
     expect((await db.workflowExecution.findUniqueOrThrow({ where: { id: ea.id } })).status).toBe('SUCCEEDED');
   });
