@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
+import { NotConfiguredError } from '@/server/errors';
 import { costCents, costMillicents, MODELS } from './pricing';
 import { assertBudget } from './budget';
 import { recordUsage, type UsageAttribution } from '@/server/services/usage';
@@ -40,7 +41,9 @@ let anthropicClient: Anthropic | null = null;
 let openaiClient: OpenAI | null = null;
 
 function anthropic() {
-  anthropicClient ??= new Anthropic({ apiKey: env().ANTHROPIC_API_KEY, maxRetries: 0 });
+  const key = env().ANTHROPIC_API_KEY;
+  if (!key) throw new NotConfiguredError('anthropic', 'No AI provider is connected. Set ANTHROPIC_API_KEY.');
+  anthropicClient ??= new Anthropic({ apiKey: key, maxRetries: 0 });
   return anthropicClient;
 }
 function openai() {

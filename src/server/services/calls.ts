@@ -217,7 +217,7 @@ export interface ObjectionResponse { objection: ObjectionType; response: string 
 
 function fill(template: string | null | undefined, vars: Record<string, string>) {
   if (!template) return null;
-  return template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
+  return template.replace(/\{([\w ]+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
 }
 
 /**
@@ -225,7 +225,7 @@ function fill(template: string | null | undefined, vars: Record<string, string>)
  * what we know (and how we know it), what was already said, what to open
  * with, and how to handle the likely objections for this client's offer.
  */
-export async function getCallPrep(access: AccessContext, contactId: string) {
+export async function getCallPrep(access: AccessContext, contactId: string, callerName?: string | null) {
   const contact = await db.contact.findFirst({
     where: { id: contactId, ...clientFilter(access), deletedAt: null },
     include: {
@@ -281,11 +281,15 @@ export async function getCallPrep(access: AccessContext, contactId: string) {
   const enrollment = contact.enrollments[0];
   const playbook = enrollment?.campaign.playbook ?? contact.client.playbooks[0] ?? null;
   const offer = enrollment?.campaign.offer ?? contact.client.offers[0] ?? null;
-  const vars = {
+  const caller = callerName && !callerName.includes('@') ? callerName.split(' ')[0]! : '{your name}';
+  const vars: Record<string, string> = {
     firstName: contact.firstName ?? 'there',
     company: contact.account.name,
     client: contact.client.name,
     offer: offer?.summary ?? '',
+    caller,
+    // Templates installed before {caller} existed say {your name}.
+    'your name': caller,
   };
 
   return {
@@ -295,7 +299,7 @@ export async function getCallPrep(access: AccessContext, contactId: string) {
     offer,
     playbook: playbook ? { id: playbook.id, name: playbook.name, discoveryQuestions: playbook.discoveryQuestions, qualificationCriteria: playbook.qualificationCriteria } : null,
     opener: fill(playbook?.callOpener, vars)
-      ?? `Hi ${vars.firstName}, it's {your name} with ${contact.client.name}. ${offer ? `We help companies like ${contact.account.name} with ${offer.summary.toLowerCase()}.` : ''} Did I catch you at an okay time?`,
+      ?? `Hi ${vars.firstName}, it's ${vars.caller} with ${contact.client.name}. ${offer ? `We help companies like ${contact.account.name} with ${offer.summary.toLowerCase()}.` : ''} Did I catch you at an okay time?`,
     objectionHandling: (Array.isArray(playbook?.objectionHandling) ? playbook!.objectionHandling : []) as unknown as ObjectionResponse[],
     proofPoints: contact.client.proofPoints,
     talkingPoints: contact.account.research?.talkingPoints ?? [],

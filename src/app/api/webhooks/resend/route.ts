@@ -22,13 +22,15 @@ interface ResendEvent {
 
 export async function POST(req: Request) {
   const raw = await req.text();
+  const secret = env().RESEND_WEBHOOK_SECRET;
+  if (!secret) return new Response('Email webhooks are not configured', { status: 503 });
 
   let verified: { id: string; payload: ResendEvent };
   try {
     verified = verifyWebhook<ResendEvent>({
       body: raw,
       headers: await headers(),
-      secret: env().RESEND_WEBHOOK_SECRET,
+      secret,
     });
   } catch (err) {
     // 401 and nothing else. No parsing, no logging of the body, no partial

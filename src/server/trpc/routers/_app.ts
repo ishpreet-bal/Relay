@@ -14,6 +14,7 @@ import { analyticsRouter } from './analytics';
 import { portalRouter } from './portal';
 import { opsRouter } from './ops';
 import { teamRouter } from './team';
+import { mailboxesRouter } from './mailboxes';
 import { adminRouter } from './admin';
 import { templatesRouter } from './templates';
 import { proposalsRouter } from './proposals';
@@ -34,6 +35,7 @@ export const appRouter = router({
   portal: portalRouter,
   ops: opsRouter,
   team: teamRouter,
+  mailboxes: mailboxesRouter,
   admin: adminRouter,
   // Legacy agency tooling
   templates: templatesRouter,

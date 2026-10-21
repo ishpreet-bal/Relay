@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Clock, Plug } from 'lucide-react';
-import { requirePermission } from '@/lib/auth';
+import { pageSession } from '@/lib/page-auth';
 import { db } from '@/lib/db';
 import { Topbar } from '@/components/shell/topbar';
 import { SolutionDemo } from '@/components/solutions/solution-demo';
@@ -9,7 +9,7 @@ import { solutionSpecSchema } from '@/server/services/templates/spec';
 
 export default async function SolutionPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await requirePermission('account:read');
+  const session = await pageSession('proposal:read');
 
   const candidates = await db.solutionTemplate.findMany({
     where: { slug, OR: [{ organizationId: null }, { organizationId: session.organizationId }] },

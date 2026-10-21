@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
-import { requirePermission } from '@/lib/auth';
+import { pageSession } from '@/lib/page-auth';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { Topbar } from '@/components/shell/topbar';
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 export const metadata = { title: 'Demo sites' };
 
 export default async function PortfoliosPage() {
-  const session = await requirePermission('portfolio:read');
+  const session = await pageSession('portfolio:read');
 
   const sites = await db.portfolioSite.findMany({
     where: { organizationId: session.organizationId },
@@ -18,6 +18,8 @@ export default async function PortfoliosPage() {
   });
 
   const root = env().PORTFOLIO_ROOT_DOMAIN;
+  // Without a wildcard domain the sites are still served by path.
+  const siteUrl = (subdomain: string) => (root ? `https://${subdomain}.${root}` : `/site/${subdomain}`);
 
   return (
     <>
@@ -43,7 +45,7 @@ export default async function PortfoliosPage() {
                     <Link href={`/accounts/${site.account.id}`} className="text-[13px] font-medium hover:text-accent">
                       {site.account.name}
                     </Link>
-                    <p className="num text-[11px] text-muted truncate">{site.subdomain}.{root}</p>
+                    <p className="num text-[11px] text-muted truncate">{root ? `${site.subdomain}.${root}` : `/site/${site.subdomain}`}</p>
                   </div>
                   <div className="text-right">
                     <p className="num text-micro">{site.viewCount}</p>
@@ -54,7 +56,7 @@ export default async function PortfoliosPage() {
                     {site.isPublished ? 'Published' : 'Draft'}
                   </span>
                   {site.isPublished && (
-                    <a href={`https://${site.subdomain}.${root}`} target="_blank" rel="noopener noreferrer"
+                    <a href={siteUrl(site.subdomain)} target="_blank" rel="noopener noreferrer"
                        className="btn-ghost size-7 p-0" aria-label="Open site">
                       <ExternalLink className="size-3.5" />
                     </a>

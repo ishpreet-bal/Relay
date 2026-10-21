@@ -6,10 +6,13 @@ import {
 } from '@/server/services/clients';
 import { recordAudit } from '@/lib/audit';
 
+// Full client records (internal notes, client users) are for the people who
+// run campaigns. Callers get what a call needs through call prep; client
+// users get their own profile through the portal.
 export const clientsRouter = router({
-  list: permissionProcedure('client:read').query(({ ctx }) => listClients(ctx.access)),
+  list: permissionProcedure('campaign:read').query(({ ctx }) => listClients(ctx.access)),
 
-  byId: permissionProcedure('client:read')
+  byId: permissionProcedure('campaign:read')
     .input(z.object({ id: z.string().uuid() }))
     .query(({ ctx, input }) => getClientDetail(ctx.access, input.id)),
 

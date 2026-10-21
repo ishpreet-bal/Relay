@@ -36,3 +36,16 @@ export async function getActiveClientId(session: Session): Promise<string | null
   const exists = await db.client.count({ where: { id: value, organizationId: session.organizationId, archivedAt: null } });
   return exists ? value : null;
 }
+
+/**
+ * Which client a portal page shows. Client users always see their own
+ * client (null while their access is still being set up). Staff with portal
+ * access choose a client to "view as" by id; it must belong to their
+ * workspace.
+ */
+export async function portalTarget(session: Session, requested: string | undefined): Promise<{ clientId: string | null; viewAs: boolean }> {
+  if (!session.isInternal) return { clientId: session.clientId, viewAs: false };
+  if (!requested || !/^[0-9a-f-]{36}$/i.test(requested)) return { clientId: null, viewAs: true };
+  const exists = await db.client.count({ where: { id: requested, organizationId: session.organizationId, archivedAt: null } });
+  return { clientId: exists ? requested : null, viewAs: true };
+}

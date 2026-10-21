@@ -1,151 +1,239 @@
-# Relay — Sales OS for AI automation agencies
+# Relay — architecture
 
-A pipeline platform built around one principle: **the operator approves every
-message before it leaves the building.** Volume is capped on purpose. The
-competitive edge is research quality, not send count.
+Relay is an outbound sales operating system for traditional B2B businesses —
+trucking companies, machine shops, manufacturers, industrial suppliers,
+commercial cleaners. It is also the internal tool of a done-for-you outbound
+service, so three kinds of people use it:
 
----
+- **Relay staff** (admins, operators, analysts) set up clients and run campaigns.
+- **Callers** work a prioritized call queue and book meetings.
+- **Clients** see results — meetings, campaigns, their business profile — in a portal.
 
-## 1. Why this shape
-
-**Next.js 15 App Router + tRPC, one deployable.** Splitting frontend and backend
-at this stage buys deployment complexity and nothing else. tRPC gives end-to-end
-types without maintaining a separate schema. If a public API is needed later,
-`/api/v1/*` REST routes wrap the same service layer — which is why business logic
-lives in `src/server/services`, not in route handlers.
-
-**Postgres + Prisma + RLS.** Multi-tenancy is enforced twice: once in the typed
-service layer, once in the database. A single forgotten `organizationId` filter
-should be a failed query, not a breach. `withTenant()` sets `app.current_org` on
-the session, and every tenant table has a `FORCE ROW LEVEL SECURITY` policy.
-
-**Anthropic primary, OpenAI fallback.** The research and personalization work is
-long-context document reasoning — read a whole site, produce grounded claims.
-Provider choice lives behind one interface (`src/server/ai/provider.ts`) so a
-model swap is a config change. Every call is logged to `AiRun` with token counts
-and cost, and the org has a monthly budget ceiling enforced before the call.
-
-**n8n for integrations, not for core logic.** n8n is excellent at "when a Stripe
-invoice is paid, post to Slack and update SharePoint." It's a poor place to put
-the send gate. Core sequencing runs in the Node worker against Postgres; n8n
-subscribes to Relay webhooks and handles customer-specific glue.
-
-**No queue service on day one.** Scheduled sends and follow-ups are a
-`nextActionAt` column plus a worker polling with `FOR UPDATE SKIP LOCKED`. It is
-transactional with the data it's acting on, it survives restarts, and it removes
-an entire moving part. Redis is present for rate limiting and caching only.
-
-### The two decisions that shape everything else
-
-**Grounded generation.** Nothing is generated from the model's general
-knowledge about an industry. The research pass crawls the prospect's own site,
-stores the raw extract, and every pain point, opportunity, and ROI figure
-carries `sourceUrls`. The personalization pass may only reference facts present
-in `Research.citations`. The draft review screen shows each personalized claim
-next to the page it came from, so the reviewer verifies rather than trusts. This
-is what makes "no invented facts" a system property instead of a prompt request.
-
-**The send gate.** `src/server/services/send-gate.ts` is the only path to the
-mail provider. It checks human approval, suppression by address and domain, a
-25-day cross-campaign cooling-off window, org and per-mailbox volume caps, SPF/
-DKIM verification, sending-window hours, and the presence of an opt-out link. A
-blocked message surfaces its reason in the UI. Everything else in the platform
-can be rewritten; this file is the compliance posture.
+The division of labour is deliberate: the software finds, researches,
+prioritizes and drafts; people hold the conversations; every outcome is
+recorded so the next decision is better informed.
 
 ---
 
-## 2. Module map
+## 1. Shape of the system
 
-| # | Module | Primary tables | Key service |
-|---|--------|----------------|-------------|
-| 1 | Lead discovery | `Lead`, `Contact`, `DiscoveryRun` | `services/discovery/*`, `scoring.ts` |
-| 2 | AI research | `Research`, `AiRun` | `ai/research.ts`, `crawler.ts` |
-| 3 | Solution library | `SolutionTemplate` | `services/templates.ts` + data-driven renderer |
-| 4 | Personalization | `Message` | `ai/personalize.ts` |
-| 5 | Campaigns | `Campaign`, `CampaignStep`, `CampaignEnrollment` | `services/campaigns.ts` |
-| 6 | Follow-up | `CampaignEnrollment.nextActionAt` | `worker.ts` |
-| 7 | CRM | `Activity`, `Task`, `Meeting` | `services/crm.ts` |
-| 8 | Proposals | `Proposal` | `services/proposal.ts` + `@react-pdf/renderer` |
-| 9 | Portfolio sites | `PortfolioSite`, `PortfolioView` | wildcard subdomain routing in middleware |
-| 10 | Admin | `Invoice`, `AuditLog`, `AiRun` | `services/analytics.ts` |
+**One Next.js 15 deployable plus a worker.** App Router pages, tRPC for typed
+API calls, and business logic in `src/server/services` — never in route
+handlers or components, so the same logic serves pages, the worker and any
+future REST API. The worker (`npm run worker`) runs research, background jobs,
+rescoring, sequencing and the call-queue refresh.
 
-Module 3 is one renderer driven by a JSON `spec`, not thirteen hand-built demos.
-Adding an industry means adding a seed row, not a directory.
+**Postgres via Prisma.** Every table is tenant-scoped. Background work uses
+Postgres itself as the queue (`Job` rows claimed with `FOR UPDATE SKIP
+LOCKED`), so there is no separate queue service to run or lose.
 
----
+**Providers behind interfaces.** Data, email, AI and (later) calendar, phone
+and CRM providers are connectors (`src/server/connectors`). Relay orchestrates
+them; it does not try to be a contact database.
 
-## 3. Third-party integrations
-
-| Service | Used for | Failure mode |
-|---|---|---|
-| Clerk | Auth, organizations, invitations | Webhook syncs users to `User`/`Membership`; app never trusts client claims |
-| Anthropic | Research, personalization, proposal copy | Falls back to OpenAI, then queues for retry |
-| Resend | Sending + delivery/open/click/bounce webhooks | Bounces write straight to `Suppression` |
-| Stripe | Subscription billing, client invoicing | Webhook-driven, idempotent via `WebhookEvent` |
-| Google Places | Local business discovery by geo + category | Rate limited; run is resumable via `DiscoveryRun` |
-| Apollo (optional) | Contact enrichment | Optional; absent key degrades gracefully |
-| Supabase Storage | Logos, proposal PDFs | Signed URLs only |
-| Cal.com | Meeting booking on portfolio sites | Embedded; webhook creates `Meeting` |
-
-Email verification, bounce handling, and unsubscribe are first-class tables
-rather than provider features, so switching providers doesn't lose compliance
-history.
-
----
-
-## 4. Build sequence
-
-Each phase is deployable and testable on its own.
-
-- **Phase 1 (done here)** — schema, tenancy, RBAC, env validation, Docker, CI, scoring, send gate, RLS.
-- **Phase 2** — Clerk auth flow, org onboarding, app shell and navigation, lead table with filtering/import, lead detail with CRM timeline.
-- **Phase 3** — crawler, research pipeline, AI provider abstraction, budget enforcement, research review UI.
-- **Phase 4** — personalization engine, draft review queue with claim-level provenance, approval flow, Resend integration, webhook ingestion, suppression management.
-- **Phase 5** — campaign builder, enrollment, worker sequencing, follow-up rules, campaign analytics.
-- **Phase 6** — solution template renderer plus the thirteen industry seeds.
-- **Phase 7** — proposal generator and PDF pipeline; portfolio microsites with wildcard subdomains.
-- **Phase 8** — admin analytics, Stripe billing, invoicing, audit log viewer, deployment runbook.
-
----
-
-## 5. Running it
-
-```bash
-cp .env.example .env      # fill in keys
-docker compose up -d db redis
-npm install
-npx prisma migrate dev
-npm run db:seed           # built-in solution templates + demo org
-npm run dev               # app on :3000
-npm run worker            # sequencing + send worker
+```
+src/
+  app/(app)/        internal workspace pages (staff and callers)
+  app/portal/       client portal
+  app/api/          tRPC, webhooks (Clerk, Resend, Stripe), unsubscribe
+  components/       UI, grouped by area
+  lib/              auth, rbac, domain vocabulary, env, tRPC client
+  server/access/    AccessContext and client scoping
+  server/services/  domain logic (accounts, scoring, campaigns, calls, …)
+  server/ai/        research and drafting pipelines, model provider
+  server/verification/  claim checking and the auto-send policy
+  server/connectors/    provider registry and implementations
+  server/worker.ts  background loop
 ```
 
 ---
 
-## 6. Build log
+## 2. Tenancy and access
 
-All eight phases are complete. What shipped in each:
+Two levels:
 
-| Phase | Delivered |
+- **Organization** — the workspace (Relay itself). Hard boundary.
+- **Client** — a business Relay sells for. Every prospect, campaign, call,
+  meeting, signal and cost belongs to exactly one client.
+
+`AccessContext` (`server/access/scope.ts`) is built from the session and
+passed to every service. `clientFilter(access, clientId?)` returns the `where`
+fragment for a query: internal roles may see all clients (optionally narrowed
+to one), client roles see only their own, and a client user not yet connected
+to a client sees nothing. Raw SQL (the analytics breakdowns) applies the same
+scope through `clientCond`.
+
+Roles (`lib/rbac.ts`), each with an explicit permission set:
+
+| Role | For |
 |---|---|
-| 1 | Prisma schema, RLS policies, RBAC, env validation, send gate, lead scoring, Docker, CI |
-| 2 | Clerk auth + org sync webhook, app shell, lead table with facet filtering, CSV import with confirm-mapping, CRM timeline |
-| 3 | Polite crawler, AI provider abstraction with fallback + budget ceiling, grounded research with citation verification, evidence drawer |
-| 4 | Fact-ledger personalization, two-tier drafting, draft linter, review queue with claim provenance, Resend integration, suppression, RFC 8058 unsubscribe |
-| 5 | Campaign builder, enrollment, worker sequencer, follow-up scheduling in org timezone, inbound reply handling, stop conditions |
-| 6 | Solution spec schema, data-driven demo renderer with device frames, 13 industry seeds, template forking |
-| 7 | Proposal builder priced from a rate card, PDF pipeline, public share links, acceptance capture, prospect microsites with view tracking |
-| 8 | Admin analytics with cohort-based conversion, Stripe billing, plan limits, invoicing, audit log viewer |
+| SUPER_ADMIN | Owner: everything, including billing |
+| RELAY_ADMIN | Runs operations across all clients; team, connectors, settings |
+| OPERATOR | Runs campaigns: approves and sends, edits client setup and playbooks |
+| ANALYST | Builds lists, researches, drafts; cannot send |
+| CALLER | Call queue, call prep, outcomes and meetings — nothing else |
+| CLIENT_ADMIN | Client portal, can edit their business profile |
+| CLIENT_MEMBER | Client portal, read-only |
 
-### Post-launch, in rough priority order
+Roles are owned by Relay, not Clerk. Invitations carry the intended role and
+client in Clerk `publicMetadata`; the membership webhook applies them, never
+grants owner from metadata, and falls back to the least-privileged role.
 
-1. **Discovery providers.** `DiscoveryRun` and the filter schema exist; the
-   Google Places and Apollo adapters do not. Today leads arrive by CSV or by
-   hand.
-2. **Mailbox onboarding UI.** Mailboxes can be created through the API but there
-   is no settings screen for adding one and polling its SPF/DKIM status.
-3. **Meeting booking.** `Meeting` is modelled and read by analytics, but nothing
-   writes to it yet — a Cal.com webhook would close that loop.
-4. **A/B testing on step instructions.** The data model supports it
-   (`promptVersion` on every message); the analysis does not exist.
-5. **JavaScript rendering** for the ~15% of prospect sites the crawler can't read.
+**Database exposure.** RLS is enabled on every table with no policies, which
+closes Supabase's auto-generated REST API to the `anon` and `authenticated`
+roles. The application connects as the table owner, so isolation in the app
+is enforced by the service layer above, not by Postgres policies.
+
+---
+
+## 3. Domain model (main tables)
+
+| Area | Tables |
+|---|---|
+| Clients | `Client`, `Offer`, `IdealCustomerProfile`, `ProofPoint`, `Playbook` |
+| Prospects | `Account`, `Contact`, `Signal`, `Research`, `DataProvenance` |
+| Outreach | `Campaign`, `CampaignStep`, `CampaignEnrollment`, `Message`, `MessageClaim`, `Mailbox` |
+| Conversations | `CallTask`, `Call`, `Meeting` |
+| Compliance | `Suppression`, `AuditLog` |
+| Operations | `Job`, `ConnectorSetting`, `ProviderRecord`, `UsageRecord`, `AiRun`, `WebhookEvent` |
+
+Industry knowledge lives in data, not code: a **Playbook** holds target
+titles, useful signals, messaging angles, the email sequence, approved claim
+types, the call opener, discovery questions, qualification criteria and
+objection handling. Four starter templates ship (trucking, machine shop,
+commercial cleaning, industrial supplier); a client works from its own copy.
+
+---
+
+## 4. The pipeline
+
+### Accounts and contacts
+Accounts arrive by CSV import (rows grouped into accounts by website or
+name + city), by hand, or from a contact-data provider. A client's existing
+customers are never created as prospects. Each enriched field records where it
+came from (`DataProvenance`), and provider enrichment only fills empty fields.
+
+### Scoring (`services/scoring`)
+Rule-based and explainable, scored against each active ICP of the client:
+
+| Component | Points | From |
+|---|---|---|
+| Fit | 0–40 | industry, company size, location |
+| Contact | 0–20 | best contact's role fit and reachability |
+| Signals | 0–20 | fresh, credible signals the playbook cares about |
+| Engagement | 0–10 | replies, clicks, conversations |
+| Data quality | 0–10 | how much is known and verified |
+
+Every point carries a sentence ("Logistics Manager matches a target title").
+Manual overrides are kept alongside the computed score and logged. ICP edits
+mark scores stale and the worker rescores.
+
+### Research (`server/ai/research.ts`)
+Reads up to eight pages of the prospect's site and asks a model why this
+company might care about *this client's offer*. Facts, signals, ICP checks
+and relevance angles must quote the crawled text; anything that cannot be
+matched (exact → normalized → fuzzy) is discarded before it is saved.
+
+### Drafting and verification (`server/ai/personalize.ts`, `server/verification`)
+A draft is written from a **fact ledger**: verified research facts, signals,
+firmographics with their provenance, and the client's *approved* proof points.
+The model reports each claim it made; every claim is then checked
+independently — is it supported by its source, does it contradict it, is it
+stale (recency words need dated evidence under 90 days), and is its claim
+type approved for automatic sending?
+
+### Approval policy
+A campaign is either **review everything** or **auto-send verified**. A draft
+sends without review only if every factual claim is supported, every claim
+type is approved, it scores at or above the campaign threshold (0.92 by
+default), the linter found nothing blocking, and the campaign is active.
+Anything else waits in the review queue with the reason. A person can approve
+unverified claims only by saying how they checked them; that note is audited.
+
+### The send gate (`services/send-gate.ts`)
+The only path to the email provider: approval, suppression by address, domain
+and channel, a cooling-off window across campaigns, workspace and mailbox
+caps, SPF/DKIM, sending hours and the opt-out link. A blocked message records
+why.
+
+### Calls (`services/call-queue`, `services/calls.ts`)
+One `CallTask` per contact, recomputed from replies, engagement, signals,
+callbacks and fit. Priority is a sum of readable reasons ("Replied 'send me
+more info' 2 days ago"); unanswered attempts lower it and are spaced two days
+apart; closed outcomes rest a contact for 90 days. Call prep puts the opener,
+why-now, research, proof points, discovery questions, objection handling and
+history on one screen. Logging an outcome updates the queue, stops sequences
+where appropriate, records objections, schedules callbacks, adds referrals as
+contacts and books meetings.
+
+### Meetings and analytics
+Meetings record how they were booked and, afterwards, whether they were held
+and what they became. Analytics counts the full funnel — accounts, contacts,
+emails, replies, calls, conversations, meetings, opportunities, wins, cost —
+and breaks results down by seniority, department, industry, company size,
+title, signal, angle, step, campaign, playbook, caller and objection. Groups
+under 20 are shown but never used for written findings. Nothing is predicted.
+
+---
+
+## 5. Connectors
+
+| Capability | Implemented | Planned (interface only) |
+|---|---|---|
+| Research source | Company website crawler | — |
+| Company / contact data, email finding | Apollo | — |
+| Email verification | — | Hunter, ZeroBounce |
+| Email sending | Resend (incl. SPF/DKIM status) | Gmail, Outlook |
+| AI | Anthropic, OpenAI fallback | — |
+| Calendar, phone, CRM | — | Google/Microsoft, Twilio, HubSpot, Salesforce |
+
+A connector is usable only when implemented, its environment variables are
+set, and the workspace has not turned it off. Several providers for one
+capability run in priority order. Paid lookups are stored as `ProviderRecord`
+and reused until they expire. Every model call, provider lookup and email
+records a `UsageRecord` cost so cost per meeting is measurable.
+
+---
+
+## 6. Compliance
+
+`Suppression` entries record the value (email, domain or phone), the channel
+(all, email, phone), the reason, the source (unsubscribe link, one-click,
+reply, bounce, complaint, call outcome, manual, import) and when. Opt-outs,
+bounces, complaints and do-not-call requests cannot be removed in the app.
+Unsubscribe links use signed tokens; RFC 8058 one-click is supported. Outreach
+history is soft-deleted only, so the evidence survives.
+
+---
+
+## 7. Running it
+
+See `SETUP.md`. In short:
+
+```bash
+cp .env.example .env
+docker compose up -d db
+npm install
+npx prisma migrate deploy
+npm run db:seed                 # optional: SEED_DEMO_WORKSPACE=<slug> for example clients
+npm run dev                     # app on :3000
+npm run worker                  # background work
+```
+
+Checks: `npm run typecheck`, `npm run lint`, `npm test`.
+
+---
+
+## 8. Known gaps
+
+- **Calendar, phone and CRM connectors** are interfaces only. Meetings are
+  booked in Relay and the caller sends the invite from their own calendar.
+- **Email verification providers** are not implemented; imported emails keep
+  whatever verification status the source gave them.
+- **Discovery** is by import, manual entry or Apollo — there is no crawler
+  that finds companies from scratch, by design.
+- **Apollo** request and response shapes follow its public documentation but
+  have not been exercised against a live account in this repository.
+- **Legacy agency tools** (solution library, proposals, demo sites) remain
+  viewable; proposal generation depended on the old research output and is
+  retired.

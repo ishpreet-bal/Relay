@@ -34,7 +34,7 @@ export const callsRouter = router({
 
   prep: permissionProcedure('call:read')
     .input(z.object({ contactId: z.string().uuid() }))
-    .query(({ ctx, input }) => getCallPrep(ctx.access, input.contactId)),
+    .query(({ ctx, input }) => getCallPrep(ctx.access, input.contactId, ctx.session.name)),
 
   log: permissionProcedure('call:log')
     .input(logCallSchema)

@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
-import { requirePermission } from '@/lib/auth';
+import { pageSession } from '@/lib/page-auth';
 import { db } from '@/lib/db';
 import { Topbar } from '@/components/shell/topbar';
 
 export const metadata = { title: 'Solution library' };
 
 export default async function SolutionsPage() {
-  const session = await requirePermission('account:read');
+  const session = await pageSession('proposal:read');
 
   const templates = await db.solutionTemplate.findMany({
     where: {

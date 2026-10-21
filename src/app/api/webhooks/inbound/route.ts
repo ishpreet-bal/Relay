@@ -23,13 +23,15 @@ interface InboundEvent {
  */
 export async function POST(req: Request) {
   const raw = await req.text();
+  const secret = env().RESEND_WEBHOOK_SECRET;
+  if (!secret) return new Response('Email webhooks are not configured', { status: 503 });
 
   let verified: { id: string; payload: InboundEvent };
   try {
     verified = verifyWebhook<InboundEvent>({
       body: raw,
       headers: await headers(),
-      secret: env().RESEND_WEBHOOK_SECRET,
+      secret,
     });
   } catch (err) {
     if (err instanceof SignatureError) return new Response('Invalid signature', { status: 401 });

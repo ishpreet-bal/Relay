@@ -117,8 +117,18 @@ export interface OutboundEmail {
   headers: Record<string, string>;
 }
 
+export interface DomainAuthStatus {
+  /** The provider knows this sending domain. */
+  found: boolean;
+  spf: boolean;
+  dkim: boolean;
+  detail: string;
+}
+
 export interface EmailSendingProvider {
   send(email: OutboundEmail): Promise<{ providerMessageId: string | null; costMillicents: number }>;
+  /** SPF/DKIM state of a sending domain as the provider sees it. */
+  domainStatus?(domain: string): Promise<DomainAuthStatus>;
 }
 
 /** Placeholders for integrations designed but not built. */

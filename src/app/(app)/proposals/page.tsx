@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requirePermission } from '@/lib/auth';
+import { pageSession } from '@/lib/page-auth';
 import { db } from '@/lib/db';
 import { Topbar } from '@/components/shell/topbar';
 import { cn, formatMoney } from '@/lib/utils';
@@ -12,7 +12,7 @@ const TONE: Record<string, string> = {
 };
 
 export default async function ProposalsPage() {
-  const session = await requirePermission('proposal:read');
+  const session = await pageSession('proposal:read');
 
   const proposals = await db.proposal.findMany({
     where: { organizationId: session.organizationId },

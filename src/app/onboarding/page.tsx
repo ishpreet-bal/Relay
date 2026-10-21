@@ -7,10 +7,10 @@ export default function OnboardingPage() {
     <main className="min-h-screen grid place-items-center bg-canvas px-4">
       <div className="w-full max-w-md">
         <p className="eyebrow mb-3">Step 1 of 2</p>
-        <h1 className="text-2xl font-semibold mb-2">Name your agency</h1>
+        <h1 className="text-2xl font-semibold mb-2">Name your workspace</h1>
         <p className="text-sm text-muted mb-6">
-          Your workspace holds your leads, research, and sending domains. Teammates
-          you invite later join this workspace.
+          The workspace holds your clients, their accounts and campaigns, and your sending
+          domains. Teammates and client users you invite later join it.
         </p>
         <CreateOrganization
           afterCreateOrganizationUrl="/dashboard"

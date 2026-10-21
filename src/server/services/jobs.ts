@@ -95,7 +95,7 @@ export async function releaseStaleJobs(olderThanMinutes = 30) {
 export async function listJobs(organizationId: string, params: { status?: Job['status'][]; type?: JobType; limit?: number }) {
   return db.job.findMany({
     where: {
-      OR: [{ organizationId }, { organizationId: null }],
+      organizationId,
       ...(params.status?.length ? { status: { in: params.status } } : {}),
       ...(params.type ? { type: params.type } : {}),
     },
@@ -107,7 +107,7 @@ export async function listJobs(organizationId: string, params: { status?: Job['s
 export async function jobSummary(organizationId: string) {
   const since = new Date(Date.now() - 24 * 3600_000);
   const [byStatus, failedRecently, research] = await Promise.all([
-    db.job.groupBy({ by: ['status'], where: { OR: [{ organizationId }, { organizationId: null }] }, _count: true }),
+    db.job.groupBy({ by: ['status'], where: { organizationId }, _count: true }),
     db.job.count({ where: { organizationId, status: 'FAILED', updatedAt: { gte: since } } }),
     db.research.groupBy({ by: ['status'], where: { organizationId }, _count: true }),
   ]);

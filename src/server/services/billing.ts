@@ -1,11 +1,14 @@
 import Stripe from 'stripe';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
+import { NotConfiguredError } from '@/server/errors';
 import type { Plan } from '@prisma/client';
 
 let client: Stripe | null = null;
 export function stripe() {
-  client ??= new Stripe(env().STRIPE_SECRET_KEY, { apiVersion: '2025-02-24.acacia' });
+  const key = env().STRIPE_SECRET_KEY;
+  if (!key) throw new NotConfiguredError('stripe', 'Billing is not configured. Set STRIPE_SECRET_KEY.');
+  client ??= new Stripe(key, { apiVersion: '2025-02-24.acacia' });
   return client;
 }
 
