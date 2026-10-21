@@ -4,8 +4,9 @@ import { logger } from '@/lib/logger';
 import { runSequencer } from './services/sequencer';
 import { enforceContextualGuardrail } from './services/tier-performance';
 import { refreshQueue } from './services/call-queue';
-import { processJobs, processResearch, processStaleScores } from './services/job-runner';
+import { heartbeat, processGroup, processResearch, processStaleScores } from './services/job-runner';
 import { scheduledMaintenance } from './services/scheduler';
+import type { WorkerGroup } from './queues/registry';
 
 /**
  * The background worker. Claims work with FOR UPDATE SKIP LOCKED so several
@@ -18,13 +19,25 @@ import { scheduledMaintenance } from './services/scheduler';
  * and daily guardrails. Job execution itself lives in services/job-runner so
  * the cron tick can share it when no worker is deployed.
  *
- * Run with: npm run worker
+ * Run with: npm run worker                      (every queue)
+ *           npm run worker -- --group=studio      (customer workflows and billing only)
+ *           npm run worker -- --group=intelligence (prospecting: discovery, research, outreach)
+ * Running studio in its own process keeps a prospecting backlog from ever
+ * delaying a paying customer's automation.
  */
+const GROUP = parseGroup(process.argv.find((a) => a.startsWith('--group='))?.split('=')[1] ?? process.env.WORKER_GROUP ?? 'all');
+const RUNS_INTELLIGENCE = GROUP === 'all' || GROUP === 'intelligence';
+const RUNS_PLATFORM = GROUP === 'all' || GROUP === 'platform' || GROUP === 'intelligence';
+
+function parseGroup(v: string): WorkerGroup | 'all' {
+  if (v === 'all' || v === 'intelligence' || v === 'studio' || v === 'platform') return v;
+  throw new Error(`Unknown worker group "${v}" (expected all, intelligence, studio or platform)`);
+}
 const POLL_INTERVAL_MS = 15_000;
 const RESEARCH_CONCURRENCY = 2;
 const JOB_CONCURRENCY = 4;
 const RESCORE_BATCH = 50;
-const WORKER_ID = `${hostname()}:${process.pid}`;
+const WORKER_ID = `${GROUP}@${hostname()}:${process.pid}`;
 /** How long one job may run before pausable work (discovery) yields. */
 const JOB_SLICE_MS = 4 * 60_000;
 
@@ -101,18 +114,20 @@ async function processPeriodic() {
 }
 
 async function loop() {
-  logger.info('worker.started', { workerId: WORKER_ID });
+  logger.info('worker.started', { workerId: WORKER_ID, group: GROUP });
   while (!shuttingDown) {
     try {
-      const research = await processResearch(RESEARCH_CONCURRENCY);
-      const jobs = await processJobs(WORKER_ID, JOB_CONCURRENCY, { deadline: Date.now() + JOB_SLICE_MS });
-      const rescored = await processStaleScores(RESCORE_BATCH);
-      await processSequences();
-      await processPeriodic();
+      const research = RUNS_INTELLIGENCE ? await processResearch(RESEARCH_CONCURRENCY) : 0;
+      const jobs = await processGroup(WORKER_ID, GROUP, JOB_CONCURRENCY, { deadline: Date.now() + JOB_SLICE_MS });
+      const rescored = RUNS_INTELLIGENCE ? await processStaleScores(RESCORE_BATCH) : 0;
+      if (RUNS_INTELLIGENCE) await processSequences();
+      if (RUNS_PLATFORM) await processPeriodic();
+      await heartbeat(WORKER_ID, GROUP, research + jobs + rescored, null);
       // Back off only when idle; keep draining while there's work.
       if (research + jobs + rescored === 0) await sleep(POLL_INTERVAL_MS);
     } catch (err) {
       logger.error('worker.loop_error', { error: err });
+      await heartbeat(WORKER_ID, GROUP, 0, err instanceof Error ? err.message.slice(0, 500) : String(err));
       await sleep(POLL_INTERVAL_MS);
     }
   }

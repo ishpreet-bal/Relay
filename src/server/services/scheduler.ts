@@ -10,7 +10,8 @@ import { backfillCompanyKeys } from './companies/backfill';
  * and the cron tick on each call.
  */
 export async function scheduledMaintenance(now = new Date()) {
-  const released = await releaseStaleJobs();
+  // A step holds its job for at most a few minutes; 15 without a word means it died.
+  const released = await releaseStaleJobs(15 * 60_000);
   const discovery = await scheduleDueDiscovery(now);
   const backfill = await backfillCompanyKeys();
   const retention = await sweepRetention(now);

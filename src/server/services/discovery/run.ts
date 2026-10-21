@@ -12,6 +12,7 @@ import { recordProvenance } from '@/server/services/provenance';
 import { findSuppression } from '@/server/services/suppression';
 import { recordUsage } from '@/server/services/usage';
 import { enqueueJob } from '@/server/services/jobs';
+import { ProviderUnavailableError, throttled } from '@/server/queues/throttle';
 import { exclusionReason, nextRunAfter, planQueries, type PlanningProfile } from './plan';
 import { budgetLevel, monthSpendMillicents } from './profiles';
 import { confirmName, readSiteIdentity, type SiteIdentity } from './site-identity';
@@ -141,7 +142,14 @@ interface Counters {
  * Moves a run forward until it finishes or `deadline` (epoch ms) is near.
  * Returns done: false when there is more to do; the caller re-queues it.
  */
-export async function executeDiscoveryStep(runId: string, opts: { deadline: number }): Promise<{ done: boolean }> {
+export interface StepResult {
+  done: boolean;
+  /** When the run should continue, if not now (a provider is paused). */
+  retryAt?: Date;
+  reason?: string;
+}
+
+export async function executeDiscoveryStep(runId: string, opts: { deadline: number }): Promise<StepResult> {
   const run = await db.discoveryRun.findUnique({ where: { id: runId }, include: { profile: true } });
   if (!run || !['QUEUED', 'RUNNING', 'RETRYING'].includes(run.status)) return { done: true };
   const profile = run.profile;
@@ -213,9 +221,23 @@ export async function executeDiscoveryStep(runId: string, opts: { deadline: numb
         }
 
         const query: DiscoveryQuery = { ...queries[qi]!, pageToken };
-        const result = await def.discovery.search(query).catch((err: unknown) => ({
-          status: 'ERROR' as const, costMillicents: 0, error: err instanceof Error ? err.message : 'Request failed', data: undefined,
-        }));
+        const search = def.discovery.search.bind(def.discovery);
+        let result: Awaited<ReturnType<typeof search>>;
+        try {
+          // Shared per-provider budget and breaker: a provider that is down
+          // or rate-limited pauses this run, not every run.
+          result = await throttled(def.id, () => search(query), (r) => r.status === 'ERROR'
+            ? { ok: false, error: r.error ?? 'Request failed', retryAfter: /\b429\b/.test(r.error ?? '') ? new Date(Date.now() + 60_000) : undefined }
+            : { ok: true });
+        } catch (err) {
+          if (err instanceof ProviderUnavailableError) {
+            details.cursor = { source: si, query: qi, page, pageToken };
+            stats.detail = err.message;
+            await save();
+            return { done: false, retryAt: err.retryAt, reason: err.message };
+          }
+          result = { status: 'ERROR', costMillicents: 0, error: err instanceof Error ? err.message : 'Request failed', data: undefined };
+        }
         stats.requests++;
         counters.queriesRun++;
         const before = spent;
@@ -225,7 +247,7 @@ export async function executeDiscoveryStep(runId: string, opts: { deadline: numb
         if (price.isEstimate) details.costIsEstimate = true;
         await recordUsage({
           organizationId: run.organizationId, clientId: run.clientId, provider: def.id, type: 'DISCOVERY_REQUEST',
-          costMillicents: result.costMillicents, isEstimate: price.isEstimate,
+          costMillicents: result.costMillicents, isEstimate: price.isEstimate, operation: `${def.id}.search`,
           metadata: { runId: run.id, query: query.text, page, status: result.status },
         });
         noteBudget(details, before, spent, budget);

@@ -6,7 +6,7 @@ import {
 } from '@/server/services/discovery/profiles';
 import { cancelDiscoveryRun, getRun, listRunResults, listRuns, startDiscoveryRun } from '@/server/services/discovery/run';
 import { GTA_DEFAULTS, planQueries } from '@/server/services/discovery/plan';
-import { runJobNow } from '@/server/services/job-runner';
+import { heartbeat, runJobNow } from '@/server/services/job-runner';
 import { recordAudit } from '@/lib/audit';
 
 const DISCOVERY_OUTCOMES = ['CREATED', 'UPDATED', 'DUPLICATE', 'EXCLUDED', 'NEEDS_REVIEW', 'FAILED'] as const;
@@ -102,7 +102,10 @@ export const discoveryRouter = router({
           orderBy: { createdAt: 'desc' },
           select: { id: true },
         });
-        if (job) await runJobNow(job.id, `web:${ctx.session.userId}`, { deadline: Date.now() + 45_000 });
+        if (job) {
+          const ran = await runJobNow(job.id, `web:${ctx.session.userId}`, { deadline: Date.now() + 45_000 });
+          if (ran) await heartbeat('web', 'page', 1, null);
+        }
       }
       const after = await getRun(ctx.access, input.runId);
       return { status: after.status, found: after.found };

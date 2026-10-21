@@ -5,6 +5,10 @@ import { runResearch } from '@/server/ai/research';
 import { BudgetExceededError } from '@/server/ai/budget';
 import { systemAccess } from '@/server/access/scope';
 import { NotConfiguredError } from '@/server/errors';
+import { runInJob } from '@/server/queues/context';
+import { queuesFor, type QueueName, type WorkerGroup } from '@/server/queues/registry';
+import { runtimeFor } from '@/server/queues/settings';
+import { ProviderUnavailableError, throttled } from '@/server/queues/throttle';
 import { rescoreAccount } from './scoring';
 import { refreshQueue } from './call-queue';
 import { claimJob, claimJobs, completeJob, failJob, requeueJob } from './jobs';
@@ -12,13 +16,14 @@ import { discoverContacts, enrichAccount } from './enrichment';
 import { executeDiscoveryStep } from './discovery/run';
 import { sweepRetention } from './discovery/retention';
 import { backfillCompanyKeys } from './companies/backfill';
+import { createAccount } from './accounts';
 
 /**
  * Executing queued work, shared by everything that can drive it: the
- * long-running worker (npm run worker), the scheduled cron tick, and pages
- * that move a run forward while someone watches it. Each caller passes a
- * deadline; handlers that can pause (discovery runs) stop before it and are
- * re-queued without using up an attempt.
+ * long-running worker (npm run worker, one process per worker group), the
+ * scheduled cron tick, and pages that move a run forward while someone
+ * watches it. Every attempt runs under its queue's timeout and inside a job
+ * context, so the costs it incurs are attributed to it.
  */
 
 export interface RunContext {
@@ -27,7 +32,16 @@ export interface RunContext {
 }
 
 /** Returned by a handler that made progress and wants to continue later. */
-export const CONTINUE = Symbol('continue');
+export class Continue {
+  constructor(public runAt = new Date(), public reason: string | null = null) {}
+}
+
+export class JobTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Attempt exceeded its ${Math.round(ms / 1000)}s time limit`);
+    this.name = 'JobTimeoutError';
+  }
+}
 
 type Handler = (job: Job, ctx: RunContext) => Promise<unknown>;
 
@@ -51,52 +65,92 @@ const HANDLERS: Partial<Record<JobType, Handler>> = {
   CONTACT_ENRICHMENT: (job) => discoverContacts(requireOrg(job), job.entityId!, Number((job.payload as { limit?: number } | null)?.limit ?? 5)),
   RESEARCH: (job) => runResearch(requireOrg(job).organizationId, job.entityId!).then((r) => ({ signals: r.signalsCreated, groundingRate: r.report.groundingRate })),
   DISCOVERY_RUN: async (job, ctx) => {
-    const { done } = await executeDiscoveryStep(job.entityId!, { deadline: ctx.deadline });
-    return done ? { runId: job.entityId } : CONTINUE;
+    const step = await executeDiscoveryStep(job.entityId!, { deadline: ctx.deadline });
+    if (step.done) return { runId: job.entityId };
+    return new Continue(step.retryAt ?? new Date(), step.reason ?? null);
   },
   RETENTION_SWEEP: () => sweepRetention(),
   MAINTENANCE: () => backfillCompanyKeys(),
+  SYNTHETIC_TASK: (job) => runSyntheticTask(job),
 };
 
-/** Job types quick enough (or pausable) to run inside a serverless function. */
-export const SERVERLESS_JOB_TYPES: JobType[] = [
-  'DISCOVERY_RUN', 'RETENTION_SWEEP', 'MAINTENANCE', 'CALL_QUEUE_REFRESH', 'ACCOUNT_ENRICHMENT', 'CONTACT_ENRICHMENT',
-];
+async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new JobTimeoutError(ms)), ms); });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-async function execute(job: Job, ctx: RunContext) {
+async function execute(job: Job, ctx: RunContext, workerId: string) {
   const handler = HANDLERS[job.type];
   if (!handler) {
     await failJob(job, new Error(`No handler for ${job.type}`), { retryable: false });
     return;
   }
+  const q = await runtimeFor(job.queue);
+  const timeoutMs = q?.timeoutMs ?? 5 * 60_000;
+  // Pausable handlers aim to return well inside the hard limit.
+  const deadline = Math.min(ctx.deadline, Date.now() + Math.floor(timeoutMs * 0.9));
   try {
-    const result = await handler(job, ctx);
-    if (result === CONTINUE) await requeueJob(job.id);
+    const result = await runInJob({ jobId: job.id, queue: job.queue, workerId }, () => withTimeout(handler(job, { deadline }), timeoutMs));
+    if (result instanceof Continue) await requeueJob(job.id, result.runAt, result.reason);
     else await completeJob(job.id, (result ?? null) as never);
   } catch (err) {
-    if (err instanceof BudgetExceededError) {
-      await db.job.update({ where: { id: job.id }, data: { status: 'RETRYING', runAt: new Date(Date.now() + 3600_000), error: err.message, lockedAt: null, lockedBy: null } });
+    if (err instanceof ProviderUnavailableError) {
+      // The provider is paused, not the job: wait it out without using an attempt.
+      await requeueJob(job.id, err.retryAt, err.message);
       return;
     }
-    // Missing configuration will not fix itself by retrying.
-    await failJob(job, err, { retryable: !(err instanceof NotConfiguredError) });
-    logger.error('job.failed', { jobId: job.id, type: job.type, error: err });
+    if (err instanceof BudgetExceededError) {
+      await requeueJob(job.id, new Date(Date.now() + 3600_000), err.message);
+      return;
+    }
+    // Note: a timed-out attempt's work can't be cancelled mid-flight in
+    // Node; handlers are idempotent so a retry after it finishes is safe.
+    const timedOut = err instanceof JobTimeoutError;
+    await failJob(job, err, { retryable: !(err instanceof NotConfiguredError), timedOut });
+    logger.error('job.failed', { jobId: job.id, type: job.type, queue: job.queue, error: err });
   }
 }
 
-export async function processJobs(workerId: string, concurrency: number, ctx: RunContext, types?: JobType[]) {
-  const jobs = await claimJobs(workerId, concurrency, types);
-  await Promise.all(jobs.map((job) => execute(job, ctx)));
+let rotation = 0;
+
+/**
+ * Claims and runs up to `concurrency` jobs from the given queues, starting
+ * from a different queue each call so no queue is permanently first.
+ */
+export async function processQueues(workerId: string, queues: QueueName[], concurrency: number, ctx: RunContext) {
+  if (!queues.length) return 0;
+  const start = rotation++ % queues.length;
+  const ordered = [...queues.slice(start), ...queues.slice(0, start)];
+  const jobs = await claimJobs(workerId, concurrency, ordered);
+  await Promise.all(jobs.map((job) => execute(job, ctx, workerId)));
   return jobs.length;
 }
 
-/** Runs one specific job now, if nobody else holds it. */
+export async function processGroup(workerId: string, group: WorkerGroup | 'all', concurrency: number, ctx: RunContext) {
+  return processQueues(workerId, queuesFor(group), concurrency, ctx);
+}
+
+/** Runs one specific job now, if nobody else holds it and its queue has room. */
 export async function runJobNow(jobId: string, workerId: string, ctx: RunContext) {
   // A step holds its job for under a minute; one silent for three has died.
   const job = await claimJob(jobId, workerId, 3 * 60_000);
   if (!job) return false;
-  await execute(job, ctx);
+  await execute(job, ctx, workerId);
   return true;
+}
+
+/** Records that a worker is alive and what it has done. */
+export async function heartbeat(workerId: string, group: string, processed: number, error?: string | null) {
+  await db.workerHeartbeat.upsert({
+    where: { workerId },
+    create: { workerId, group, jobsProcessed: processed, lastError: error ?? null, version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null },
+    update: { lastSeenAt: new Date(), jobsProcessed: { increment: processed }, ...(error !== undefined ? { lastError: error } : {}) },
+  }).catch((err) => logger.warn('worker.heartbeat_failed', { workerId, error: err }));
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +175,9 @@ async function claimResearchJobs(limit: number): Promise<ClaimedResearch[]> {
 }
 
 export async function processResearch(concurrency: number) {
-  const jobs = await claimResearchJobs(concurrency);
+  const q = await runtimeFor('research');
+  if (q?.paused) return 0;
+  const jobs = await claimResearchJobs(Math.min(concurrency, q?.concurrency ?? concurrency));
   await Promise.all(jobs.map(async (job) => {
     try {
       await runResearch(job.organizationId, job.accountId);
@@ -149,4 +205,63 @@ export async function processStaleScores(batch: number) {
     try { await rescoreAccount(a.id); } catch (err) { logger.error('rescore.failed', { accountId: a.id, error: err }); }
   }
   return stale.length;
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic load (queue validation only)
+// ---------------------------------------------------------------------------
+
+export interface SyntheticPayload {
+  /** Which synthetic company to write; several tasks may share one, to test deduplication. */
+  companyIndex: number;
+  /** Throw before writing on attempts up to this number. */
+  failBeforeWriteAttempts?: number;
+  /** Throw after writing on the first attempt: the retry must not duplicate the write. */
+  failAfterWriteOnce?: boolean;
+  /** Sleep this long on the first attempt (beyond the queue timeout to test timeouts). */
+  hangFirstAttemptMs?: number;
+  /** Always fail: ends as a dead letter. */
+  permanent?: boolean;
+  /** Call this synthetic provider through the shared throttle first. */
+  provider?: string;
+  /** The synthetic provider call fails. */
+  providerFails?: boolean;
+  workMs?: number;
+}
+
+/** Live counters for tests: how many synthetic tasks run at once. */
+export const syntheticProbe = { active: 0, maxActive: 0, writes: 0 };
+
+async function runSyntheticTask(job: Job) {
+  const p = (job.payload ?? {}) as unknown as SyntheticPayload;
+  const client = job.clientId ? await db.client.findUnique({ where: { id: job.clientId }, select: { id: true, slug: true, organizationId: true } }) : null;
+  // Only ever acts on clients created for synthetic testing.
+  if (!client || !client.slug.startsWith('synthetic-')) throw new NotConfiguredError('synthetic', 'Synthetic tasks only run against synthetic clients.');
+
+  syntheticProbe.active++;
+  syntheticProbe.maxActive = Math.max(syntheticProbe.maxActive, syntheticProbe.active);
+  try {
+    if (p.hangFirstAttemptMs && job.attempts === 1) await new Promise((r) => setTimeout(r, p.hangFirstAttemptMs));
+    if (p.workMs) await new Promise((r) => setTimeout(r, p.workMs));
+    if (p.permanent) throw new Error('Synthetic permanent failure');
+    if (p.failBeforeWriteAttempts && job.attempts <= p.failBeforeWriteAttempts) throw new Error(`Synthetic failure before write (attempt ${job.attempts})`);
+    if (p.provider) {
+      await throttled(p.provider, async () => {
+        if (p.providerFails) throw new Error(`${p.provider} returned 503`);
+        return true;
+      });
+    }
+    const result = await createAccount(systemAccess(client.organizationId), null, {
+      clientId: client.id,
+      name: `Synthetic Company ${p.companyIndex}`,
+      websiteUrl: `https://synthetic-company-${p.companyIndex}.test`,
+      source: 'OTHER',
+      identifiers: [{ provider: 'synthetic', externalId: String(p.companyIndex) }],
+    }, { label: 'synthetic load test' });
+    syntheticProbe.writes++;
+    if (p.failAfterWriteOnce && job.attempts === 1) throw new Error('Synthetic failure after write');
+    return { status: result.status };
+  } finally {
+    syntheticProbe.active--;
+  }
 }
