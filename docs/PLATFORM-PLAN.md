@@ -271,14 +271,14 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ⬜ Gmail OAuth sending and approval queue on Gmail
 - ⬜ Pipeline Kanban with the brief's stages
 - ⬜ Automation library with synthetic demos tied to opportunities (phase E)
-- ⬜ Cost ledger budgets by category with 50/80/100% warnings (phase C)
+- ✅ Cost ledger budgets by category with 50/80/100% warnings (phase C)
 - ⬜ AI assistant over permissioned tools
 
 ### Brief 2
 
 - ✅ Phase A — this review
 - ✅ Phase B — queues, throttles, breakers, attempts, dead letter, ops page, 1,000-task test (see section 4)
-- ⬜ Phase C — staged qualification, freshness, research versions, budgets, forecasts
+- ✅ Phase C — staged qualification, freshness, research versions, budgets, forecasts (see section 4)
 - ⬜ Phase D — Studio foundation and two-tenant isolation test
 - ⬜ Phase E — opportunity-to-application workflow
 - ⬜ Phase F — subscriptions, metering, Stripe test mode, profitability
@@ -359,3 +359,62 @@ operations UI was type-checked and built but not exercised in a browser
 (sign-in needs Clerk credentials).
 
 **New dependencies**: none.
+
+### Phase C — automation intelligence (2026-10-22)
+
+**Built**
+- Funnel stages on every account (`DISCOVERED → SCREENED_OUT | QUALIFIED →
+  ANALYZED → DEEP_RESEARCHED`) with opportunity tiers (Hot, Warm,
+  Exploratory, Low, Suppressed). Nothing is deleted for scoring low.
+- Stage 2 screening (`services/pipeline/screening.ts`), deterministic and
+  explained point by point: ICP fit (reusing the existing account score),
+  business events in the last six months, an active website, operational
+  scale, completeness, reachability. Runs in batches of 200 over every
+  account that is new, changed, or has a new signal.
+- Gates: configurable thresholds, daily caps for automatic analysis and deep
+  research, budget categories checked before queuing and again before
+  spending, and manual promotion that sticks until unpinned.
+- Stage 3 is the existing grounded research, now run through the research
+  queue with a trigger; each completed run is kept as an immutable
+  `ResearchVersion` with verified facts, AI hypotheses and unknowns apart,
+  the content fingerprint and the fields that changed.
+- Stage 4 deep research (`services/pipeline/deep.ts`) on `claude-opus-5-5`
+  with structured output (JSON schema) and the server-side refusal fallback:
+  it sees only stage-3 verified facts, must cite them for every claim, and
+  anything citing a fact that doesn't exist is dropped and counted. ROI is a
+  low/high scenario computed by the existing ROI engine from stated
+  assumptions. Decision makers come only from a connected, permitted
+  provider.
+- Freshness: refresh schedules by tier; a refresh re-reads one page and
+  compares fingerprints; only website-sourced fields are updated (a person's
+  value is kept and the difference noted); only a material change to a
+  hot/warm account with research older than 30 days queues new analysis.
+- Category budgets (discovery, analysis, deep, enrichment, outreach, global)
+  enforced in discovery steps, enrichment chains, research and deep
+  research; alerts at 50/80/100% (`SystemAlert`, one open alert per key).
+- Cost forecast (`services/pipeline/forecast.ts`) for 1k, 10k, 100k and 1M
+  stored companies and any custom scenario, with editable assumptions.
+- Research funnel page: stored / discovered / refreshed / analysed / deep
+  counts kept apart, stage drill-down with reasons and actions, budgets,
+  alerts, settings and forecast. Account page: stage, tier, reasons,
+  actions and version history.
+
+**Also fixed**: AI requests for current models (temperature and prefill
+400 on `claude-sonnet-5`, the research model); AI price table.
+
+**Migrations**: `20261022010000_research_pipeline` (additive; already
+researched accounts start at ANALYZED).
+
+**Tests**: 16 unit tests (screening, stage rules, refresh schedule, deep
+output validation, ROI scenarios, forecasts) and a 5-case acceptance test
+on Postgres taking three companies through the funnel with websites and
+the model stubbed. It shows the poor fit kept as screened out with its
+reasons, the daily cap holding back the second good fit, grounding dropping
+an unsupported fact, an invented reference dropped in deep research,
+manual promotion passing the cap but not the budget (with a critical alert),
+and refresh keeping a person's value.
+
+**Limits**: no live model call has been made (no `ANTHROPIC_API_KEY` in this
+environment), so prompt quality and real token costs are unmeasured; the
+deep-research cost in the forecast is an estimate. The funnel UI was built
+and type-checked, not used in a browser.

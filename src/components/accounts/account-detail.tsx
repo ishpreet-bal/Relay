@@ -26,6 +26,7 @@ import { AccountStatusPill, SignalPill, VerificationBadge } from '@/components/d
 import { ResearchPanel } from '@/components/research/research-panel';
 import { EnrollDialog } from '@/components/campaigns/enroll-dialog';
 import { Timeline } from './timeline';
+import { AccountFunnel } from '@/components/pipeline/account-funnel';
 import { ContactFormDialog } from './contact-form-dialog';
 import { cn } from '@/lib/utils';
 
@@ -169,6 +170,8 @@ export function AccountDetail({ id, can }: { id: string; can: AccountPermissions
                 </ul>
               )}
             </Section>
+
+            <AccountFunnel account={a} canRun={can.research} canOverride={can.override} />
 
             <Section title="Details">
               <dl className="card p-3 grid grid-cols-[110px_1fr] gap-y-1.5 text-micro">
