@@ -17,7 +17,7 @@ export function fingerprint(text: string | null | undefined) {
 
 interface Fact { id?: string; statement?: string; claimType?: string }
 interface Angle { angle?: string; reasoning?: string; confidence?: number }
-interface Attribute { attribute?: string; assessment?: string; reasoning?: string }
+interface Attribute { attribute?: string; assessment?: string; note?: string }
 
 function statements(v: unknown, key: 'statement' | 'angle'): string[] {
   return Array.isArray(v) ? v.map((x) => String((x as Record<string, unknown>)[key] ?? '')).filter(Boolean).sort() : [];
@@ -32,7 +32,7 @@ export async function snapshotAnalysis(accountId: string, trigger: string) {
   const relevance = (research.relevance ?? {}) as { angles?: Angle[]; attributes?: Attribute[] };
   const facts = (research.facts ?? []) as Fact[];
   const hypotheses = (relevance.angles ?? []).map((a) => ({ ...a, kind: 'AI_HYPOTHESIS' }));
-  const unknowns = (relevance.attributes ?? []).filter((a) => a.assessment === 'UNKNOWN').map((a) => ({ question: a.attribute, why: a.reasoning ?? null }));
+  const unknowns = (relevance.attributes ?? []).filter((a) => a.assessment === 'UNKNOWN').map((a) => ({ question: a.attribute, why: a.note || null }));
   const print = fingerprint(research.rawExtract);
 
   const changed: string[] = [];
