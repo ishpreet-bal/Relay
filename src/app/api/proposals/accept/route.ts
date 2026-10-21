@@ -23,5 +23,6 @@ export async function POST(req: Request) {
 
   if (!result) return new Response('Proposal not found', { status: 404 });
   if ('expired' in result) return new Response('This proposal has expired.', { status: 410 });
+  if ('notApproved' in result) return new Response('This proposal is not ready to accept yet.', { status: 409 });
   return Response.json({ ok: true });
 }

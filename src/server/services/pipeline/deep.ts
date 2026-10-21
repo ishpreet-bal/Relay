@@ -121,11 +121,23 @@ export async function runDeepResearch(organizationId: string, accountId: string,
   if (!facts.length) throw new DomainError('The analysis found no verified facts to build on.');
   await assertCategoryBudget(organizationId, 'deep');
 
-  const catalogue = await db.solutionTemplate.findMany({
-    where: { OR: [{ organizationId: null }, { organizationId }], isPublished: true },
-    select: { slug: true, title: true, industry: true, tagline: true },
-    take: 40,
-  });
+  // Studio templates are the solution catalogue; the older demo-site library fills in.
+  const [studio, legacy] = await Promise.all([
+    db.appTemplate.findMany({
+      where: { OR: [{ organizationId: null }, { organizationId }], archivedAt: null, versions: { some: { status: 'PUBLISHED' } } },
+      select: { slug: true, name: true, industry: true, description: true, useCases: true },
+      take: 40,
+    }),
+    db.solutionTemplate.findMany({
+      where: { OR: [{ organizationId: null }, { organizationId }], isPublished: true },
+      select: { slug: true, title: true, industry: true, tagline: true },
+      take: 40,
+    }),
+  ]);
+  const catalogue = [
+    ...studio.map((t) => ({ slug: t.slug, title: t.name, industry: t.industry, tagline: `${t.description} Covers: ${t.useCases.join(', ')}.` })),
+    ...legacy.filter((l) => !studio.some((t) => t.slug === l.slug)),
+  ].slice(0, 40);
 
   const completion = await complete({
     organizationId,

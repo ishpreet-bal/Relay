@@ -27,6 +27,7 @@ import { ResearchPanel } from '@/components/research/research-panel';
 import { EnrollDialog } from '@/components/campaigns/enroll-dialog';
 import { Timeline } from './timeline';
 import { AccountFunnel } from '@/components/pipeline/account-funnel';
+import { AccountOpportunities } from '@/components/delivery/opportunity-ui';
 import { ContactFormDialog } from './contact-form-dialog';
 import { cn } from '@/lib/utils';
 
@@ -172,6 +173,8 @@ export function AccountDetail({ id, can }: { id: string; can: AccountPermissions
             </Section>
 
             <AccountFunnel account={a} canRun={can.research} canOverride={can.override} />
+
+            <AccountOpportunities accountId={a.id} caps={{ write: can.write, review: can.override }} />
 
             <Section title="Details">
               <dl className="card p-3 grid grid-cols-[110px_1fr] gap-y-1.5 text-micro">

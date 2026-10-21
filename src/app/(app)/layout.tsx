@@ -22,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const [clients, review, calls, duplicates] = await Promise.all([
     db.client.findMany({
-      where: { organizationId: session.organizationId, archivedAt: null },
+      where: { organizationId: session.organizationId, archivedAt: null, kind: 'CUSTOMER' },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, status: true },
     }),

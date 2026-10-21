@@ -65,6 +65,9 @@ export const proposalsRouter = router({
         where: { id: input.id, organizationId: ctx.access.organizationId },
       });
       if (!proposal) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (proposal.opportunityId && !proposal.approvedAt) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Approve this proposal internally before sending it.' });
+      }
 
       const updated = await ctx.db.proposal.update({
         where: { id: input.id },

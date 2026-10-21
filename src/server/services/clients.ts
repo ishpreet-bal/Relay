@@ -115,7 +115,8 @@ export async function archiveClient(access: AccessContext, id: string) {
 export async function listClients(access: AccessContext) {
   const scope = clientFilter(access);
   const clients = await db.client.findMany({
-    where: { organizationId: access.organizationId, archivedAt: null, ...(scope.clientId ? { id: scope.clientId } : {}) },
+    // The demo sandbox holds synthetic data only and isn't a customer to manage or prospect for.
+    where: { organizationId: access.organizationId, archivedAt: null, kind: 'CUSTOMER', ...(scope.clientId ? { id: scope.clientId } : {}) },
     orderBy: [{ status: 'asc' }, { name: 'asc' }],
     include: {
       _count: {

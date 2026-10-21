@@ -65,12 +65,14 @@ model Organization {
   /**
    * Rate card. Proposal pricing is arithmetic on these, never generated.
    */
-  dayRateCents        Int     @default(120000)
-  discoveryFeeCents   Int     @default(0)
-  supportMonthlyCents Int     @default(0)
-  currency            String  @default("CAD")
-  proposalTerms       String?
-  proposalValidDays   Int     @default(30)
+  dayRateCents            Int     @default(120000)
+  /// What an hour of delivery costs the agency (wages, overhead); for profitability, never shown to customers.
+  internalHourlyCostCents Int     @default(6000)
+  discoveryFeeCents       Int     @default(0)
+  supportMonthlyCents     Int     @default(0)
+  currency                String  @default("CAD")
+  proposalTerms           String?
+  proposalValidDays       Int     @default(30)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -112,6 +114,7 @@ model Organization {
   provenance        DataProvenance[]
   connectorSettings ConnectorSetting[]
   messageClaims     MessageClaim[]
+  opportunities     Opportunity[]
 
   @@index([deletedAt])
 }
@@ -246,6 +249,8 @@ model Client {
 
   onboardedAt DateTime?
   archivedAt  DateTime?
+  /// CUSTOMER, or DEMO for the workspace's synthetic demo sandbox (never prospected, never billed).
+  kind        String    @default("CUSTOMER")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -617,22 +622,23 @@ model Account {
   parent       Account?              @relation("AccountBranches", fields: [parentAccountId], references: [id], onDelete: SetNull)
   branches     Account[]             @relation("AccountBranches")
 
-  identifiers DiscoveryIdentifier[]
-  duplicateOf DuplicateCandidate[]  @relation("DuplicateAccount")
-  duplicates  DuplicateCandidate[]  @relation("DuplicateCandidate")
-  contacts    Contact[]
-  research    Research?
-  activities  Activity[]
-  tasks       Task[]
-  messages    Message[]
-  enrollments CampaignEnrollment[]
-  proposals   Proposal[]
-  portfolios  PortfolioSite[]
-  meetings    Meeting[]
-  signals     Signal[]
-  calls       Call[]
-  callTasks   CallTask[]
-  provenance  DataProvenance[]
+  identifiers             DiscoveryIdentifier[]
+  duplicateOf             DuplicateCandidate[]  @relation("DuplicateAccount")
+  duplicates              DuplicateCandidate[]  @relation("DuplicateCandidate")
+  contacts                Contact[]
+  research                Research?
+  activities              Activity[]
+  tasks                   Task[]
+  messages                Message[]
+  enrollments             CampaignEnrollment[]
+  proposals               Proposal[]
+  portfolios              PortfolioSite[]
+  meetings                Meeting[]
+  signals                 Signal[]
+  calls                   Call[]
+  callTasks               CallTask[]
+  provenance              DataProvenance[]
+  automationOpportunities Opportunity[]
 
   @@unique([clientId, domain])
   @@index([clientId, pipelineStage, screeningScore(sort: Desc)])
@@ -1995,6 +2001,14 @@ model Proposal {
   signatureName String?
   signatureIp   String?
 
+  /// The reviewed opportunity this proposal is for, when it came from one.
+  opportunityId      String?   @db.Uuid
+  /// Internal sign-off before it can be sent or accepted.
+  approvedAt         DateTime?
+  approvedById       String?   @db.Uuid
+  /// How the customer authorised it when not through the share link (e.g. "signed SOW received").
+  acceptanceEvidence String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2733,4 +2747,127 @@ model Invoice {
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Opportunity to application (brief 2, phase E)
+// ---------------------------------------------------------------------------
+
+/// A possible automation for one account, from deep research or entered by a
+/// person. Nothing is demoed, proposed or built until a person qualifies it.
+model Opportunity {
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @db.Uuid
+  clientId            String    @db.Uuid
+  accountId           String    @db.Uuid
+  title               String
+  problem             String    @db.Text
+  proposedAutomation  String    @db.Text
+  /// DEEP_RESEARCH or MANUAL.
+  source              String
+  researchVersionId   String?   @db.Uuid
+  evidenceFactIds     String[]  @default([])
+  howToValidate       String?   @db.Text
+  integrationBarriers String[]  @default([])
+  /// The research's own confidence (0–1) when it came from research.
+  confidence          Float?
+  /// PROPOSED, QUALIFIED, REJECTED, DEMO, PROPOSAL, WON or LOST.
+  status              String    @default("PROPOSED")
+  reviewedById        String?   @db.Uuid
+  reviewedAt          DateTime?
+  reviewNote          String?
+  templateId          String?   @db.Uuid
+  templateVersionId   String?   @db.Uuid
+  /// EXACT, CONFIGURATION, MODERATE, CUSTOM or NOT_FEASIBLE.
+  reusability         String?
+  /// Why: matched terms, barriers, what has to be built.
+  reusabilityReasons  Json?
+  matchScore          Float?
+  /// A person changed the match or the class; automatic matching leaves it alone.
+  matchOverridden     Boolean   @default(false)
+  estimatedBuildHours Int?
+  fromScratchHours    Int?
+  /// How the estimate was made (template estimate, calibration from finished projects).
+  estimateBasis       Json?
+  /// Inputs for the value estimate, each with its source.
+  assessment          Json?
+  /// Projected value: a scenario from the assessment, never a measured result.
+  projection          Json?
+  proposalId          String?   @db.Uuid
+  customerClientId    String?   @db.Uuid
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  demos        OpportunityDemo[]
+  projects     DeliveryProject[]
+
+  @@unique([researchVersionId, title])
+  @@index([organizationId, status])
+  @@index([accountId])
+}
+
+/// A personalised demo: a sandbox application on the workspace's demo
+/// client, filled with synthetic records. Never touches customer data.
+model OpportunityDemo {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  opportunityId   String   @db.Uuid
+  applicationId   String   @db.Uuid
+  configVersionId String   @db.Uuid
+  sampleRuns      Int      @default(0)
+  createdById     String?  @db.Uuid
+  createdAt       DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+}
+
+/// Delivery of an accepted proposal: estimate against actual.
+model DeliveryProject {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  clientId           String    @db.Uuid
+  opportunityId      String?   @db.Uuid
+  proposalId         String?   @db.Uuid
+  applicationId      String?   @db.Uuid
+  templateId         String?   @db.Uuid
+  name               String
+  /// PLANNED, BUILDING, TESTING, LIVE or CLOSED.
+  status             String    @default("PLANNED")
+  reusability        String?
+  estimatedHours     Int
+  estimatedCostCents Int       @default(0)
+  priceSetupCents    Int       @default(0)
+  priceMonthlyCents  Int       @default(0)
+  startedAt          DateTime?
+  liveAt             DateTime?
+  closedAt           DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  opportunity Opportunity?       @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  timeEntries ProjectTimeEntry[]
+
+  @@index([organizationId, status])
+  @@index([clientId])
+  @@index([templateId, closedAt])
+}
+
+model ProjectTimeEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  userId    String?  @db.Uuid
+  /// discovery, build, configuration, testing, meetings, support.
+  category  String
+  minutes   Int
+  note      String?
+  workDate  DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  project DeliveryProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, workDate])
 }

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Building2, Users, Layers, PhoneCall, CalendarCheck, BookOpen, BarChart3, Briefcase,
-  ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow,
+  ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow, Lightbulb, ClipboardList,
 } from 'lucide-react';
 import type { Role } from '@prisma/client';
 import { cn } from '@/lib/utils';
@@ -53,7 +53,9 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
   {
     label: 'Delivery',
     items: [
+      { href: '/opportunities', label: 'Opportunities', icon: Lightbulb, permission: 'account:read' },
       { href: '/studio', label: 'Studio', icon: AppWindow, permission: 'studio:read' },
+      { href: '/projects', label: 'Projects', icon: ClipboardList, permission: 'proposal:read' },
     ],
   },
   {
