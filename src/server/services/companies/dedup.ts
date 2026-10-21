@@ -6,8 +6,8 @@ import { decide, scoreMatch, type CompanyIdentity, type MatchDecision } from './
 /**
  * Finds the existing accounts an incoming company might be, within one
  * client. Candidates come from cheap indexed lookups (shared identifier,
- * domain, email domain, phone, normalized name and its first word), then
- * every candidate is scored by match.ts.
+ * domain, email domain, normalized name and its first word), then every
+ * candidate is scored by match.ts.
  */
 
 export interface IncomingCompany {
@@ -45,26 +45,29 @@ type Candidate = Prisma.AccountGetPayload<{ select: typeof CANDIDATE_SELECT }>;
 export async function findMatches(tx: Prisma.TransactionClient, clientId: string, incoming: IncomingCompany, excludeId?: string) {
   const identity = identityOf(incoming);
   const firstWord = incoming.normalizedName.split(' ')[0] ?? '';
-  const or: Prisma.AccountWhereInput[] = [];
+  const base: Prisma.AccountWhereInput = { clientId, deletedAt: null, mergedIntoId: null, ...(excludeId ? { id: { not: excludeId } } : {}) };
+
+  // Strong keys are looked up on their own, so a common first word ("Toronto
+  // …", "Canadian …") can never crowd the exact match out of the candidates.
+  const strong: Prisma.AccountWhereInput[] = [];
   if (incoming.identifiers.length) {
-    or.push({ identifiers: { some: { OR: incoming.identifiers.map((i) => ({ provider: i.provider, externalId: i.externalId })) } } });
+    strong.push({ identifiers: { some: { OR: incoming.identifiers.map((i) => ({ provider: i.provider, externalId: i.externalId })) } } });
   }
-  if (incoming.domain) or.push({ domain: incoming.domain });
-  if (identity.emailDomains.length) or.push({ domain: { in: identity.emailDomains } });
-  if (incoming.domain) or.push({ contacts: { some: { email: { endsWith: `@${incoming.domain}` } } } });
-  if (incoming.normalizedName) or.push({ normalizedName: incoming.normalizedName });
+  if (incoming.domain) strong.push({ domain: incoming.domain });
+  if (identity.emailDomains.length) strong.push({ domain: { in: identity.emailDomains } });
+  if (incoming.domain) strong.push({ contacts: { some: { email: { endsWith: `@${incoming.domain}` } } } });
+
+  const rows = new Map<string, Candidate>();
+  const add = (list: Candidate[]) => list.forEach((r) => rows.set(r.id, r));
+  if (strong.length) add(await tx.account.findMany({ where: { ...base, OR: strong }, select: CANDIDATE_SELECT, take: 20 }));
+  if (incoming.normalizedName) add(await tx.account.findMany({ where: { ...base, normalizedName: incoming.normalizedName }, select: CANDIDATE_SELECT, take: 20 }));
   // First word catches near-misses ("Acme Machining" vs "Acme Machine Works")
-  // without scanning the client's whole list.
-  if (firstWord.length >= 3) or.push({ normalizedName: { startsWith: firstWord } });
-  if (!or.length) return [];
+  // without scanning the client's whole list. A weak signal: capped.
+  if (firstWord.length >= 3) {
+    add(await tx.account.findMany({ where: { ...base, normalizedName: { startsWith: firstWord }, NOT: { normalizedName: incoming.normalizedName } }, select: CANDIDATE_SELECT, take: 40 }));
+  }
 
-  const rows: Candidate[] = await tx.account.findMany({
-    where: { clientId, deletedAt: null, mergedIntoId: null, ...(excludeId ? { id: { not: excludeId } } : {}), OR: or },
-    select: CANDIDATE_SELECT,
-    take: 60,
-  });
-
-  return rows
+  return [...rows.values()]
     .map((row) => ({
       item: row,
       score: scoreMatch(identity, identityOf({
@@ -83,7 +86,17 @@ export async function findMatches(tx: Prisma.TransactionClient, clientId: string
 }
 
 export async function matchCompany(tx: Prisma.TransactionClient, clientId: string, incoming: IncomingCompany): Promise<MatchDecision<Candidate>> {
-  return decide(await findMatches(tx, clientId, incoming));
+  const decision = decide(await findMatches(tx, clientId, incoming));
+  if (decision.action === 'match' || !incoming.domain) return decision;
+  // One account per company domain within a client is a database rule; an
+  // account already holding this domain is this company whatever else differs.
+  const holder = await tx.account.findFirst({ where: { clientId, domain: incoming.domain, deletedAt: null }, select: CANDIDATE_SELECT });
+  if (!holder) return decision;
+  return {
+    action: 'match',
+    match: holder,
+    score: { score: 0.98, reasons: [{ code: 'DOMAIN', label: `Same website (${incoming.domain})`, score: 0.98 }], conflict: null },
+  };
 }
 
 /**

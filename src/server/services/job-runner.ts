@@ -11,7 +11,7 @@ import { runtimeFor } from '@/server/queues/settings';
 import { ProviderUnavailableError, throttled } from '@/server/queues/throttle';
 import { rescoreAccount } from './scoring';
 import { refreshQueue } from './call-queue';
-import { claimJob, claimJobs, completeJob, failJob, requeueJob } from './jobs';
+import { claimJob, claimJobs, completeJob, failJob, requeueJob, settleTimedOutAttempt } from './jobs';
 import { discoverContacts, enrichAccount } from './enrichment';
 import { executeDiscoveryStep } from './discovery/run';
 import { sweepRetention } from './discovery/retention';
@@ -74,9 +74,14 @@ const HANDLERS: Partial<Record<JobType, Handler>> = {
   SYNTHETIC_TASK: (job) => runSyntheticTask(job),
 };
 
-async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+async function withTimeout<T>(work: Promise<T>, ms: number, onLateSettle: () => void): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new JobTimeoutError(ms)), ms); });
+  let timedOut = false;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { timedOut = true; reject(new JobTimeoutError(ms)); }, ms);
+  });
+  // Work that outlives its timeout keeps running; say when it finally stops.
+  work.then(() => undefined, () => undefined).then(() => { if (timedOut) onLateSettle(); });
   try {
     return await Promise.race([work, timeout]);
   } finally {
@@ -95,7 +100,10 @@ async function execute(job: Job, ctx: RunContext, workerId: string) {
   // Pausable handlers aim to return well inside the hard limit.
   const deadline = Math.min(ctx.deadline, Date.now() + Math.floor(timeoutMs * 0.9));
   try {
-    const result = await runInJob({ jobId: job.id, queue: job.queue, workerId }, () => withTimeout(handler(job, { deadline }), timeoutMs));
+    const result = await runInJob({ jobId: job.id, queue: job.queue, workerId }, () => withTimeout(
+      handler(job, { deadline }), timeoutMs,
+      () => { void settleTimedOutAttempt(job.id, job.attempts).catch((err) => logger.warn('job.settle_failed', { jobId: job.id, error: err })); },
+    ));
     if (result instanceof Continue) await requeueJob(job.id, result.runAt, result.reason);
     else await completeJob(job.id, (result ?? null) as never);
   } catch (err) {
@@ -108,8 +116,9 @@ async function execute(job: Job, ctx: RunContext, workerId: string) {
       await requeueJob(job.id, new Date(Date.now() + 3600_000), err.message);
       return;
     }
-    // Note: a timed-out attempt's work can't be cancelled mid-flight in
-    // Node; handlers are idempotent so a retry after it finishes is safe.
+    // A timed-out attempt's work can't be cancelled mid-flight in Node: it
+    // keeps its concurrency slot until it settles, and handlers are
+    // idempotent, so a retry running alongside it is safe.
     const timedOut = err instanceof JobTimeoutError;
     await failJob(job, err, { retryable: !(err instanceof NotConfiguredError), timedOut });
     logger.error('job.failed', { jobId: job.id, type: job.type, queue: job.queue, error: err });

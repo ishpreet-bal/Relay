@@ -98,10 +98,18 @@ export async function enqueueJobs(type: JobType, jobs: Array<Omit<EnqueueParams,
 const lockQueue = (tx: Prisma.TransactionClient, queue: string) =>
   tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('relay:queue'), hashtext(${queue}))`;
 
-/** Free slots under the queue's concurrency and per-minute limits. */
+/**
+ * Free slots under the queue's concurrency and per-minute limits. Running
+ * means running jobs plus attempts that timed out but whose work has not
+ * settled yet: Node can't cancel a promise, so that work still uses capacity.
+ */
 async function freeSlots(tx: Prisma.TransactionClient, q: QueueRuntime) {
   const runningRows = await tx.$queryRaw<Array<{ running: number }>>`
-    SELECT count(*)::int AS running FROM "Job" WHERE "queue" = ${q.name} AND "status" = 'RUNNING'`;
+    SELECT (
+      (SELECT count(*) FROM "Job" WHERE "queue" = ${q.name} AND "status" = 'RUNNING')
+      + (SELECT count(*) FROM "JobAttempt" a JOIN "Job" j ON j."id" = a."jobId"
+         WHERE j."queue" = ${q.name} AND a."finishedAt" IS NULL AND j."status" <> 'RUNNING')
+    )::int AS running`;
   let slots = q.concurrency - (runningRows[0]?.running ?? 0);
   if (q.maxPerMinute !== null && slots > 0) {
     const startedRows = await tx.$queryRaw<Array<{ started: number }>>`
@@ -207,19 +215,30 @@ export async function claimJob(id: string, workerId: string, staleAfterMs: numbe
 // Finishing
 // ---------------------------------------------------------------------------
 
-async function closeOpenAttempts(tx: Prisma.TransactionClient, jobId: string, outcome: string, error: string | null = null) {
+async function closeOpenAttempts(tx: Prisma.TransactionClient, jobId: string, outcome: string, error: string | null = null, attempt?: number) {
+  const which = attempt === undefined ? Prisma.empty : Prisma.sql`AND "attempt" = ${attempt}`;
   await tx.$executeRaw`
     UPDATE "JobAttempt" SET "finishedAt" = NOW(), "outcome" = ${outcome}, "error" = ${error},
       "durationMs" = (EXTRACT(EPOCH FROM (NOW() - "startedAt")) * 1000)::int
-    WHERE "jobId" = ${jobId}::uuid AND "finishedAt" IS NULL`;
+    WHERE "jobId" = ${jobId}::uuid AND "finishedAt" IS NULL ${which}`;
+}
+
+/**
+ * Records that the work of a timed-out attempt has finally stopped, freeing
+ * the capacity it was still using.
+ */
+export async function settleTimedOutAttempt(jobId: string, attempt: number) {
+  await db.$executeRaw`
+    UPDATE "JobAttempt" SET "finishedAt" = NOW(), "durationMs" = (EXTRACT(EPOCH FROM (NOW() - "startedAt")) * 1000)::int
+    WHERE "jobId" = ${jobId}::uuid AND "attempt" = ${attempt} AND "finishedAt" IS NULL`;
 }
 
 const elapsed = (job: Pick<Job, 'startedAt'>) => (job.startedAt ? Date.now() - job.startedAt.getTime() : null);
 
 export async function completeJob(id: string, result?: Prisma.InputJsonValue) {
   return db.$transaction(async (tx) => {
-    const job = await tx.job.findUniqueOrThrow({ where: { id }, select: { startedAt: true } });
-    await closeOpenAttempts(tx, id, 'SUCCEEDED');
+    const job = await tx.job.findUniqueOrThrow({ where: { id }, select: { startedAt: true, attempts: true } });
+    await closeOpenAttempts(tx, id, 'SUCCEEDED', null, job.attempts);
     return tx.job.update({
       where: { id },
       data: { status: 'COMPLETED', result, error: null, finishedAt: new Date(), lockedAt: null, lockedBy: null, durationMs: elapsed(job) },
@@ -233,7 +252,8 @@ export async function completeJob(id: string, result?: Prisma.InputJsonValue) {
  */
 export async function requeueJob(id: string, runAt = new Date(), waitingReason: string | null = null) {
   return db.$transaction(async (tx) => {
-    await closeOpenAttempts(tx, id, 'CONTINUED', waitingReason);
+    const job = await tx.job.findUniqueOrThrow({ where: { id }, select: { attempts: true } });
+    await closeOpenAttempts(tx, id, 'CONTINUED', waitingReason, job.attempts);
     return tx.job.update({
       where: { id },
       data: { status: 'QUEUED', runAt, lockedAt: null, lockedBy: null, attempts: { decrement: 1 }, error: null, waitingReason },
@@ -256,7 +276,12 @@ export async function failJob(job: Job, error: unknown, opts: { retryable?: bool
   const delay = base * 4 ** Math.max(0, job.attempts - 1) * (0.8 + Math.random() * 0.4);
   const kind: FailureKind = opts.timedOut ? 'TIMEOUT' : opts.retryable === false ? 'NOT_RETRYABLE' : 'EXHAUSTED';
   return db.$transaction(async (tx) => {
-    await closeOpenAttempts(tx, job.id, opts.timedOut ? 'TIMED_OUT' : 'FAILED', message);
+    if (opts.timedOut) {
+      // Left open until the work settles (settleTimedOutAttempt), so it keeps counting against concurrency.
+      await tx.jobAttempt.updateMany({ where: { jobId: job.id, attempt: job.attempts, finishedAt: null }, data: { outcome: 'TIMED_OUT', error: message } });
+    } else {
+      await closeOpenAttempts(tx, job.id, 'FAILED', message, job.attempts);
+    }
     return tx.job.update({
       where: { id: job.id },
       data: retry
@@ -276,6 +301,11 @@ export async function releaseStaleJobs(olderThanMs = 30 * 60_000) {
   return db.$transaction(async (tx) => {
     const stale = await tx.job.findMany({ where: { status: 'RUNNING', lockedAt: { lt: cutoff } }, select: { id: true } });
     for (const s of stale) await closeOpenAttempts(tx, s.id, 'ABANDONED', 'Worker stopped before finishing');
+    // Timed-out work whose worker died before it settled.
+    await tx.jobAttempt.updateMany({
+      where: { finishedAt: null, startedAt: { lt: cutoff }, job: { status: { not: 'RUNNING' } } },
+      data: { finishedAt: new Date(), error: 'Worker stopped before the timed-out work settled' },
+    });
     const released = await tx.job.updateMany({
       where: { id: { in: stale.map((s) => s.id) }, status: 'RUNNING' },
       data: { status: 'RETRYING', lockedAt: null, lockedBy: null, error: 'Worker stopped before finishing; retrying' },

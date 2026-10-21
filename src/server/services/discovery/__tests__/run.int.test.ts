@@ -10,8 +10,9 @@ import { randomUUID } from 'node:crypto';
 
 vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] }));
 
+const { dbTestsAllowed } = await import('@/test/db');
 const { db } = await import('@/lib/db');
-const reachable = await db.$queryRaw`SELECT 1`.then(() => true).catch(() => false);
+const reachable = dbTestsAllowed() && await db.$queryRaw`SELECT 1`.then(() => true).catch(() => false);
 
 const { startDiscoveryRun, executeDiscoveryStep } = await import('../run');
 const { sweepRetention } = await import('../retention');
