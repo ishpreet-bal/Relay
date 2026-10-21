@@ -13,6 +13,7 @@ import { findSuppression } from '@/server/services/suppression';
 import { recordUsage } from '@/server/services/usage';
 import { enqueueJob } from '@/server/services/jobs';
 import { ProviderUnavailableError, throttled } from '@/server/queues/throttle';
+import { assertCategoryBudget, CategoryBudgetError } from '@/server/services/pipeline/budgets';
 import { exclusionReason, nextRunAfter, planQueries, type PlanningProfile } from './plan';
 import { budgetLevel, monthSpendMillicents } from './profiles';
 import { confirmName, readSiteIdentity, type SiteIdentity } from './site-identity';
@@ -216,6 +217,14 @@ export async function executeDiscoveryStep(runId: string, opts: { deadline: numb
         const price = def.discovery.requestCost();
         if (spent + price.millicents > budget) {
           details.stopReason = "Stopped: this month's budget for the profile would be exceeded";
+          stats.status = 'STOPPED';
+          break sources;
+        }
+        try {
+          await assertCategoryBudget(run.organizationId, 'discovery', price.millicents);
+        } catch (err) {
+          if (!(err instanceof CategoryBudgetError)) throw err;
+          details.stopReason = err.message;
           stats.status = 'STOPPED';
           break sources;
         }

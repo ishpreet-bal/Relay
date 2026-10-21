@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { NotConfiguredError } from '@/server/errors';
-import { costCents, costMillicents, MODELS } from './pricing';
+import { costCents, costMillicents, MODELS, PRICING } from './pricing';
 import { assertBudget } from './budget';
 import { recordUsage, type UsageAttribution } from '@/server/services/usage';
 import { logger } from '@/lib/logger';
@@ -13,7 +13,7 @@ import type { UsageType } from '@prisma/client';
 export interface CompletionRequest {
   organizationId: string;
   /** What this call is for — becomes AiRun.kind and drives cost reporting. */
-  kind: 'research' | 'personalize' | 'verify' | 'proposal' | 'portfolio' | 'classify';
+  kind: 'research' | 'deep_research' | 'personalize' | 'verify' | 'proposal' | 'portfolio' | 'classify';
   entityId?: string;
   /** Who the cost belongs to, for unit economics. */
   attribution?: UsageAttribution;
@@ -29,6 +29,8 @@ export interface CompletionRequest {
    * outputs it is enforced by the API; elsewhere the prompt must ask for it.
    */
   jsonSchema?: Record<string, unknown>;
+  /** Thinking depth on current models; omit for the model's default. */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   model?: string;
   fallbackModel?: string;
 }
@@ -61,6 +63,7 @@ function openai() {
 
 const USAGE_TYPE: Record<CompletionRequest['kind'], UsageType> = {
   research: 'AI_RESEARCH',
+  deep_research: 'AI_DEEP_RESEARCH',
   personalize: 'AI_PERSONALIZATION',
   verify: 'AI_VERIFICATION',
   proposal: 'AI_OTHER',
@@ -122,7 +125,7 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
       ...req.attribution,
       provider: result.provider,
       type: USAGE_TYPE[req.kind],
-      costMillicents: costMillicents(result.model, result.tokensIn, result.tokensOut),
+      costMillicents: PRICING[result.model] ? costMillicents(result.model, result.tokensIn, result.tokensOut) : result.costCents * 1000,
       aiRunId: run.id,
       metadata: { model: result.model, tokensIn: result.tokensIn, tokensOut: result.tokensOut, promptVersion: req.promptVersion },
     });
@@ -206,10 +209,20 @@ export class ModelOutputError extends Error {
   }
 }
 
+/**
+ * Models that may decline some requests under their safeguards and accept a
+ * server-side fallback: on a decline the API re-runs the request on a
+ * fallback model in the same call instead of returning a refusal.
+ */
+function supportsServerFallback(model: string) {
+  return /^claude-(opus-5|fable-5-1|sonnet-5-5)/.test(model);
+}
+
 async function callAnthropic(req: CompletionRequest, model: string): Promise<CompletionResult> {
   const started = Date.now();
   const modern = hasModernRequestSurface(model);
   const prefill = req.json && !rejectsPrefill(model);
+  const fallback = supportsServerFallback(model);
   const params = {
     model,
     // Adaptive thinking shares max_tokens with the answer; leave it room.
@@ -222,10 +235,21 @@ async function callAnthropic(req: CompletionRequest, model: string): Promise<Com
       // get JSON without a preamble. Current models use structured outputs.
       ...(prefill ? [{ role: 'assistant' as const, content: '{' }] : []),
     ],
-    ...(modern && req.jsonSchema ? { output_config: { format: { type: 'json_schema', schema: req.jsonSchema } } } : {}),
+    ...(modern && (req.jsonSchema || req.effort) ? {
+      output_config: {
+        ...(req.jsonSchema ? { format: { type: 'json_schema', schema: req.jsonSchema } } : {}),
+        ...(req.effort ? { effort: req.effort } : {}),
+      },
+    } : {}),
+    ...(fallback ? { fallbacks: 'default' } : {}),
   };
-  // output_config is newer than this SDK's types; the API accepts it.
-  const response = await anthropic().messages.create(params as Anthropic.MessageCreateParamsNonStreaming);
+  // output_config and fallbacks are newer than this SDK's types; the API accepts them.
+  const response = await anthropic().messages.create(
+    params as Anthropic.MessageCreateParamsNonStreaming,
+    fallback ? { headers: { 'anthropic-beta': 'server-side-fallback-2026-07-01' } } : undefined,
+  );
+  // With a fallback, another model may have answered; bill at its rates.
+  const servedBy = typeof response.model === 'string' && response.model ? response.model : model;
 
   const stop = response.stop_reason as string | null;
   if (stop === 'refusal') throw new ModelOutputError('The model declined this request.', 'refusal');
@@ -239,10 +263,10 @@ async function callAnthropic(req: CompletionRequest, model: string): Promise<Com
   return {
     text: prefill ? `{${text}` : text,
     provider: 'anthropic',
-    model,
+    model: servedBy,
     tokensIn: response.usage.input_tokens,
     tokensOut: response.usage.output_tokens,
-    costCents: costCents(model, response.usage.input_tokens, response.usage.output_tokens),
+    costCents: costCents(PRICING[servedBy] ? servedBy : model, response.usage.input_tokens, response.usage.output_tokens),
     latencyMs: Date.now() - started,
   };
 }

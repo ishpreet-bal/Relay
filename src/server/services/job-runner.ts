@@ -17,6 +17,9 @@ import { executeDiscoveryStep } from './discovery/run';
 import { sweepRetention } from './discovery/retention';
 import { backfillCompanyKeys } from './companies/backfill';
 import { createAccount } from './accounts';
+import { screenAccounts, type Trigger } from './pipeline/gates';
+import { refreshAccount } from './pipeline/refresh';
+import { runDeepResearch } from './pipeline/deep';
 
 /**
  * Executing queued work, shared by everything that can drive it: the
@@ -45,6 +48,8 @@ export class JobTimeoutError extends Error {
 
 type Handler = (job: Job, ctx: RunContext) => Promise<unknown>;
 
+const payloadOf = <T>(job: Job) => (job.payload ?? {}) as T;
+
 function requireOrg(job: Job) {
   if (!job.organizationId) throw new Error('Job has no organization');
   return systemAccess(job.organizationId);
@@ -63,7 +68,11 @@ const HANDLERS: Partial<Record<JobType, Handler>> = {
   CALL_QUEUE_REFRESH: (job) => refreshQueue(requireOrg(job).organizationId, job.clientId),
   ACCOUNT_ENRICHMENT: (job) => enrichAccount(requireOrg(job), job.entityId!),
   CONTACT_ENRICHMENT: (job) => discoverContacts(requireOrg(job), job.entityId!, Number((job.payload as { limit?: number } | null)?.limit ?? 5)),
-  RESEARCH: (job) => runResearch(requireOrg(job).organizationId, job.entityId!).then((r) => ({ signals: r.signalsCreated, groundingRate: r.report.groundingRate })),
+  RESEARCH: (job) => runResearch(requireOrg(job).organizationId, job.entityId!, { trigger: payloadOf<{ trigger?: Trigger }>(job).trigger ?? 'MANUAL' })
+    .then((r) => ({ signals: r.signalsCreated, groundingRate: r.report.groundingRate })),
+  SCREENING: (job) => screenAccounts(requireOrg(job).organizationId, payloadOf<{ accountIds?: string[] }>(job).accountIds ?? (job.entityId ? [job.entityId] : [])),
+  RECORD_REFRESH: (job) => refreshAccount(requireOrg(job).organizationId, job.entityId!),
+  DEEP_RESEARCH: (job) => runDeepResearch(requireOrg(job).organizationId, job.entityId!, payloadOf<{ trigger?: string }>(job).trigger ?? 'MANUAL'),
   DISCOVERY_RUN: async (job, ctx) => {
     const step = await executeDiscoveryStep(job.entityId!, { deadline: ctx.deadline });
     if (step.done) return { runId: job.entityId };

@@ -581,6 +581,32 @@ model Account {
   /// storage limit passed before anyone confirmed or worked the account).
   archiveReason String?
 
+  // Research funnel: cheap screening for everyone, AI analysis for the
+  // promising, deep research for the best (services/pipeline).
+  pipelineStage          PipelineStage    @default(DISCOVERED)
+  opportunityTier        OpportunityTier?
+  /// Deterministic 0–100 screening score; no model involved.
+  screeningScore         Int?
+  screeningReasons       Json?
+  screenedAt             DateTime?
+  /// A person set the stage; automatic screening leaves it alone.
+  stagePinned            Boolean          @default(false)
+  promotedById           String?          @db.Uuid
+  promotedAt             DateTime?
+  promotionNote          String?
+  /// Last time any source saw this business (discovery, import, refresh).
+  lastObservedAt         DateTime?
+  /// Hash of the first-party identity last read from its website.
+  contentFingerprint     String?
+  fingerprintedAt        DateTime?
+  /// Number of completed research versions.
+  researchVersion        Int              @default(0)
+  lastResearchedAt       DateTime?
+  /// When this record is next due a freshness check.
+  nextRefreshAt          DateTime?
+  /// Total spent researching and enriching this account, in millicents.
+  researchCostMillicents Int              @default(0)
+
   organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client       Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
   icp          IdealCustomerProfile? @relation(fields: [icpId], references: [id], onDelete: SetNull)
@@ -607,6 +633,9 @@ model Account {
   provenance  DataProvenance[]
 
   @@unique([clientId, domain])
+  @@index([clientId, pipelineStage, screeningScore(sort: Desc)])
+  @@index([organizationId, pipelineStage])
+  @@index([nextRefreshAt])
   @@index([clientId, normalizedName])
   @@index([parentAccountId])
   @@index([organizationId, clientId, status])
@@ -615,6 +644,24 @@ model Account {
   @@index([organizationId, city])
   @@index([organizationId, nextFollowUpAt])
   @@index([scoredAt])
+}
+
+/// Research funnel stage. Records are never discarded for scoring low:
+/// SCREENED_OUT accounts are kept and reconsidered when new signals arrive.
+enum PipelineStage {
+  DISCOVERED
+  SCREENED_OUT
+  QUALIFIED
+  ANALYZED
+  DEEP_RESEARCHED
+}
+
+enum OpportunityTier {
+  HOT
+  WARM
+  EXPLORATORY
+  LOW
+  SUPPRESSED
 }
 
 enum EmailVerification {
@@ -2243,6 +2290,90 @@ model ProviderThrottle {
   updatedAt           DateTime  @updatedAt
 }
 
+/// An immutable snapshot of one research run, so history survives refreshes.
+/// Findings are split by how far they can be trusted.
+model ResearchVersion {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @db.Uuid
+  clientId           String   @db.Uuid
+  accountId          String   @db.Uuid
+  version            Int
+  /// ANALYSIS (stage 3) or DEEP (stage 4).
+  stage              String
+  /// MANUAL, AUTO, SIGNAL, REFRESH or PROMOTION.
+  trigger            String
+  summary            String?  @db.Text
+  /// Verified facts: supported by a quote located on an accessible source.
+  facts              Json?
+  /// AI hypotheses: reasonable inferences that need validation.
+  hypotheses         Json?
+  /// What cannot be established from outside the company.
+  unknowns           Json?
+  sources            Json?
+  model              String?
+  promptVersion      String?
+  contentFingerprint String?
+  /// Fields that changed since the previous version.
+  changedFields      String[] @default([])
+  costMillicents     Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  @@unique([accountId, stage, version])
+  @@index([organizationId, createdAt])
+}
+
+/// Per-workspace thresholds, caps, refresh schedule and budgets for the
+/// research funnel. Budgets are enforced in the backend; null means no
+/// category limit (the workspace AI budget still applies).
+model PipelineSettings {
+  organizationId         String   @id @db.Uuid
+  screeningThreshold     Int      @default(55)
+  deepThreshold          Int      @default(70)
+  autoScreen             Boolean  @default(true)
+  autoAnalyze            Boolean  @default(false)
+  autoDeep               Boolean  @default(false)
+  maxAnalysesPerDay      Int      @default(25)
+  maxDeepPerDay          Int      @default(5)
+  refreshDaysHot         Int      @default(14)
+  refreshDaysWarm        Int      @default(30)
+  refreshDaysExploratory Int      @default(60)
+  refreshDaysLow         Int      @default(120)
+  refreshDaysScreenedOut Int      @default(180)
+  globalBudgetCents      Int?
+  discoveryBudgetCents   Int?
+  analysisBudgetCents    Int?
+  deepBudgetCents        Int?
+  enrichmentBudgetCents  Int?
+  outreachBudgetCents    Int?
+  /// Unit-cost assumptions for forecasts (services/pipeline/forecast.ts).
+  costAssumptions        Json?
+  updatedById            String?  @db.Uuid
+  updatedAt              DateTime @updatedAt
+}
+
+/// Something an operator should know about: budget thresholds, stalled
+/// workers, paused providers, dead letters. One open alert per key; repeats
+/// bump its count instead of adding noise.
+model SystemAlert {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String?   @db.Uuid
+  /// info, warning or critical.
+  severity         String
+  kind             String
+  title            String
+  detail           String?   @db.Text
+  dedupeKey        String
+  occurrences      Int       @default(1)
+  firstSeenAt      DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  resolvedAt       DateTime?
+  acknowledgedById String?   @db.Uuid
+  acknowledgedAt   DateTime?
+
+  @@unique([organizationId, dedupeKey])
+  @@index([resolvedAt, lastSeenAt])
+}
+
 /// Liveness of worker processes (the long-running worker, cron ticks, page steps).
 model WorkerHeartbeat {
   workerId      String   @id
@@ -2267,6 +2398,7 @@ enum UsageType {
   CALL_MINUTES
   EXTERNAL_DATA
   DISCOVERY_REQUEST
+  AI_DEEP_RESEARCH
 }
 
 /**

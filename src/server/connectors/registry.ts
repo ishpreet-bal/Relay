@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { NotConfiguredError } from '@/server/errors';
 import { recordUsage } from '@/server/services/usage';
 import { ProviderUnavailableError, reportProviderResult, takeProviderSlot } from '@/server/queues/throttle';
+import { assertCategoryBudget } from '@/server/services/pipeline/budgets';
 import { findCachedRecord, recordProviderCall } from './records';
 import type { Capability, ConnectorDefinition, ProviderContext, ProviderResult } from './types';
 import { apolloConnector } from './providers/apollo';
@@ -172,6 +173,8 @@ export async function runChain<T>(
       continue;
     }
 
+    // Live calls cost money: the enrichment budget is checked before each.
+    if (op.usageType !== 'EXTERNAL_DATA') await assertCategoryBudget(ctx.organizationId, 'enrichment');
     // A provider that is rate-limited or paused is skipped for the next in the chain.
     try {
       await takeProviderSlot(def.id);

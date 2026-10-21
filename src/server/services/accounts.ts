@@ -339,6 +339,8 @@ export async function createAccount(
       const socialPatch = site.socialProfiles
         ? { ...(site.socialProfiles), ...((existing.socialProfiles as Record<string, string> | null) ?? {}) }
         : undefined;
+      // Seen again by a source, whether or not it brought anything new.
+      await tx.account.update({ where: { id: existing.id }, data: { lastObservedAt: new Date() } });
       if (Object.keys(patch).length || socialPatch) {
         await tx.account.update({
           where: { id: existing.id },
@@ -384,6 +386,7 @@ export async function createAccount(
         sourceRef,
         discoveryRunId: sourceInfo.discoveryRunId ?? null,
         ownerId: userId,
+        lastObservedAt: new Date(),
       },
     });
     await addIdentifiers(tx, access.organizationId, clientId, account.id, identifiers);

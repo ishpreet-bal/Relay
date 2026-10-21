@@ -62,6 +62,8 @@ export function costMillicents(model: string, tokensIn: number, tokensOut: numbe
 export const MODELS = {
   /** Long-context reasoning over a whole website. */
   research: 'claude-sonnet-5',
+  /** Stage 4: multi-source assessment of high-priority prospects. */
+  deepResearch: 'claude-opus-5-5',
   /** Voice-sensitive drafting. */
   personalize: 'claude-sonnet-5',
   /** Claim extraction and support checks on drafts. */
