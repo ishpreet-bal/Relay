@@ -279,7 +279,7 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ✅ Phase A — this review
 - ✅ Phase B — queues, throttles, breakers, attempts, dead letter, ops page, 1,000-task test (see section 4)
 - ✅ Phase C — staged qualification, freshness, research versions, budgets, forecasts (see section 4)
-- ⬜ Phase D — Studio foundation and two-tenant isolation test
+- ✅ Phase D — Studio foundation, two-tenant isolation test, Studio screens (see section 4)
 - ⬜ Phase E — opportunity-to-application workflow
 - ⬜ Phase F — subscriptions, metering, Stripe test mode, profitability
 - ⬜ Phase G — scale validation with measured numbers
@@ -418,3 +418,116 @@ and refresh keeping a person's value.
 environment), so prompt quality and real token costs are unmeasured; the
 deep-research cost in the forecast is an estimate. The funnel UI was built
 and type-checked, not used in a browser.
+
+### Phase D — Studio foundation (2026-10-22)
+
+**Built**
+- Modules (`server/studio/modules.ts`): records, business rules,
+  notifications, approvals, reporting, scheduling and integrations, each
+  tested code identified by key and major version, contributing typed steps
+  (validate, create/update/find record, condition, transform, notify,
+  approval, aggregate, schedule reminders, HTTP request).
+- Manifests (`server/studio/manifest.ts`): an application is data, never
+  code — branding, terminology, roles, collections and fields, rule values,
+  workflows, integrations, dashboard widgets and limits. Validation checks
+  shape, modules and versions, step types and their config, every reference
+  (collections, fields, rules, roles, earlier steps, integrations), that each
+  connection belongs to this customer, cron expressions and time zones, and
+  platform limits. Customer overrides are a separate, narrower schema.
+- Four starter templates (manufacturing quality claims, construction quote
+  requests, logistics shipment updates, local-services bookings), each with
+  synthetic test input for every workflow and estimates marked as estimates.
+- Versioning: published template versions are immutable; built-ins are
+  shared and can't take versions from one workspace (they are copied
+  first); configuration versions are immutable; upgrades keep the
+  customer's overrides, report breaking changes and never deploy by
+  themselves; rollback redeploys the previous configuration.
+- Production gate: a configuration reaches production only after every
+  workflow has passed a test run in that exact version. Test runs use
+  synthetic input, write only test records, call only sandbox connections
+  and dry-run production ones.
+- Execution on the `customer-workflows` queue with a per-application daily
+  quota and concurrency, so one customer's volume or failure doesn't touch
+  another's. Steps that write commit the write and the run checkpoint in one
+  transaction, so a retry resumes without writing twice. Approvals pause a
+  run until someone with access to that customer decides.
+- Triggers: manual, webhook (`POST /api/studio/hooks/{app}/{workflow}`,
+  per-application bearer token stored as a hash, 64 KB JSON, an
+  Idempotency-Key starts one run), schedules in an IANA time zone, and
+  record-created (from a durable pending list, keyed per record;
+  record-triggered runs don't trigger further runs, so no loops).
+- Connections: https only, public addresses only (SSRF guard on every
+  redirect), secrets AES-256-GCM encrypted with `ENCRYPTION_KEY`, never
+  returned to a browser, used only by that customer's runs.
+- Permissions: `studio:read/run` (including customer users, scoped to their
+  own customer), `studio:write` (operators), `studio:deploy` (production,
+  rollback, resume, archive) and `studio:secrets` (connections, webhook
+  tokens; also customer admins for their own systems). Every change is
+  audited (secrets never logged).
+- Screens: `/studio` (applications by customer, templates, connections,
+  modules) and `/studio/apps/[id]` (path to production, configuration editor
+  with live validation, workflows and webhook token, runs with step logs and
+  approvals, records, deployments, rollback, pause/resume, upgrades). The
+  page works queued runs forward while open, so tests finish on deployments
+  without a worker.
+
+**Migrations**: `20261022020000_studio_foundation`,
+`20261022030000_studio_triggers` (both additive: new tables plus two
+nullable columns).
+
+**Tests**
+- Acceptance (`studio.int.test.ts`, real Postgres): two synthetic customers
+  on one template with different branding, rules, limits and connections.
+  Shows: another customer's connection rejected; a sandbox call made with the
+  customer's own secret and the secret never returned; production blocked
+  until every workflow passed; the same claim escalated for one customer
+  (threshold 10) and not the other (200); records, runs, approvals and
+  listings invisible across customers; one customer's failure and daily
+  limit not affecting the other; rollback; a minor template upgrade keeping
+  overrides with no breaking changes and no automatic deploy.
+- Runtime (`studio-runtime.int.test.ts`): built-ins can't be versioned by a
+  workspace, copies can; record-triggered runs fire once per record and
+  don't loop; a run whose external call failed once resumes and writes its
+  record once (two calls, one record, two attempts); the webhook route
+  answers 401/404/400/413 correctly, the same Idempotency-Key gives the same
+  run, and a rotated token replaces the old one.
+- Unit (`studio.test.ts`, 15): every built-in template validates; code,
+  unknown modules and step types are refused; reference checks; module,
+  cron and time-zone checks; connection ownership; overrides; breaking
+  changes; value resolution and text rendering evaluate nothing; record
+  validation; cron in UTC and America/Toronto; encryption round-trip, fresh
+  IV and tamper detection.
+- Browser check: the Studio screens were run against a local server with a
+  temporary sign-in stub (not committed) and synthetic data: list, templates,
+  connections, application page, run dialog, approval, production deploy and
+  the configuration editor. It found a real bug (fixed and covered by a
+  test): approving a run queued a new job but left the run pointing at the
+  finished one, so a page could not resume it.
+- Totals after this phase: 27 files, 209 tests, all passing; typecheck,
+  lint and production build clean.
+
+**Limits**
+- Customer users can call the Studio API for their own customer, but the
+  customer-facing screens (their branded app, approvals, records) are not
+  built yet; customer users are sent to the portal, which doesn't show
+  Studio applications.
+- Roles inside a manifest (e.g. quality manager) aren't mapped to individual
+  customer users yet; any user with `studio:run` on that customer can
+  approve.
+- Only REST API connections; Google Workspace, Microsoft 365, database and
+  file-import connections are not built. No AI step module yet.
+- Production runs need the worker (`npm run worker:studio`). The daily cron
+  doesn't run customer workflows, and a page only drives runs while it's
+  open.
+- "Dedicated deployment" is a recorded field; nothing provisions one (by
+  design, per the brief).
+- No live call to a real customer system has been made; external calls in
+  tests are stubbed.
+
+**New dependencies**: none.
+
+**Next**: phase E (solution matching and reusability classification,
+assessments, personalised demos on synthetic data, proposals, projects with
+estimate vs actual), then phase F (subscriptions, metering, Stripe test
+mode, profitability).
+
