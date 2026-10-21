@@ -94,7 +94,7 @@ export async function mergeAccounts(access: AccessContext, userId: string, keepI
       where: { status: 'OPEN', OR: [{ accountId: merge.id }, { candidateId: merge.id }] },
       data: { status: 'MERGED', resolvedById: userId, resolvedAt: new Date() },
     });
-    await tx.account.update({ where: { id: merge.id }, data: { deletedAt: new Date(), mergedIntoId: keep.id } });
+    await tx.account.update({ where: { id: merge.id }, data: { deletedAt: new Date(), mergedIntoId: keep.id, archiveReason: 'MERGED' } });
 
     await logActivity({
       organizationId: access.organizationId, clientId: keep.clientId, accountId: keep.id, userId, type: 'SYSTEM',

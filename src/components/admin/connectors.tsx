@@ -49,7 +49,7 @@ export function ConnectorsPage({ canManage }: { canManage: boolean }) {
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {
-  COMPANY_DATA: 'Company data', CONTACT_DATA: 'Contact data', EMAIL_FINDER: 'Email finding', EMAIL_VERIFICATION: 'Email verification',
+  COMPANY_DISCOVERY: 'Company discovery', COMPANY_DATA: 'Company data', CONTACT_DATA: 'Contact data', EMAIL_FINDER: 'Email finding', EMAIL_VERIFICATION: 'Email verification',
   PHONE_DATA: 'Phone data', RESEARCH_SOURCE: 'Research sources', EMAIL_SENDING: 'Email sending', PHONE: 'Calling', CALENDAR: 'Calendar',
   CRM: 'CRM', AI: 'AI models',
 };

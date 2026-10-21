@@ -574,9 +574,12 @@ model Account {
   lastEngagedAt   DateTime?
   nextFollowUpAt  DateTime?
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  /// Why it was archived: USER, MERGED or RETENTION_EXPIRED (a source's
+  /// storage limit passed before anyone confirmed or worked the account).
+  archiveReason String?
 
   organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client       Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)

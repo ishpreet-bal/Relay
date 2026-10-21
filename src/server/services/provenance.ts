@@ -11,6 +11,7 @@ import { db } from '@/lib/db';
 export const TRACKED_ACCOUNT_FIELDS = [
   'name', 'websiteUrl', 'domain', 'phone', 'industry', 'employeeCount', 'employeeRange',
   'revenueRange', 'city', 'region', 'country', 'description', 'linkedinUrl', 'addressLine', 'postalCode',
+  'latitude', 'longitude',
 ] as const;
 
 export const TRACKED_CONTACT_FIELDS = [

@@ -6,6 +6,7 @@ import { recordUsage } from '@/server/services/usage';
 import { findCachedRecord, recordProviderCall } from './records';
 import type { Capability, ConnectorDefinition, ProviderContext, ProviderResult } from './types';
 import { apolloConnector } from './providers/apollo';
+import { googlePlacesConnector } from './providers/google-places';
 import { resendConnector } from './providers/resend';
 
 /**
@@ -52,6 +53,7 @@ function planned(id: string, name: string, capabilities: Capability[], descripti
 
 export const CONNECTORS: readonly ConnectorDefinition[] = [
   companyWebsite,
+  googlePlacesConnector,
   apolloConnector,
   planned('hunter', 'Hunter', ['EMAIL_FINDER', 'EMAIL_VERIFICATION'], 'Email finding and verification.', ['HUNTER_API_KEY']),
   planned('zerobounce', 'ZeroBounce', ['EMAIL_VERIFICATION'], 'Email deliverability verification before sending.', ['ZEROBOUNCE_API_KEY']),

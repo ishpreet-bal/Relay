@@ -58,7 +58,7 @@ function PairCard({ pair, canMerge, canDismiss }: { pair: Pair; canMerge: boolea
   const done = () => { void utils.accounts.duplicates.invalidate(); void utils.accounts.duplicateCount.invalidate(); };
   const merge = trpc.accounts.merge.useMutation({ onSuccess: done });
   const dismiss = trpc.accounts.dismissDuplicate.useMutation({ onSuccess: done });
-  const reasons = (pair.reasons as unknown as Reason[] | null) ?? [];
+  const { reasons, conflict } = parseReasons(pair.reasons);
   const keepSide = keep === 'account' ? pair.account : pair.candidate;
   const mergeSide = keep === 'account' ? pair.candidate : pair.account;
 
@@ -67,6 +67,7 @@ function PairCard({ pair, canMerge, canDismiss }: { pair: Pair; canMerge: boolea
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <Pill tone={pair.score >= 0.8 ? 'warning' : 'neutral'}>{Math.round(pair.score * 100)}% match</Pill>
         {reasons.map((r) => <span key={r.code} className="text-[11px] text-muted">{r.label}</span>)}
+        {conflict && <span className="text-[11px] text-blocked">{conflict}</span>}
         <span className="flex-1" />
         <span className="text-[11px] text-muted">found <Ago date={pair.createdAt} />{pair.source && ` · ${pair.source}`}</span>
       </div>
@@ -91,6 +92,11 @@ function PairCard({ pair, canMerge, canDismiss }: { pair: Pair; canMerge: boolea
       </div>
     </li>
   );
+}
+
+function parseReasons(value: unknown): { reasons: Reason[]; conflict: string | null } {
+  const v = (value ?? {}) as { reasons?: Reason[]; conflict?: string | null };
+  return { reasons: Array.isArray(v.reasons) ? v.reasons : [], conflict: v.conflict ?? null };
 }
 
 function SideCard({ side, label, selected, onSelect, canMerge }: {

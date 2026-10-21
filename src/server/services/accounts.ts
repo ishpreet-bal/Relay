@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Prisma, type AccountStatus } from '@prisma/client';
+import { Prisma, type AccountStatus, type DataSource } from '@prisma/client';
 import { db } from '@/lib/db';
 import { clientFilter, assertClientAccess, type AccessContext } from '@/server/access/scope';
 import { NotFoundError } from '@/server/errors';
@@ -231,6 +231,12 @@ export interface AccountSourceInfo {
   retentionDays?: number | null;
   /** What to call this source in the activity timeline. */
   label?: string;
+  /**
+   * Where the field values came from, when that differs from how the
+   * account was found (found through Google Places, details read from the
+   * company's own website).
+   */
+  provenanceSource?: DataSource;
 }
 
 export type CreateAccountResult =
@@ -299,7 +305,7 @@ export async function createAccount(
   const normalizedName = normalizeCompanyName(input.name);
   const retentionUntil = sourceInfo.retentionDays ? new Date(Date.now() + sourceInfo.retentionDays * 86_400_000) : null;
   const provenanceFrom = {
-    source: input.source,
+    source: sourceInfo.provenanceSource ?? input.source,
     provider: sourceInfo.provider ?? null,
     sourceUrl: sourceInfo.sourceUrl ?? null,
     createdById: userId,
@@ -524,7 +530,8 @@ export async function archiveAccount(access: AccessContext, id: string) {
   // Soft delete only. Outreach history must survive for suppression and
   // compliance evidence.
   await db.$transaction([
-    db.account.update({ where: { id }, data: { deletedAt: new Date() } }),
+    // The domain is released so the company can be added again later.
+    db.account.update({ where: { id }, data: { deletedAt: new Date(), archiveReason: 'USER', domain: null } }),
     db.callTask.updateMany({
       where: { accountId: id, status: { in: ['OPEN', 'SNOOZED'] } },
       data: { status: 'CANCELLED', completedAt: new Date(), completedReason: 'Account archived' },
