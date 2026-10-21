@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MODULES, majorOf, moduleByKey, stepDefinition, type ValueRef } from './modules';
+import { isTimeZone, parseCron } from './cron';
 
 /**
  * An application manifest says how modules are assembled for one customer:
@@ -29,6 +30,8 @@ const workflowSchema = z.object({
   trigger: z.object({
     type: z.enum(['manual', 'schedule', 'webhook', 'record_created']),
     cron: z.string().optional(),
+    /** IANA zone the schedule is read in; UTC when absent. */
+    timezone: z.string().max(60).optional(),
     collection: key.optional(),
   }).strict(),
   steps: z.array(stepSchema).min(1).max(30),
@@ -170,7 +173,8 @@ export function validateManifest(raw: unknown, ctx: { clientId: string; bindings
 
   m.workflows.forEach((wf, wi) => {
     const path = `workflows.${wi}`;
-    if (wf.trigger.type === 'schedule' && !/^(\S+\s+){4}\S+$/.test(wf.trigger.cron ?? '')) add(`${path}.trigger`, 'A schedule needs a five-field cron expression');
+    if (wf.trigger.type === 'schedule' && !parseCron(wf.trigger.cron ?? '')) add(`${path}.trigger`, 'A schedule needs a valid five-field cron expression');
+    if (wf.trigger.timezone && !isTimeZone(wf.trigger.timezone)) add(`${path}.trigger`, `Unknown time zone "${wf.trigger.timezone}"`);
     if (wf.trigger.type === 'record_created' && !collections.has(wf.trigger.collection ?? '')) add(`${path}.trigger`, 'A record trigger needs a known collection');
     dupes(wf.steps.map((s) => s.key), `${path}.steps`);
     const earlier = new Set<string>();

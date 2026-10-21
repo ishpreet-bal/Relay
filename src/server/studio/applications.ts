@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { encryptSecret } from '@/lib/crypto';
-import { assertClientAccess, clientFilter, type AccessContext } from '@/server/access/scope';
+import { assertClientAccess, clientFilter, systemAccess, type AccessContext } from '@/server/access/scope';
 import { DomainError, NotFoundError } from '@/server/errors';
 import { enqueueJob } from '@/server/services/jobs';
 import { safeFetch } from '@/server/services/net-guard';
@@ -29,8 +29,15 @@ import { lastFireBetween } from './cron';
 // Templates
 // ---------------------------------------------------------------------------
 
-/** Makes sure the built-in templates exist at their current versions. Idempotent. */
-export async function ensureBuiltinTemplates() {
+let ensured: Promise<void> | null = null;
+
+/** Makes sure the built-in templates exist at their current versions. Idempotent; runs once per process. */
+export function ensureBuiltinTemplates(): Promise<void> {
+  ensured ??= syncBuiltinTemplates().catch((err) => { ensured = null; throw err; });
+  return ensured;
+}
+
+async function syncBuiltinTemplates() {
   for (const t of BUILTIN_TEMPLATES) {
     const manifest = manifestSchema.parse(t.manifest);
     const fields = {
@@ -83,9 +90,14 @@ function compareVersions(a: string, b: string) {
   return 0;
 }
 
-/** Publishes a new template version after validating it. Existing apps stay on theirs until upgraded. */
+/**
+ * Publishes a new template version after validating it. Existing apps stay
+ * on theirs until upgraded. Only a workspace's own templates take new
+ * versions; built-ins are shared by every workspace, so they are copied
+ * first (forkTemplate).
+ */
 export async function publishTemplateVersion(access: AccessContext, userId: string, templateId: string, input: { version: string; manifest: unknown; changelog: string }) {
-  const template = await db.appTemplate.findFirst({ where: { id: templateId, OR: [{ organizationId: null }, { organizationId: access.organizationId }] }, include: { versions: true } });
+  const template = await db.appTemplate.findFirst({ where: { id: templateId, organizationId: access.organizationId }, include: { versions: true } });
   if (!template) throw new NotFoundError('Template');
   if (!/^\d+\.\d+\.\d+$/.test(input.version)) throw new DomainError('Versions look like 1.2.0.');
   const latest = [...template.versions].sort((a, b) => compareVersions(b.version, a.version))[0];
@@ -97,6 +109,34 @@ export async function publishTemplateVersion(access: AccessContext, userId: stri
   return db.appTemplateVersion.create({
     data: { templateId, version: input.version, manifest: check.manifest as unknown as Prisma.InputJsonValue, changelog: input.changelog, status: 'PUBLISHED', publishedAt: new Date(), createdById: userId },
   });
+}
+
+/** Copies a template (built-in or the workspace's own) into the workspace, at one of its versions. */
+export async function forkTemplate(access: AccessContext, userId: string, templateVersionId: string, raw: { slug: string; name: string }) {
+  const tv = await db.appTemplateVersion.findUnique({ where: { id: templateVersionId }, include: { template: true } });
+  if (!tv || (tv.template.organizationId && tv.template.organizationId !== access.organizationId)) throw new NotFoundError('Template version');
+  const input = templateSchema.pick({ slug: true, name: true }).parse(raw);
+  const t = tv.template;
+  if (await db.appTemplate.count({ where: { organizationId: access.organizationId, slug: input.slug } })) throw new DomainError('A template with that slug already exists.');
+  return db.appTemplate.create({
+    data: {
+      organizationId: access.organizationId, slug: input.slug, name: input.name, industry: t.industry, description: t.description, useCases: t.useCases,
+      buildHoursEstimate: t.buildHoursEstimate, monthlyInfraCentsEstimate: t.monthlyInfraCentsEstimate, recommendedSetupCents: t.recommendedSetupCents,
+      recommendedMonthlyCents: t.recommendedMonthlyCents, knownLimitations: t.knownLimitations,
+      versions: { create: { version: '1.0.0', manifest: tv.manifest as Prisma.InputJsonValue, status: 'PUBLISHED', publishedAt: new Date(), changelog: `Copied from ${t.name} ${tv.version}`, createdById: userId } },
+    },
+  });
+}
+
+export async function getTemplate(access: AccessContext, id: string) {
+  await ensureBuiltinTemplates();
+  const t = await db.appTemplate.findFirst({
+    where: { id, OR: [{ organizationId: null }, { organizationId: access.organizationId }] },
+    include: { versions: { orderBy: { createdAt: 'desc' } } },
+  });
+  if (!t) throw new NotFoundError('Template');
+  const applications = await db.clientApplication.count({ where: { templateId: id, ...clientFilter(access), archivedAt: null } });
+  return { ...t, builtin: t.organizationId === null, applications };
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +186,17 @@ export async function createApplication(access: AccessContext, userId: string | 
   });
   const config = await saveConfig(access, userId, app.id, input.overrides, 'Created from template');
   return { app, config };
+}
+
+/** Validates a configuration without saving it, for the editor. */
+export async function previewConfig(access: AccessContext, applicationId: string, overrides: unknown, templateVersionId?: string) {
+  const app = await loadApp(access, applicationId);
+  const tvId = templateVersionId ?? app.templateVersionId;
+  if (!tvId) throw new DomainError('This application has no template version.');
+  const parsed = overridesSchema.safeParse(overrides ?? {});
+  if (!parsed.success) return { ok: false, issues: parsed.error.issues.map((i) => ({ path: `overrides.${i.path.join('.')}`, message: i.message })), manifest: null };
+  const { merged, result } = await buildConfig(app, tvId, parsed.data);
+  return { ok: result.ok, issues: result.issues, manifest: merged };
 }
 
 /** A new configuration version. Never changes one that exists. */
@@ -277,7 +328,8 @@ export async function startExecution(access: AccessContext, userId: string | nul
     const exec = await db.workflowExecution.create({
       data: {
         organizationId: app.organizationId, clientId: app.clientId, applicationId, configVersionId: config.id, workflowKey,
-        trigger: test ? 'TEST' : opts.trigger ?? 'MANUAL', isTest: test, input: finalInput as Prisma.InputJsonValue,
+        // A record-triggered test run keeps RECORD so it can't trigger further runs.
+        trigger: test ? (opts.trigger === 'RECORD' ? 'RECORD' : 'TEST') : opts.trigger ?? 'MANUAL', isTest: test, input: finalInput as Prisma.InputJsonValue,
         idempotencyKey: opts.idempotencyKey ?? null,
       },
     });
@@ -313,23 +365,24 @@ export async function decideApproval(access: AccessContext, userId: string, exec
   return exec;
 }
 
-/** Starts scheduled workflows whose time has come, once per slot. */
+/** Starts scheduled workflows whose time has come; the slot is the idempotency key, so once per slot. */
 export async function runDueSchedules(now = new Date()) {
   const apps = await db.clientApplication.findMany({ where: { status: 'ACTIVE', archivedAt: null, activeConfigVersionId: { not: null } }, take: 500 });
   let started = 0;
   for (const app of apps) {
     const config = await db.appConfigVersion.findUnique({ where: { id: app.activeConfigVersionId! } });
     const manifest = config?.manifest as unknown as Manifest | undefined;
+    // When each schedule was last checked, so a tick looks only at the time since.
     const state = (app.scheduleState ?? {}) as Record<string, string>;
     let changed = false;
     for (const wf of manifest?.workflows ?? []) {
       if (wf.trigger.type !== 'schedule' || !wf.trigger.cron) continue;
       const last = state[wf.key] ? new Date(state[wf.key]!) : new Date(now.getTime() - 60 * 60_000);
-      const slot = lastFireBetween(wf.trigger.cron, last, now);
-      if (!slot) continue;
-      state[wf.key] = slot.toISOString();
+      const slot = lastFireBetween(wf.trigger.cron, last, now, wf.trigger.timezone ?? 'UTC');
+      state[wf.key] = now.toISOString();
       changed = true;
-      const access = { organizationId: app.organizationId, userId: 'system', role: 'SUPER_ADMIN' as const, clients: { kind: 'all' as const } };
+      if (!slot) continue;
+      const access: AccessContext = { ...systemAccess(app.organizationId), clients: { kind: 'clients', ids: [app.clientId] } };
       await startExecution(access, null, app.id, wf.key, {}, { trigger: 'SCHEDULE', idempotencyKey: `schedule:${wf.key}:${slot.toISOString()}` }).then(() => started++).catch(() => undefined);
     }
     if (changed) await db.clientApplication.update({ where: { id: app.id }, data: { scheduleState: state } });
@@ -358,6 +411,22 @@ export async function applicationForToken(applicationId: string, token: string) 
   const a = Buffer.from(app.webhookTokenHash);
   const b = Buffer.from(hashToken(token));
   return a.length === b.length && timingSafeEqual(a, b) ? app : null;
+}
+
+/**
+ * Starts a webhook-triggered workflow from a customer's system. The token
+ * identifies one application, so the run is scoped to that customer only;
+ * the workflow must be declared with a webhook trigger in the live
+ * configuration. Returns null when the token doesn't match.
+ */
+export async function startFromWebhook(applicationId: string, token: string, workflowKey: string, input: unknown, idempotencyKey: string | null) {
+  const app = await applicationForToken(applicationId, token);
+  if (!app) return null;
+  const config = app.activeConfigVersionId ? await db.appConfigVersion.findUnique({ where: { id: app.activeConfigVersionId } }) : null;
+  const workflow = (config?.manifest as unknown as Manifest | undefined)?.workflows.find((w) => w.key === workflowKey);
+  if (!workflow || workflow.trigger.type !== 'webhook') throw new NotFoundError('Webhook workflow');
+  const access: AccessContext = { ...systemAccess(app.organizationId), clients: { kind: 'clients', ids: [app.clientId] } };
+  return startExecution(access, null, app.id, workflowKey, input, { trigger: 'WEBHOOK', idempotencyKey: idempotencyKey ? `webhook:${idempotencyKey}` : undefined });
 }
 
 // ---------------------------------------------------------------------------

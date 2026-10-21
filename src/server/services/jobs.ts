@@ -184,7 +184,7 @@ export async function claimJobs(workerId: string, limit: number, queues: QueueNa
 /**
  * Claims one specific job now (a page moving a discovery run forward),
  * within its queue's limits, also taking it over when its holder has gone
- * quiet for `staleAfterMs`.
+ * quiet for `staleAfterMs`. A job waiting out a retry delay stays waiting.
  */
 export async function claimJob(id: string, workerId: string, staleAfterMs: number): Promise<Job | null> {
   const job = await db.job.findUnique({ where: { id }, select: { queue: true } });
@@ -201,7 +201,7 @@ export async function claimJob(id: string, workerId: string, staleAfterMs: numbe
       SET "status" = 'RUNNING', "lockedAt" = NOW(), "lockedBy" = ${workerId}, "startedAt" = NOW(),
           "attempts" = "attempts" + 1, "waitingReason" = NULL, "updatedAt" = NOW()
       WHERE "id" = ${id}::uuid
-        AND ("status" IN ('QUEUED', 'RETRYING') OR ("status" = 'RUNNING' AND "lockedAt" < ${staleBefore}))
+        AND (("status" IN ('QUEUED', 'RETRYING') AND "runAt" <= NOW()) OR ("status" = 'RUNNING' AND "lockedAt" < ${staleBefore}))
       RETURNING "id", "attempts"`;
     if (!rows[0]) return null;
     if (takeover) await closeOpenAttempts(tx, id, 'ABANDONED', 'Taken over after the previous holder went quiet');

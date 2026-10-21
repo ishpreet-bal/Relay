@@ -1,7 +1,8 @@
 /**
- * Minimal five-field cron (minute hour day-of-month month day-of-week) in
- * UTC: numbers, `*`, lists, ranges and steps. Enough for "07:00 every
- * Monday"; deliberately no names or extensions.
+ * Minimal five-field cron (minute hour day-of-month month day-of-week):
+ * numbers, `*`, lists, ranges and steps, evaluated in an IANA time zone
+ * (UTC by default). Enough for "07:00 every Monday in Toronto";
+ * deliberately no names or extensions.
  */
 
 function parseField(field: string, min: number, max: number): Set<number> | null {
@@ -37,23 +38,48 @@ export function parseCron(expr: string): CronSpec | null {
   return { ...(spec as Omit<CronSpec, 'domAny' | 'dowAny'>), domAny: dom === '*', dowAny: dow === '*' };
 }
 
-export function cronMatches(spec: CronSpec, d: Date): boolean {
-  if (!spec.minute.has(d.getUTCMinutes()) || !spec.hour.has(d.getUTCHours()) || !spec.month.has(d.getUTCMonth() + 1)) return false;
-  const domOk = spec.dom.has(d.getUTCDate());
-  const dowOk = spec.dow.has(d.getUTCDay());
+export function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const formats = new Map<string, Intl.DateTimeFormat>();
+const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/** Wall-clock fields of an instant in a time zone. */
+function wallClock(d: Date, tz: string) {
+  if (tz === 'UTC') return { minute: d.getUTCMinutes(), hour: d.getUTCHours(), dom: d.getUTCDate(), month: d.getUTCMonth() + 1, dow: d.getUTCDay() };
+  let f = formats.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', minute: 'numeric', hour: 'numeric', day: 'numeric', month: 'numeric', weekday: 'short' });
+    formats.set(tz, f);
+  }
+  const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
+  return { minute: Number(p.minute), hour: Number(p.hour), dom: Number(p.day), month: Number(p.month), dow: WEEKDAYS[p.weekday!] ?? -1 };
+}
+
+export function cronMatches(spec: CronSpec, d: Date, tz = 'UTC'): boolean {
+  const w = wallClock(d, tz);
+  if (!spec.minute.has(w.minute) || !spec.hour.has(w.hour) || !spec.month.has(w.month)) return false;
+  const domOk = spec.dom.has(w.dom);
+  const dowOk = spec.dow.has(w.dow);
   // Standard cron: when both day fields are restricted, either may match.
   if (!spec.domAny && !spec.dowAny) return domOk || dowOk;
   return domOk && dowOk;
 }
 
 /** The most recent time in (after, upTo] the expression fires, if any (scans at most 8 days). */
-export function lastFireBetween(expr: string, after: Date, upTo: Date): Date | null {
+export function lastFireBetween(expr: string, after: Date, upTo: Date, tz = 'UTC'): Date | null {
   const spec = parseCron(expr);
   if (!spec) return null;
   const start = Math.max(after.getTime(), upTo.getTime() - 8 * 86_400_000);
   const t = new Date(Math.floor(upTo.getTime() / 60_000) * 60_000);
   for (; t.getTime() > start; t.setUTCMinutes(t.getUTCMinutes() - 1)) {
-    if (cronMatches(spec, t)) return new Date(t);
+    if (cronMatches(spec, t, tz)) return new Date(t);
   }
   return null;
 }

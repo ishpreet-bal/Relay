@@ -76,7 +76,7 @@ export const BUILTIN_TEMPLATES: BuiltinTemplate[] = [
           testInput: { customer: 'Synthetic Auto Parts Ltd', part_number: 'SYN-1001', defect: 'Burr on edge', quantity: 120, severity: 'high', reported_on: '2026-10-01' },
         },
         {
-          key: 'weekly_report', name: 'Weekly claims report', trigger: { type: 'schedule', cron: '0 7 * * 1' },
+          key: 'weekly_report', name: 'Weekly claims report', trigger: { type: 'schedule', cron: '0 7 * * 1', timezone: 'America/Toronto' },
           steps: [
             { key: 'count', type: 'aggregate', config: { collection: 'claims', op: 'count', sinceDays: 7 } },
             { key: 'units', type: 'aggregate', config: { collection: 'claims', op: 'sum', field: 'quantity', sinceDays: 7 } },

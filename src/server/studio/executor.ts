@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { decryptSecret } from '@/lib/crypto';
 import { safeFetch } from '@/server/services/net-guard';
+import { systemAccess } from '@/server/access/scope';
+import { DomainError, NotFoundError } from '@/server/errors';
 import type { Manifest } from './manifest';
 import { stepDefinition, type ValueRef } from './modules';
 
@@ -13,9 +16,14 @@ import { stepDefinition, type ValueRef } from './modules';
  * run can't see or change another's data, and a demo can't touch
  * production.
  *
- * Progress is saved after every step. A retried job resumes after the last
- * completed step instead of repeating it, so a record is never created twice
- * by a retry. An approval step pauses the run until someone decides.
+ * Progress is saved after every step. Steps that write records commit the
+ * write and the progress checkpoint in one transaction, so a retried job
+ * resumes after them instead of writing twice. An approval step pauses the
+ * run until someone decides.
+ *
+ * A record created by a workflow starts the workflows that trigger on that
+ * collection. Record-triggered runs don't trigger further runs, so a
+ * workflow can't loop on its own records.
  */
 
 export class StepError extends Error {
@@ -35,22 +43,30 @@ export interface StepLog {
   error?: string;
 }
 
+type CreatedRecord = { collection: string; id: string; data: Record<string, unknown> };
+
 interface RunState {
   next: number;
   skipNext: boolean;
   log: StepLog[];
   outputs: Record<string, unknown>;
+  /** Records committed whose triggered workflows haven't been started yet. */
+  pending?: CreatedRecord[];
 }
 
 interface Ctx {
   clientId: string;
   applicationId: string;
   executionId: string;
+  configVersionId: string;
+  trigger: string;
   isTest: boolean;
   manifest: Manifest;
   input: Record<string, unknown>;
   outputs: Record<string, unknown>;
   bindings: Record<string, string>;
+  /** Commits the step's writes together with its checkpoint. */
+  commit: (writes: Prisma.PrismaPromise<unknown>[], output: unknown, opts?: { wait?: boolean; created?: CreatedRecord[] }) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,12 +147,12 @@ function compare(op: string, left: unknown, right: unknown): boolean {
 // Steps
 // ---------------------------------------------------------------------------
 
-type Control = { output: unknown; control?: 'stop' | 'skip_next' | 'wait'; note?: string };
+type Control = { output: unknown; control?: 'stop' | 'skip_next' | 'wait'; note?: string; committed?: boolean };
 
 const scope = (ctx: Ctx) => ({ clientId: ctx.clientId, applicationId: ctx.applicationId, isTest: ctx.isTest });
 
-async function systemRecord(ctx: Ctx, collection: string, data: Prisma.InputJsonValue) {
-  return db.appRecord.create({ data: { ...scope(ctx), collection, data, createdByExecutionId: ctx.executionId } });
+function recordWrite(ctx: Ctx, collection: string, data: Prisma.InputJsonValue, id = randomUUID()) {
+  return { id, write: db.appRecord.create({ data: { id, ...scope(ctx), collection, data, createdByExecutionId: ctx.executionId } }) };
 }
 
 async function runStep(type: string, config: Record<string, unknown>, ctx: Ctx): Promise<Control> {
@@ -151,8 +167,9 @@ async function runStep(type: string, config: Record<string, unknown>, ctx: Ctx):
       const data = (r(config.data) ?? {}) as Record<string, unknown>;
       const { clean, errors, valid } = validateRecord(ctx.manifest, String(config.collection), data);
       if (!valid) throw new StepError(`Record not valid: ${errors.join('; ')}`);
-      const rec = await db.appRecord.create({ data: { ...scope(ctx), collection: String(config.collection), data: clean as Prisma.InputJsonValue, createdByExecutionId: ctx.executionId } });
-      return { output: { id: rec.id } };
+      const rec = recordWrite(ctx, String(config.collection), clean as Prisma.InputJsonValue);
+      await ctx.commit([rec.write], { id: rec.id }, { created: [{ collection: String(config.collection), id: rec.id, data: clean }] });
+      return { output: { id: rec.id }, committed: true };
     }
     case 'update_record': {
       const id = String(r(config.id) ?? '');
@@ -209,29 +226,34 @@ async function runStep(type: string, config: Record<string, unknown>, ctx: Ctx):
       return { output: out };
     }
     case 'notify': {
-      const rec = await systemRecord(ctx, '_notifications', {
+      const rec = recordWrite(ctx, '_notifications', {
         toRoles: config.toRoles as string[], title: render(String(config.title), ctx), body: config.body ? render(String(config.body), ctx) : null, read: false,
       });
-      return { output: { notificationId: rec.id } };
+      await ctx.commit([rec.write], { notificationId: rec.id });
+      return { output: { notificationId: rec.id }, committed: true };
     }
     case 'approval': {
-      const rec = await systemRecord(ctx, '_approvals', {
+      const rec = recordWrite(ctx, '_approvals', {
         approverRole: String(config.approverRole), title: render(String(config.title), ctx), status: 'pending', executionId: ctx.executionId,
         onReject: String(config.onReject ?? 'stop'),
       });
-      return { output: { approvalId: rec.id }, control: 'wait' };
+      // The pause is part of the same commit, so a retry can't skip past it.
+      await ctx.commit([rec.write], { approvalId: rec.id }, { wait: true });
+      return { output: { approvalId: rec.id }, control: 'wait', committed: true };
     }
     case 'schedule_reminders': {
       const at = new Date(String(r(config.at)));
       if (Number.isNaN(at.getTime())) throw new StepError('Reminder time is not a date');
       const planned: Array<{ at: string; status: string }> = [];
+      const writes: Prisma.PrismaPromise<unknown>[] = [];
       for (const h of config.hoursBefore as number[]) {
         const when = new Date(at.getTime() - h * 3_600_000);
         const status = when < new Date() ? 'skipped_past' : 'planned';
-        await systemRecord(ctx, '_reminders', { at: when.toISOString(), title: render(String(config.title), ctx), status });
+        writes.push(recordWrite(ctx, '_reminders', { at: when.toISOString(), title: render(String(config.title), ctx), status }).write);
         planned.push({ at: when.toISOString(), status });
       }
-      return { output: { reminders: planned } };
+      await ctx.commit(writes, { reminders: planned });
+      return { output: { reminders: planned }, committed: true };
     }
     case 'http_request': return httpRequest(config, ctx);
     default:
@@ -305,15 +327,18 @@ export async function runExecution(executionId: string): Promise<{ done: boolean
   const started = exec.startedAt ?? new Date();
   await db.workflowExecution.update({ where: { id: exec.id }, data: { status: 'RUNNING', startedAt: started } });
   const ctx: Ctx = {
-    clientId: exec.clientId, applicationId: app.id, executionId: exec.id, isTest: exec.isTest, manifest,
+    clientId: exec.clientId, applicationId: app.id, executionId: exec.id, configVersionId: config.id, trigger: exec.trigger, isTest: exec.isTest, manifest,
     input: (exec.input ?? {}) as Record<string, unknown>, outputs: state.outputs,
     bindings: ((config.overrides as { bindings?: Record<string, string> }).bindings) ?? {},
+    commit: async () => { throw new Error('commit outside a step'); },
   };
   const save = (data: Prisma.WorkflowExecutionUpdateInput = {}) =>
     db.workflowExecution.update({ where: { id: exec.id }, data: { steps: state as unknown as Prisma.InputJsonValue, ...data } });
   const finish = (status: 'SUCCEEDED' | 'FAILED', error: string | null = null) => save({
     status, error, finishedAt: new Date(), durationMs: Date.now() - started.getTime(), output: state.outputs as Prisma.InputJsonValue,
   });
+  // Triggers a crashed attempt committed but didn't get to start.
+  await flushTriggers(ctx, state, save);
 
   for (let i = state.next; i < workflow.steps.length; i++) {
     const step = workflow.steps[i]!;
@@ -328,16 +353,28 @@ export async function runExecution(executionId: string): Promise<{ done: boolean
     }
     const def = stepDefinition(step.type);
     const parsed = def?.step.config.safeParse(step.config);
+    ctx.commit = async (writes, output, opts = {}) => {
+      const entry: StepLog = { key: step.key, type: step.type, status: opts.wait ? 'WAITING' : 'SUCCEEDED', startedAt: at, durationMs: Date.now() - t0, output };
+      const next: RunState = { ...state, next: i + 1, outputs: { ...state.outputs, [step.key]: output }, log: [...state.log, entry], pending: opts.created ?? [] };
+      await db.$transaction([
+        ...writes,
+        db.workflowExecution.update({ where: { id: exec.id }, data: { steps: next as unknown as Prisma.InputJsonValue, ...(opts.wait ? { status: 'WAITING_APPROVAL' } : {}) } }),
+      ]);
+      state.outputs[step.key] = output;
+      state.next = i + 1;
+      state.log.push(entry);
+      state.pending = opts.created ?? [];
+    };
     try {
       if (!def || !parsed?.success) throw new StepError(`Step ${step.key} is not valid in this configuration`);
       const result = await runStep(step.type, parsed.data as Record<string, unknown>, ctx);
+      await flushTriggers(ctx, state, save);
+      if (result.committed) {
+        if (result.control === 'wait') return { done: true };
+        continue;
+      }
       state.outputs[step.key] = result.output;
       state.next = i + 1;
-      if (result.control === 'wait') {
-        state.log.push({ key: step.key, type: step.type, status: 'WAITING', startedAt: at, durationMs: Date.now() - t0, output: result.output });
-        await save({ status: 'WAITING_APPROVAL' });
-        return { done: true };
-      }
       if (result.control === 'stop') {
         state.log.push({ key: step.key, type: step.type, status: 'STOPPED', startedAt: at, durationMs: Date.now() - t0, output: result.output, error: result.note });
         await finish('SUCCEEDED');
@@ -366,4 +403,36 @@ export async function runExecution(executionId: string): Promise<{ done: boolean
   }
   await finish('SUCCEEDED');
   return { done: true };
+}
+
+/**
+ * Starts the workflows that trigger on a collection a step just wrote to.
+ * The pending list is part of the step's checkpoint, and each start has a
+ * unique key (record + workflow) in the database, so a crash or a repeated
+ * job delivery can't start the same triggered run twice.
+ */
+async function flushTriggers(ctx: Ctx, state: RunState, save: () => Promise<unknown>) {
+  const created = state.pending ?? [];
+  if (!created.length) return;
+  if (ctx.trigger !== 'RECORD') await startRecordTriggers(ctx, created);
+  state.pending = [];
+  await save();
+}
+
+async function startRecordTriggers(ctx: Ctx, created: CreatedRecord[]) {
+  const { startExecution } = await import('./applications');
+  const app = await db.clientApplication.findUniqueOrThrow({ where: { id: ctx.applicationId } });
+  const access = { ...systemAccess(app.organizationId), clients: { kind: 'clients' as const, ids: [ctx.clientId] } };
+  for (const rec of created) {
+    for (const wf of ctx.manifest.workflows) {
+      if (wf.trigger.type !== 'record_created' || wf.trigger.collection !== rec.collection) continue;
+      await startExecution(access, null, ctx.applicationId, wf.key, { ...rec.data, _recordId: rec.id }, {
+        test: ctx.isTest, configVersionId: ctx.configVersionId, trigger: 'RECORD', idempotencyKey: `record:${rec.id}:${wf.key}`,
+      }).catch((err) => {
+        // A business refusal (daily limit, paused app) is logged; anything else retries the job.
+        if (!(err instanceof DomainError) && !(err instanceof NotFoundError)) throw err;
+        logger.warn('studio.record_trigger_refused', { executionId: ctx.executionId, workflow: wf.key, error: err.message });
+      });
+    }
+  }
 }
