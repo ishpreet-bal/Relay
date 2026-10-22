@@ -29,6 +29,8 @@ const serverSchema = z.object({
 
   STRIPE_SECRET_KEY: z.string().startsWith('sk_').optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+  /** Customer billing never charges live cards unless this is exactly "enabled" (test keys work without it). */
+  CUSTOMER_BILLING_LIVE: z.enum(['enabled']).optional(),
 
   GOOGLE_PLACES_API_KEY: z.string().optional(),
   APOLLO_API_KEY: z.string().optional(),

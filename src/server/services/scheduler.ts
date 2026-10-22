@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import { enqueuePendingScreening } from './pipeline/gates';
 import { enqueueDueRefresh } from './pipeline/refresh';
 import { runDueSchedules } from '@/server/studio/applications';
+import { runBillingCycle } from './customer-billing/subscriptions';
 
 /**
  * Housekeeping on a clock: start due discovery runs, release jobs whose
@@ -33,5 +34,7 @@ export async function scheduledMaintenance(now = new Date()) {
   }
   // Studio: scheduled customer workflows (they run on the studio queue).
   const schedules = await runDueSchedules(now).catch((err) => { logger.error('scheduler.studio_failed', { error: err }); return { started: 0 }; });
-  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, workflowsStarted: schedules.started };
+  // Customer billing: close ended periods (metered usage, ledger invoices, Stripe overage).
+  const billing = await runBillingCycle(now).catch((err) => { logger.error('scheduler.billing_failed', { error: err }); return { subscriptions: 0, periods: 0 }; });
+  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, workflowsStarted: schedules.started, billingPeriodsClosed: billing.periods };
 }
