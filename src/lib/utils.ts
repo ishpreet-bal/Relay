@@ -11,6 +11,12 @@ export function formatMoney(cents: number | null | undefined, currency = 'CAD') 
   }).format(cents / 100);
 }
 
+/** To the cent, for invoices and billing. */
+export function formatMoneyExact(cents: number | null | undefined, currency = 'CAD') {
+  if (cents == null) return '—';
+  return new Intl.NumberFormat('en-CA', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(cents / 100);
+}
+
 export function formatCompact(n: number | null | undefined) {
   if (n == null) return '—';
   return new Intl.NumberFormat('en-CA', { notation: 'compact' }).format(n);

@@ -1,8 +1,8 @@
 import type Stripe from 'stripe';
-import { headers } from 'next/headers';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { stripe, syncSubscription, recordInvoice } from '@/server/services/billing';
+import { handleCustomerBillingEvent, isCustomerBillingEvent } from '@/server/services/customer-billing/webhooks';
 
 /**
  * Stripe webhooks.
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const raw = await req.text();
   const secret = env().STRIPE_WEBHOOK_SECRET;
   if (!secret) return new Response('Billing webhooks are not configured', { status: 503 });
-  const signature = (await headers()).get('stripe-signature');
+  const signature = req.headers.get('stripe-signature');
   if (!signature) return new Response('Missing stripe-signature', { status: 400 });
 
   let event: Stripe.Event;
@@ -40,7 +40,9 @@ export async function POST(req: Request) {
   });
 
   try {
-    switch (event.type) {
+    // Customer subscriptions (Studio billing) are kept apart from the workspace's own Relay plan.
+    if (isCustomerBillingEvent(event)) await handleCustomerBillingEvent(event);
+    else switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted':

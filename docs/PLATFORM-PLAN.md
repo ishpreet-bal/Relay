@@ -267,12 +267,14 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ✅ Discovery profiles, runs, schedules, budgets, results, provenance, run monitoring
 - ✅ Retention sweep for time-limited source data
 - 🟡 Scheduled runs: worker every 15 min, cron daily (Hobby) — worker not deployed
-- ⬜ Email verification connector (ZeroBounce/Hunter)
-- ⬜ Gmail OAuth sending and approval queue on Gmail
-- ⬜ Pipeline Kanban with the brief's stages
-- ⬜ Automation library with synthetic demos tied to opportunities (phase E)
+- 🟡 Email verification: ZeroBounce and Hunter adapters, Verify on contacts (faked-provider tests pass; needs a key and a live run)
+- 🟡 Gmail sending: OAuth connect per mailbox, Gmail API send behind the same send gate and review queue, DNS domain check (faked-Google tests pass; needs an OAuth client and a live run)
+- ✅ Sales pipeline board (accounts by status) and the opportunity board
+- ✅ Automation library (Studio templates) with synthetic demos tied to opportunities (phase E)
 - ✅ Cost ledger budgets by category with 50/80/100% warnings (phase C)
-- ⬜ AI assistant over permissioned tools
+- 🟡 Ask Relay: read-only assistant with permission-filtered tools (scripted-model tests pass; needs ANTHROPIC_API_KEY for a live run)
+- ✅ Platform health alerts (stuck queues, paused providers, dead letters, failed webhooks, failing customer apps)
+- ✅ Customer portal: Applications (branded dashboard, records, submit, approvals, activity)
 
 ### Brief 2
 
@@ -280,9 +282,9 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ✅ Phase B — queues, throttles, breakers, attempts, dead letter, ops page, 1,000-task test (see section 4)
 - ✅ Phase C — staged qualification, freshness, research versions, budgets, forecasts (see section 4)
 - ✅ Phase D — Studio foundation, two-tenant isolation test, Studio screens (see section 4)
-- ⬜ Phase E — opportunity-to-application workflow
-- ⬜ Phase F — subscriptions, metering, Stripe test mode, profitability
-- ⬜ Phase G — scale validation with measured numbers
+- ✅ Phase E — opportunity to application, acceptance test passing (see section 4)
+- ✅ Phase F — subscriptions, metering, invoices, Stripe test-mode adapter, profitability (see section 4); Stripe API calls untested without a key
+- ✅ Phase G — scale validation at 100k companies, three bottlenecks found and fixed, numbers before and after (see section 4)
 
 ---
 
@@ -293,13 +295,20 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 | `GOOGLE_PLACES_API_KEY` | Google Cloud console → enable "Places API (New)" → API key restricted to that API | discovery |
 | `APOLLO_API_KEY` (+ `APOLLO_COST_PER_CREDIT_MILLICENTS`) | Apollo → Settings → API | company search, contacts, email lookup |
 | `ANTHROPIC_API_KEY` | platform.claude.com | research, drafting, verification |
-| `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` | vendor dashboard | email verification (connector not built yet) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud OAuth client | Gmail sending, customer Google integrations |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (test mode) | Stripe dashboard, test mode | customer subscription tests |
+| `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` (+ `*_COST_PER_CHECK_MILLICENTS`) | vendor dashboard | email verification before sending |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud → APIs & Services → enable Gmail API → OAuth client (Web), authorised redirect URI `https://<your domain>/api/oauth/google/callback`. `gmail.send` is a sensitive scope: unverified apps work for test users you add; Google's app verification is needed beyond that | sending from Gmail / Workspace mailboxes |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (test mode first) | Stripe dashboard → Developers; webhook endpoint `/api/webhooks/stripe` with customer.subscription.* and invoice.* events | customer subscriptions (and the workspace plan) |
+| `CUSTOMER_BILLING_LIVE=enabled` | only when you decide to charge real customers | allows a live Stripe key to create customer charges |
 | Worker host | Railway or Fly | a process running `npm run worker` with the same env |
 
 Set them in Vercel → Project → Settings → Environment Variables (and the
 worker's environment), then use each connector's check on the Connectors page.
+
+Preview deployments of feature branches currently fail at `prisma migrate
+deploy` because the database variables are set for Production only. That is
+the safe state (a preview never migrates the production database). To get
+working previews, give the Preview environment its own database (a Supabase
+branch), never the production one.
 
 ---
 
@@ -530,4 +539,198 @@ nullable columns).
 assessments, personalised demos on synthetic data, proposals, projects with
 estimate vs actual), then phase F (subscriptions, metering, Stripe test
 mode, profitability).
+
+### Phase E — opportunity to application (2026-10-22)
+
+**Built**
+- Opportunities (`services/delivery/opportunities.ts`) come from the latest
+  deep research (one per researched opportunity that cites a verified fact,
+  idempotent per research version) or are added by hand.
+- Solution matching (`services/delivery/matching.ts`) against the Studio
+  template catalogue: overlap between the words describing the work and each
+  template's use cases, name and description, plus an industry bonus.
+  Reuse class: exact, configuration, moderate or custom, with the reasons
+  (matched terms, industry, barriers). Not feasible is only ever a person's
+  call. Effort: from scratch ≈ 2.5 × the template's build estimate; reuse
+  needs 15/35/65/100% of that; with three or more closed projects on the
+  template, the estimate is scaled by their actual ÷ estimated hours.
+  A person can override the template and class with a reason.
+- Assessment (`services/delivery/assessment.ts`): tasks per week, minutes per
+  task, automatable share (low–high), loaded hourly cost, optional error rate
+  and cost, each with its source (stated by the prospect, observed, research
+  estimate, our assumption). The projection is a low/high scenario with
+  payback against the price, labelled PROJECTED, and it names unconfirmed
+  inputs. Research's hours seed an assessment whose inputs are all marked
+  unconfirmed.
+- Review gate: only a qualified opportunity (assessed, not "not feasible")
+  gets a demo or a proposal.
+- Demos: the matched template as a sandbox app on a per-workspace demo
+  client (kind DEMO, hidden from client lists and never billed), branded with
+  the company's public name, filled by test runs on synthetic variations of
+  each workflow's test input.
+- Proposals: priced from the rate card (hours × day rate ÷ 8, discovery fee,
+  the template's monthly price); the projection is shown as a scenario with
+  its inputs. An opportunity's proposal must be approved internally before it
+  can be sent or accepted. Acceptance is the share-link signature or a
+  recorded authorisation (who, and the evidence).
+- Conversion (admin): the customer tenant, a delivery project carrying the
+  estimate and price, and a draft application. Production still goes through
+  Studio's test gate.
+- Delivery projects: time entries by category, estimate against actual and
+  cost at the internal hourly rate; closing a project feeds calibration.
+- Deep research now matches against the Studio catalogue.
+- Screens: Opportunities board, opportunity page (evidence, match, reasons,
+  estimates, assessment, decision, demo, proposal, customer), account panel,
+  Projects.
+
+**Migration**: `20261022040000_opportunity_to_application` (additive: four
+tables, `Client.kind`, `Organization.internalHourlyCostCents`, four nullable
+proposal columns).
+
+**Tests**: acceptance (`delivery/__tests__/opportunity.int.test.ts`, six
+cases on Postgres): research → two opportunities (one exact template match,
+one custom), idempotent sync; qualifying refused without an assessment; the
+projection labelled and naming its unconfirmed input; no demo for a custom
+build; a demo in the DEMO client with only synthetic test records; proposal
+priced by arithmetic; acceptance refused before approval (service and share
+link); conversion creating customer, project and a draft app (idempotent);
+production deploy refused until tests pass, then allowed; the first
+production record lands in the customer's own tenant; time logged against
+the estimate; calibration kicks in at three closed projects. Seven unit
+tests (stemming, scoring, classes, effort, projection, input validation,
+synthetic variations). Browser check of the whole flow (board, review,
+demo, approval, acceptance, conversion, time logging) passed after one fix
+(an approval could report an error after it had saved).
+
+**Limits**: matching is lexical; synonyms the templates don't use won't
+match (a person can override). Effort factors are starting assumptions
+until real projects calibrate them. No live model call was made in this
+environment.
+
+### Phase F — billing and business operations (2026-10-22)
+
+**Built**
+- Customer subscriptions (`services/customer-billing/`): setup fee, monthly
+  fee, runs included, price per extra run (thousandths of a cent). Drafts
+  until the workspace owner authorises them; the demo client is never billed.
+- Ledger provider: Relay issues the setup invoice at authorisation, a period
+  invoice in arrears at each period end (monthly fee plus runs above the
+  included amount), and a prorated final invoice on immediate cancellation;
+  each once (idempotency key), numbered INV-YYYY-NNNN; payment is recorded by
+  hand; open invoices can be voided.
+- Stripe provider (`stripe-adapter.ts`): customer, product and an emailed
+  monthly subscription (send_invoice, net 14) with the setup fee on the first
+  invoice, all with idempotency keys; runs above the included amount are
+  added as an invoice item to the next invoice; cancel now or at period end.
+  A live key is refused unless `CUSTOMER_BILLING_LIVE=enabled`.
+- Webhooks: the existing Stripe endpoint (signature verified, each event
+  processed once) routes customer-subscription events by metadata, mirrors
+  Stripe invoices and subscription status, marks past due on failed payment,
+  and does not apply a live-mode event while live billing is off (it raises
+  a critical alert instead).
+- Metering: succeeded production runs from the platform's own records, per
+  period (`MeteredUsage`). Failed and test runs are not billed.
+- The daily maintenance pass closes ended periods (and catches up if several
+  have passed).
+- Reports: MRR and ARR, MRR history, invoiced, collected, outstanding,
+  overdue, churned subscriptions; per-customer margin for a month (revenue
+  minus delivery time at the internal hourly cost and the template's
+  infrastructure estimate). Provider costs and research spent to win the
+  customer are shown in their own currency, not converted.
+- Billing page (owner only).
+
+**Migration**: `20261022050000_customer_billing` (additive: three tables).
+
+**Tests**: acceptance (`customer-billing/__tests__/billing.int.test.ts`, six
+cases on Postgres, test mode, no live charges): no billing for the demo
+client; nothing invoiced before authorisation; setup invoice; 130 succeeded
+production runs metered (10 failed, 20 test and another customer's 50 not
+counted); one period invoice of $450 + 30 × $0.05; a second cycle adds
+nothing; paid once; immediate cancellation prorated 15 of 31 days; cancel at
+period end takes effect at the next close; MRR, ARR, invoiced, collected,
+outstanding, churn, MRR history and a customer's margin match hand
+calculations; live keys refused without the switch; webhooks: a forged
+signature rejected, a signed event applied once (replay deduplicated) and
+the invoice mirrored as paid, a live-mode event not applied and alerted.
+Four unit tests on invoice arithmetic and on the exact requests sent to
+Stripe (idempotency keys, metadata, collection method, setup item, overage).
+Browser check: subscription drafted from a project, authorised, setup
+invoice issued, MRR shown.
+
+**Limits**: no call to the Stripe API itself has been made (no key here);
+the adapter's requests are unit-tested against a fake client, and webhook
+handling against locally signed events. Taxes are not calculated (0). One
+currency per subscription; reports group by currency.
+
+### Phase G — scale validation (2026-10-22)
+
+**Method**: `scripts/scale/validate.ts` creates a throwaway workspace with
+synthetic data, measures, and deletes it. It refuses non-local databases
+unless `SCALE_ALLOW=1`. Same parameters both runs: 100,000 companies,
+20,000 screened, 10,000 queue tasks (concurrency 16, 4 workers), 50 customer
+applications × 40 runs (4 workers). Machine: 4 vCPU Xeon 2.8 GHz, 16 GB,
+local Postgres 16, Node 22. Results are in `docs/scale/`.
+
+| Measure | Before | After fixes |
+|---|---|---|
+| Bulk load | 4,048 companies/s | 3,815/s |
+| First-time scoring (4 workers) | (inside screening) | 177 accounts/s |
+| Screening, already-scored accounts (2 jobs per workspace) | 57/s *including first-time scoring* | 2,268/s |
+| Funnel metrics at 100k, p50 / p95 | 97 / 123 ms | 131 / 168 ms |
+| Explorer, top by score, p50 / p95 | 72 / 84 ms | 73 / 94 ms |
+| Explorer, name search, p50 / p95 | 300 / 906 ms | 97 / 130 ms |
+| Explorer, industry + city filters, p50 / p95 | 20 / 26 ms | 27 / 42 ms |
+| Dedup lookup against 100k, p50 / p95 | 11.5 / 185 ms | 14 / 26 ms |
+| Queue: 10,000 tasks creating companies in a 100k-company client | 18/s | 51/s |
+| Customer workflows: 2,000 runs across 50 apps | 45/s, all succeeded | 42/s, all succeeded |
+| Customer isolation | 40 records per app, 0 in another customer | same |
+
+**What the measurements found and what changed**
+- Company matching OR-ed its strong keys together with relation subqueries,
+  which scanned every account in the client, and its near-miss lookup used
+  a parameterised LIKE prefix that Postgres planned as a walk over every
+  name sharing a first word. Strong keys are now separate indexed lookups,
+  and near-misses are the 20 alphabetical neighbours on each side. Creating
+  a company in a 100k-company client went from 168 to 50 ms (p50).
+- Explorer search had no index for substring matching: trigram GIN indexes
+  on company name, domain, city and contact email and last name, with
+  contact matches looked up first so the search is an OR of indexable
+  conditions.
+- Screening did several queries per account; it now reads a batch in one
+  query and writes it in one statement.
+
+**Limits of what was measured**: one machine with a local database; no
+network latency to the database or providers; synthetic companies with
+uniform names (every name shares its first word, a worst case for
+near-miss matching and the reason the old lookup was slow). Small changes
+between runs (funnel metrics 97 → 131 ms) are within run-to-run variation
+on a shared machine, not attributed to a change. Supabase over its pooler,
+real provider latency, and 1M-company volumes are not measured. The
+forecast for 1M companies in the cost model remains a projection.
+
+**Migrations**: `20261022060000_search_trigram_indexes` (five GIN indexes;
+`pg_trgm` is already installed in production, in `public`).
+
+### Also added after phase F
+
+- Platform health alerts (`services/monitoring.ts`), raised and resolved by
+  the scheduled maintenance pass, shown on the System page; tested on
+  Postgres.
+- Customer portal Applications: the customer's deployed apps in their
+  branding with dashboard figures, records, submit forms, approvals and
+  activity; staff "view as" is read-only.
+- Email verification (ZeroBounce, Hunter): only a provider's VALID counts as
+  verified; unknown stays unverified.
+- Sales pipeline board.
+- Ask Relay: Claude with read-only tools filtered by role and scoped by
+  access; tool output treated as data; budgeted and logged.
+- Gmail sending: OAuth per mailbox (send-only scope, signed state, account
+  must match the mailbox), encrypted refresh token, Gmail API send behind
+  the existing send gate with unsubscribe headers, DNS-based SPF/DKIM check,
+  revoke on disconnect. Migration `20261022070000_gmail_mailboxes`.
+
+None of the new provider integrations (ZeroBounce, Hunter, Google, Stripe,
+Anthropic for the assistant) has been called live from this environment:
+their tests fake the provider. Each shows a clear not-configured state until
+its keys are set.
 

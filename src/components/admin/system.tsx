@@ -45,6 +45,7 @@ export function SystemPage({ canRetry, canControl }: { canRetry: boolean; canCon
     <>
       <Topbar title="System" />
       <PageBody width="wide" className="space-y-8">
+        <AlertsPanel />
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Kpi label="Queued" value={jobCount('QUEUED') + jobCount('RETRYING')} />
           <Kpi label="Running" value={jobCount('RUNNING')} />
@@ -173,3 +174,32 @@ export function SystemPage({ canRetry, canControl }: { canRetry: boolean; canCon
     </>
   );
 }
+
+/** Open alerts from the health checks, budgets and billing; each clears itself when its condition does. */
+function AlertsPanel() {
+  const utils = trpc.useUtils();
+  const alerts = trpc.pipeline.alerts.useQuery(undefined, { refetchInterval: 30_000 });
+  const ack = trpc.pipeline.acknowledgeAlert.useMutation({ onSuccess: () => utils.pipeline.alerts.invalidate() });
+  if (alerts.isPending) return null;
+  return (
+    <Section title="Alerts" hint="Raised by the scheduled health checks (stuck queues, paused providers, dead letters, failed webhooks, failing customer apps), budgets and billing. Each resolves on its own when the condition clears.">
+      <ErrorNote error={alerts.error ?? ack.error} />
+      {!alerts.data?.length ? <p className="card p-4 text-micro text-muted">Nothing needs attention.</p> : (
+        <ul className="card divide-y divide-hairline">
+          {alerts.data.map((a) => (
+            <li key={a.id} className="p-3 text-micro flex items-start gap-2">
+              <Pill tone={a.severity === 'critical' ? 'negative' : a.severity === 'warning' ? 'warning' : 'neutral'}>{a.severity}</Pill>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium">{a.title}</p>
+                {a.detail && <p className="text-muted">{a.detail}</p>}
+                <p className="text-[11px] text-muted">{a.kind} · <Ago date={a.lastSeenAt} />{a.occurrences > 1 ? ` · ${a.occurrences} times` : ''}{a.acknowledgedAt ? ' · acknowledged' : ''}</p>
+              </div>
+              {!a.acknowledgedAt && <button type="button" className="btn-ghost h-7 text-[11px]" disabled={ack.isPending} onClick={() => ack.mutate({ id: a.id })}>Acknowledge</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+

@@ -6,6 +6,7 @@ import { recordAudit } from '@/lib/audit';
 import { MODULES } from '@/server/studio/modules';
 import { BUILTIN_TEMPLATES } from '@/server/studio/templates';
 import { heartbeat, runJobNow } from '@/server/services/job-runner';
+import { customerApp, customerApps } from '@/server/studio/customer-view';
 import {
   checkConnection, connectionSchema, createApplication, createApplicationSchema, createConnection, decideApproval, deployConfig, disconnect,
   forkTemplate, getApplication, getExecution, getTemplate, listApplications, listConnections, listRecords, listTemplates, previewConfig,
@@ -24,6 +25,10 @@ const jsonInput = z.record(z.string(), z.unknown()).refine((v) => JSON.stringify
  * studio:secrets.
  */
 export const studioRouter = router({
+  /** The customer's own view: deployed applications only, production data only. */
+  customerApps: permissionProcedure('studio:read').input(z.object({ clientId: id })).query(({ ctx, input }) => customerApps(ctx.access, input.clientId)),
+  customerApp: permissionProcedure('studio:read').input(z.object({ id })).query(({ ctx, input }) => customerApp(ctx.access, input.id)),
+
   modules: permissionProcedure('studio:read').query(() =>
     MODULES.map((m) => ({
       key: m.key, name: m.name, version: m.version, category: m.category, description: m.description, permissions: m.permissions,

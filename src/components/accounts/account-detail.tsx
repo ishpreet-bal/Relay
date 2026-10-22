@@ -329,7 +329,7 @@ function SignalRow({ signal: s, canWrite, accountId }: { signal: AccountData['si
 function ContactsList({ account: a, can, capabilities }: {
   account: AccountData;
   can: AccountPermissions;
-  capabilities?: { contactData: boolean; emailFinder: boolean; ai: boolean };
+  capabilities?: { contactData: boolean; emailFinder: boolean; ai: boolean; emailVerification?: boolean };
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -375,7 +375,7 @@ function ContactRow({ contact: c, rank, accountId, can, capabilities, onEdit, on
   rank: number;
   accountId: string;
   can: AccountPermissions;
-  capabilities?: { contactData: boolean; emailFinder: boolean; ai: boolean };
+  capabilities?: { contactData: boolean; emailFinder: boolean; ai: boolean; emailVerification?: boolean };
   onEdit: () => void;
   onNotice: (s: string) => void;
 }) {
@@ -385,6 +385,10 @@ function ContactRow({ contact: c, rank, accountId, can, capabilities, onEdit, on
   const draft = trpc.messages.draft.useMutation({ onSuccess: () => router.push('/review'), onError: (e) => onNotice(e.message) });
   const reveal = trpc.contacts.revealEmail.useMutation({
     onSuccess: (r) => { utils.accounts.byId.invalidate({ id: accountId }); onNotice(r.email ? `Found ${r.email}.` : 'No email found.'); },
+    onError: (e) => onNotice(e.message),
+  });
+  const verify = trpc.contacts.verifyEmail.useMutation({
+    onSuccess: (r) => { utils.accounts.byId.invalidate({ id: accountId }); onNotice(r.status === 'SUCCESS' ? `${r.verification?.toLowerCase().replace('_', '-')} (${r.provider})` : `Couldn't verify: ${r.error ?? r.status}`); },
     onError: (e) => onNotice(e.message),
   });
   const phone = c.directPhone ?? c.mobilePhone ?? c.phone;
@@ -412,6 +416,10 @@ function ContactRow({ contact: c, rank, accountId, can, capabilities, onEdit, on
             <span className="truncate">{c.email}</span>
             {c.emailVerification === 'RISKY' && <span className="text-held">risky</span>}
             {c.emailVerification === 'INVALID' && <span className="text-blocked">invalid</span>}
+            {c.emailVerification === 'CATCH_ALL' && <span className="text-held">catch-all</span>}
+            {c.emailVerification !== 'VALID' && c.emailVerification !== 'INVALID' && can.write && capabilities?.emailVerification && (
+              <button type="button" className="text-accent hover:underline" disabled={verify.isPending} onClick={() => verify.mutate({ id: c.id })}>{verify.isPending ? 'Checking…' : 'Verify'}</button>
+            )}
           </p>
         ) : can.write && capabilities?.emailFinder ? (
           <button type="button" className="text-accent hover:underline" disabled={reveal.isPending} onClick={() => reveal.mutate({ id: c.id })}>

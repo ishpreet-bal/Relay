@@ -68,7 +68,24 @@ export const accountFilterSchema = z.object({
 });
 export type AccountFilter = z.infer<typeof accountFilterSchema>;
 
-export function buildWhere(access: AccessContext, f: AccountFilter): Prisma.AccountWhereInput {
+/**
+ * The where clause for a filter. Contact matches for a search are looked up
+ * first, so the search itself is an OR of indexable conditions (trigram
+ * indexes on name, domain and city) rather than one that includes a
+ * correlated subquery, which forces a full scan.
+ */
+export async function resolveFilter(access: AccessContext, f: AccountFilter): Promise<Prisma.AccountWhereInput> {
+  if (!f.search) return buildWhere(access, f);
+  const contacts = await db.contact.findMany({
+    where: { ...clientFilter(access, f.clientId), deletedAt: null, OR: [{ email: { contains: f.search, mode: 'insensitive' } }, { lastName: { contains: f.search, mode: 'insensitive' } }] },
+    select: { accountId: true },
+    distinct: ['accountId'],
+    take: 1000,
+  });
+  return buildWhere(access, f, contacts.map((c) => c.accountId).filter((x): x is string => !!x));
+}
+
+export function buildWhere(access: AccessContext, f: AccountFilter, contactAccountIds?: string[]): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = { ...clientFilter(access, f.clientId), deletedAt: null };
   const and: Prisma.AccountWhereInput[] = [];
 
@@ -78,10 +95,12 @@ export function buildWhere(access: AccessContext, f: AccountFilter): Prisma.Acco
         { name: { contains: f.search, mode: 'insensitive' } },
         { domain: { contains: f.search, mode: 'insensitive' } },
         { city: { contains: f.search, mode: 'insensitive' } },
-        { contacts: { some: { OR: [
-          { email: { contains: f.search, mode: 'insensitive' } },
-          { lastName: { contains: f.search, mode: 'insensitive' } },
-        ] } } },
+        contactAccountIds
+          ? { id: { in: contactAccountIds } }
+          : { contacts: { some: { OR: [
+            { email: { contains: f.search, mode: 'insensitive' } },
+            { lastName: { contains: f.search, mode: 'insensitive' } },
+          ] } } },
       ],
     });
   }
@@ -102,7 +121,7 @@ export function buildWhere(access: AccessContext, f: AccountFilter): Prisma.Acco
 
 export async function listAccounts(access: AccessContext, filter: AccountFilter) {
   const rows = await db.account.findMany({
-    where: buildWhere(access, filter),
+    where: await resolveFilter(access, filter),
     // Cursor pagination: the table is sorted by score, and offset paging
     // drifts as scores update underneath the operator.
     orderBy: [{ [filter.sort]: filter.direction }, { id: 'asc' }],
@@ -128,8 +147,29 @@ export async function listAccounts(access: AccessContext, filter: AccountFilter)
   return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null };
 }
 
-export function countAccounts(access: AccessContext, filter: AccountFilter) {
-  return db.account.count({ where: buildWhere(access, filter) });
+/**
+ * The sales pipeline as a board: count and the top accounts by score in
+ * each status. Closed statuses (lost, disqualified) are counted only.
+ */
+export async function accountBoard(access: AccessContext, clientId?: string | null, perColumn = 30) {
+  const scope = { ...clientFilter(access, clientId), deletedAt: null, mergedIntoId: null };
+  const counts = await db.account.groupBy({ by: ['status'], where: scope, _count: true });
+  const open = ['DISCOVERED', 'ENRICHED', 'QUALIFIED', 'ACTIVE_OUTREACH', 'ENGAGED', 'CALLING', 'MEETING_BOOKED', 'WON'] as const;
+  const columns = await Promise.all(open.map(async (status) => ({
+    status,
+    count: counts.find((c) => c.status === status)?._count ?? 0,
+    items: await db.account.findMany({
+      where: { ...scope, status },
+      orderBy: [{ score: 'desc' }, { id: 'asc' }],
+      take: perColumn,
+      select: { id: true, name: true, city: true, industry: true, score: true, temperature: true, nextFollowUpAt: true, lastContactedAt: true, opportunityTier: true },
+    }),
+  })));
+  return { columns, closed: { LOST: counts.find((c) => c.status === 'LOST')?._count ?? 0, DISQUALIFIED: counts.find((c) => c.status === 'DISQUALIFIED')?._count ?? 0 } };
+}
+
+export async function countAccounts(access: AccessContext, filter: AccountFilter) {
+  return db.account.count({ where: await resolveFilter(access, filter) });
 }
 
 export async function accountFacets(access: AccessContext, clientId?: string | null) {

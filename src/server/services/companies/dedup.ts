@@ -49,22 +49,36 @@ export async function findMatches(tx: Prisma.TransactionClient, clientId: string
 
   // Strong keys are looked up on their own, so a common first word ("Toronto
   // …", "Canadian …") can never crowd the exact match out of the candidates.
-  const strong: Prisma.AccountWhereInput[] = [];
-  if (incoming.identifiers.length) {
-    strong.push({ identifiers: { some: { OR: incoming.identifiers.map((i) => ({ provider: i.provider, externalId: i.externalId })) } } });
-  }
-  if (incoming.domain) strong.push({ domain: incoming.domain });
-  if (identity.emailDomains.length) strong.push({ domain: { in: identity.emailDomains } });
-  if (incoming.domain) strong.push({ contacts: { some: { email: { endsWith: `@${incoming.domain}` } } } });
+  // Each is its own indexed lookup returning account ids; one query OR-ing
+  // them (with subqueries) would scan every account in the client.
+  const strongIds = new Set<string>();
+  const domains = [...new Set([incoming.domain, ...identity.emailDomains].filter((d): d is string => !!d))];
+  const [byIdentifier, byDomain, byContact] = await Promise.all([
+    incoming.identifiers.length
+      ? tx.discoveryIdentifier.findMany({ where: { clientId, OR: incoming.identifiers.map((i) => ({ provider: i.provider, externalId: i.externalId })) }, select: { accountId: true }, take: 20 })
+      : [],
+    domains.length ? tx.account.findMany({ where: { clientId, domain: { in: domains } }, select: { id: true }, take: 20 }) : [],
+    incoming.domain ? tx.contact.findMany({ where: { clientId, email: { endsWith: `@${incoming.domain}` } }, select: { accountId: true }, take: 20 }) : [],
+  ]);
+  byIdentifier.forEach((r) => strongIds.add(r.accountId));
+  byDomain.forEach((r) => strongIds.add(r.id));
+  byContact.forEach((r) => r.accountId && strongIds.add(r.accountId));
 
   const rows = new Map<string, Candidate>();
   const add = (list: Candidate[]) => list.forEach((r) => rows.set(r.id, r));
-  if (strong.length) add(await tx.account.findMany({ where: { ...base, OR: strong }, select: CANDIDATE_SELECT, take: 20 }));
+  if (strongIds.size) add(await tx.account.findMany({ where: { ...base, id: { in: [...strongIds] } }, select: CANDIDATE_SELECT, take: 20 }));
   if (incoming.normalizedName) add(await tx.account.findMany({ where: { ...base, normalizedName: incoming.normalizedName }, select: CANDIDATE_SELECT, take: 20 }));
-  // First word catches near-misses ("Acme Machining" vs "Acme Machine Works")
-  // without scanning the client's whole list. A weak signal: capped.
-  if (firstWord.length >= 3) {
-    add(await tx.account.findMany({ where: { ...base, normalizedName: { startsWith: firstWord }, NOT: { normalizedName: incoming.normalizedName } }, select: CANDIDATE_SELECT, take: 40 }));
+  // Near-misses ("Acme Machining" vs "Acme Machine Works") sit next to each
+  // other alphabetically: the 20 names on either side of this one, kept when
+  // they share its first word. Two short index scans, however many accounts
+  // share that word (a LIKE 'prefix%' lookup walks all of them). Weak signal: capped.
+  if (firstWord.length >= 3 && incoming.normalizedName) {
+    const near = { ...base, NOT: { normalizedName: incoming.normalizedName } };
+    const [after, before] = await Promise.all([
+      tx.account.findMany({ where: { ...near, normalizedName: { gt: incoming.normalizedName } }, orderBy: { normalizedName: 'asc' }, select: CANDIDATE_SELECT, take: 20 }),
+      tx.account.findMany({ where: { ...near, normalizedName: { lt: incoming.normalizedName } }, orderBy: { normalizedName: 'desc' }, select: CANDIDATE_SELECT, take: 20 }),
+    ]);
+    add([...after, ...before].filter((r) => r.normalizedName?.split(' ')[0] === firstWord));
   }
 
   return [...rows.values()]

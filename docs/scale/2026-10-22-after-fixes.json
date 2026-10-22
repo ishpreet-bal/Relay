@@ -1,0 +1,103 @@
+{
+  "startedAt": "2026-10-22T14:55:32.115Z",
+  "machine": {
+    "cpus": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "memoryGb": 16,
+    "node": "v22.22.0"
+  },
+  "database": "postgresql://postgres:***@localhost:5432/relay_mig",
+  "params": {
+    "companies": 100000,
+    "screened": 20000,
+    "tasks": 10000,
+    "apps": 50,
+    "runsPerApp": 40,
+    "workers": 4
+  },
+  "bulkLoad": {
+    "companies": 100000,
+    "seconds": 26.2,
+    "perSecond": 3815
+  },
+  "scoring": {
+    "accounts": 20000,
+    "workers": 4,
+    "seconds": 113.3,
+    "perSecond": 177
+  },
+  "screening": {
+    "jobsQueued": 100,
+    "accountsScreened": 20000,
+    "seconds": 8.8,
+    "perSecond": 2268,
+    "stages": {
+      "DISCOVERED": 80000,
+      "SCREENED_OUT": 20000
+    }
+  },
+  "readLatencyMs": {
+    "funnelMetrics": {
+      "n": 15,
+      "p50": 131.3,
+      "p95": 167.8,
+      "max": 167.8
+    },
+    "explorer: top by score": {
+      "n": 15,
+      "p50": 73,
+      "p95": 93.6,
+      "max": 93.6
+    },
+    "explorer: search by name": {
+      "n": 15,
+      "p50": 96.9,
+      "p95": 129.7,
+      "max": 129.7
+    },
+    "explorer: industry + city filters": {
+      "n": 15,
+      "p50": 27.1,
+      "p95": 41.9,
+      "max": 41.9
+    }
+  },
+  "dedupLookupMs": {
+    "n": 400,
+    "p50": 14,
+    "p95": 25.8,
+    "max": 40.4,
+    "matchedExisting": 100,
+    "ofExisting": 200
+  },
+  "queue": {
+    "tasks": 10000,
+    "enqueueSeconds": 2.5,
+    "seconds": 196,
+    "perSecond": 51,
+    "maxConcurrent": 16,
+    "concurrencyLimit": 16,
+    "byStatus": {
+      "COMPLETED": 10000
+    },
+    "companiesWritten": 10000
+  },
+  "customerWorkflows": {
+    "applications": 50,
+    "runs": 2000,
+    "startSeconds": 23,
+    "seconds": 47.2,
+    "perSecond": 42,
+    "byStatus": {
+      "SUCCEEDED": 2000
+    },
+    "recordsPerApp": {
+      "min": 40,
+      "max": 40,
+      "expected": 40
+    },
+    "recordsInAnotherCustomer": 0
+  },
+  "cleanupSeconds": 9.6,
+  "finishedAt": "2026-10-22T15:02:59.595Z"
+}

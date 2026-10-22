@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CreditCard, ScrollText, Check, Mail, RefreshCw } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { cn } from '@/lib/utils';
@@ -182,8 +182,13 @@ function Mailboxes({ canWrite }: { canWrite: boolean }) {
   const create = trpc.mailboxes.create.useMutation({ onSuccess: () => { refresh(); setDraft({ fromName: '', fromEmail: '', replyToEmail: '', dailyCap: 50 }); } });
   const update = trpc.mailboxes.update.useMutation({ onSuccess: refresh });
   const check = trpc.mailboxes.checkDomain.useMutation({ onSuccess: refresh });
+  const gmailAvailable = trpc.mailboxes.gmailAvailable.useQuery();
+  const disconnect = trpc.mailboxes.disconnectGmail.useMutation({ onSuccess: refresh });
   const [draft, setDraft] = useState({ fromName: '', fromEmail: '', replyToEmail: '', dailyCap: 50 });
-  const error = create.error ?? update.error ?? check.error;
+  const error = create.error ?? update.error ?? check.error ?? disconnect.error;
+  // Where Google's consent screen sends the user back (read after mount, so server and client render alike).
+  const [gmailOutcome, setGmailOutcome] = useState<string | null>(null);
+  useEffect(() => setGmailOutcome(new URLSearchParams(window.location.search).get('gmail')), []);
 
   return (
     <section className="card p-4">
@@ -192,15 +197,19 @@ function Mailboxes({ canWrite }: { canWrite: boolean }) {
         <h2 className="text-[13px] font-medium">Sending mailboxes</h2>
       </div>
       <p className="text-[11px] text-muted mb-4">
-        The address campaigns send from. Its domain must be added to your email provider with SPF and DKIM passing before a
-        campaign using it can be activated.
+        The address campaigns send from. Its domain must pass SPF and DKIM before a campaign using it can be activated: checked
+        with your email provider, or from DNS for a mailbox that sends through Gmail.
       </p>
       <ul className="divide-y divide-hairline border border-hairline rounded-card mb-4">
         {mailboxes.data?.map((m) => (
           <li key={m.id} className={cn('p-3 flex flex-wrap items-center gap-2 text-micro', !m.isActive && 'opacity-60')}>
             <span className="flex-1 min-w-[180px]">
               <span className="font-medium">{m.fromName}</span> <span className="text-muted">&lt;{m.fromEmail}&gt;</span>
-              <span className="block text-[11px] text-muted">{m.dailyCap}/day{m.replyToEmail && ` · replies to ${m.replyToEmail}`}</span>
+              <span className="block text-[11px] text-muted">
+                {m.dailyCap}/day{m.replyToEmail && ` · replies to ${m.replyToEmail}`}
+                {m.gmailConnected ? ` · sends through Gmail as ${m.oauthEmail}` : m.provider === 'RESEND' ? ' · sends through the email provider' : ''}
+              </span>
+              {m.oauthError && <span className="block text-[11px] text-blocked">Gmail: {m.oauthError}</span>}
             </span>
             <span className={cn('text-[11px]', m.spfVerified && m.dkimVerified ? 'text-cleared' : 'text-held')}>
               {m.spfVerified && m.dkimVerified ? 'SPF and DKIM verified' : 'Domain not verified'}
@@ -213,6 +222,14 @@ function Mailboxes({ canWrite }: { canWrite: boolean }) {
                 <button type="button" className="btn-ghost h-7 text-[11px]" disabled={update.isPending} onClick={() => update.mutate({ id: m.id, data: { isActive: !m.isActive } })}>
                   {m.isActive ? 'Turn off' : 'Turn on'}
                 </button>
+                {gmailAvailable.data && (m.gmailConnected ? (
+                  <button type="button" className="btn-ghost h-7 text-[11px]" disabled={disconnect.isPending}
+                          onClick={() => { if (confirm(`Disconnect Gmail for ${m.fromEmail}? Relay's access is revoked at Google and the mailbox is turned off.`)) disconnect.mutate({ id: m.id }); }}>
+                    Disconnect Gmail
+                  </button>
+                ) : (
+                  <a className="btn-ghost h-7 text-[11px]" href={`/api/oauth/google/start?mailboxId=${m.id}`}>{m.oauthError ? 'Reconnect Gmail' : 'Send with Gmail'}</a>
+                ))}
               </>
             )}
           </li>
@@ -220,6 +237,8 @@ function Mailboxes({ canWrite }: { canWrite: boolean }) {
         {mailboxes.data?.length === 0 && <li className="p-3 text-micro text-muted">No mailboxes yet.</li>}
       </ul>
       {check.data && <p className={cn('text-[11px] mb-3', check.data.spf && check.data.dkim ? 'text-cleared' : 'text-held')}>{check.data.detail}</p>}
+      {gmailOutcome && <p className={cn('text-[11px] mb-3', gmailOutcome === 'connected' ? 'text-cleared' : 'text-held')}>{gmailOutcome === 'connected' ? 'Gmail connected. Domain authentication was checked from DNS.' : `Gmail: ${gmailOutcome}`}</p>}
+      {gmailAvailable.data === false && canWrite && <p className="text-[11px] text-muted mb-3">To send from a Gmail or Google Workspace inbox, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (OAuth web client, redirect URI …/api/oauth/google/callback).</p>}
       {canWrite && (
         <form className="grid sm:grid-cols-[1fr_1fr_1fr_80px_auto] gap-2 items-end" onSubmit={(e) => { e.preventDefault(); create.mutate(draft); }}>
           <label className="text-[11px]"><span className="eyebrow block mb-1">From name</span><input required className="input" value={draft.fromName} onChange={(e) => setDraft({ ...draft, fromName: e.target.value })} /></label>

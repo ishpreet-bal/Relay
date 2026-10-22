@@ -58,7 +58,8 @@ export const campaignsRouter = router({
         where: { id: input.id },
         include: {
           steps: { orderBy: { order: 'asc' } },
-          mailbox: true,
+          // Never the whole row: a Gmail mailbox holds an (encrypted) OAuth token.
+          mailbox: { select: { id: true, fromName: true, fromEmail: true, replyToEmail: true, provider: true, spfVerified: true, dkimVerified: true, dmarcVerified: true, dailyCap: true, warmupStage: true, isActive: true } },
           client: { select: { id: true, name: true, timezone: true } },
           offer: true,
           icp: true,

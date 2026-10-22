@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import type { AccessContext } from '@/server/access/scope';
-import { buildWhere, type AccountFilter } from './accounts';
+import { resolveFilter, type AccountFilter } from './accounts';
 import { contactWhere, type ContactFilter } from './contacts';
 
 /**
@@ -30,9 +30,10 @@ export async function exportAccountsCsv(access: AccessContext, filter: AccountFi
   const lines = [csvRow(header)];
   let cursor: string | undefined;
   let total = 0;
+  const where = await resolveFilter(access, filter);
   while (total < EXPORT_LIMIT) {
     const rows = await db.account.findMany({
-      where: buildWhere(access, filter),
+      where,
       orderBy: { id: 'asc' },
       take: PAGE,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

@@ -115,6 +115,7 @@ model Organization {
   connectorSettings ConnectorSetting[]
   messageClaims     MessageClaim[]
   opportunities     Opportunity[]
+  subscriptions     CustomerSubscription[]
 
   @@index([deletedAt])
 }
@@ -274,6 +275,7 @@ model Client {
   activities        Activity[]
   discoveryProfiles DiscoveryProfile[]
   applications      ClientApplication[]
+  subscriptions     CustomerSubscription[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
@@ -641,6 +643,10 @@ model Account {
   automationOpportunities Opportunity[]
 
   @@unique([clientId, domain])
+  // Trigram indexes for the explorer's substring search (ILIKE '%…%').
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Account_name_trgm_idx")
+  @@index([domain(ops: raw("gin_trgm_ops"))], type: Gin, map: "Account_domain_trgm_idx")
+  @@index([city(ops: raw("gin_trgm_ops"))], type: Gin, map: "Account_city_trgm_idx")
   @@index([clientId, pipelineStage, screeningScore(sort: Desc)])
   @@index([organizationId, pipelineStage])
   @@index([nextRefreshAt])
@@ -790,6 +796,8 @@ model Contact {
   provenance   DataProvenance[]
 
   @@unique([accountId, email])
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_email_trgm_idx")
+  @@index([lastName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_lastName_trgm_idx")
   @@index([organizationId, email])
   @@index([clientId, score(sort: Desc)])
 }
@@ -1196,6 +1204,14 @@ model Mailbox {
   warmupStage    Int          @default(0)
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
+
+  /// Gmail: the OAuth refresh token (AES-256-GCM), never returned to a browser.
+  oauthRefreshTokenEnc String?
+  /// The Google account that granted access; must be the mailbox's own address.
+  oauthEmail           String?
+  oauthScopes          String[]  @default([])
+  oauthConnectedAt     DateTime?
+  oauthError           String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   messages     Message[]
@@ -2870,4 +2886,109 @@ model ProjectTimeEntry {
   project DeliveryProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, workDate])
+}
+
+// ---------------------------------------------------------------------------
+// Customer billing (brief 2, phase F)
+// ---------------------------------------------------------------------------
+
+/// What a customer pays for their application: a setup fee, a monthly fee in
+/// arrears, and production runs above what is included. Nothing is charged
+/// until a billing admin authorises it, and live charges need an explicit
+/// switch on top (CUSTOMER_BILLING_LIVE).
+model CustomerSubscription {
+  id                      String    @id @default(uuid()) @db.Uuid
+  organizationId          String    @db.Uuid
+  clientId                String    @db.Uuid
+  applicationId           String?   @db.Uuid
+  projectId               String?   @db.Uuid
+  name                    String
+  /// DRAFT, ACTIVE, PAST_DUE or CANCELLED.
+  status                  String    @default("DRAFT")
+  /// ledger (invoices kept in Relay, paid outside it) or stripe.
+  provider                String    @default("ledger")
+  currency                String    @default("CAD")
+  setupFeeCents           Int       @default(0)
+  monthlyCents            Int
+  /// Production runs included each month; usage is billed only above this.
+  includedRuns            Int       @default(0)
+  /// Price per run above the included amount, in thousandths of a cent.
+  overageMillicentsPerRun Int       @default(0)
+  authorizedById          String?   @db.Uuid
+  authorizedAt            DateTime?
+  startedAt               DateTime?
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean   @default(false)
+  cancelledAt             DateTime?
+  stripeCustomerId        String?
+  stripeSubscriptionId    String?   @unique
+  livemode                Boolean   @default(false)
+  createdById             String?   @db.Uuid
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  usage        MeteredUsage[]
+  invoices     CustomerInvoice[]
+
+  @@index([organizationId, status])
+  @@index([clientId])
+  @@index([status, currentPeriodEnd])
+}
+
+/// Measured usage for one billing period, from the platform's own run records.
+model MeteredUsage {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  clientId       String   @db.Uuid
+  subscriptionId String   @db.Uuid
+  /// workflow_runs: production runs that executed (succeeded or failed).
+  metric         String
+  periodStart    DateTime
+  periodEnd      DateTime
+  quantity       Int
+  measuredAt     DateTime @default(now())
+
+  subscription CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, metric, periodStart])
+}
+
+model CustomerInvoice {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  clientId        String    @db.Uuid
+  subscriptionId  String    @db.Uuid
+  number          String
+  /// SETUP, PERIOD, FINAL (ledger) or STRIPE (mirrored from Stripe).
+  kind            String
+  periodStart     DateTime
+  periodEnd       DateTime
+  /// [{label, quantity, unitMillicents, amountCents, kind}]
+  lines           Json
+  subtotalCents   Int
+  taxCents        Int       @default(0)
+  totalCents      Int
+  currency        String
+  /// DRAFT, OPEN, PAID, VOID or UNCOLLECTIBLE.
+  status          String    @default("OPEN")
+  provider        String
+  stripeInvoiceId String?   @unique
+  /// Ledger invoices: subscription + kind + period, so a period is invoiced once.
+  idempotencyKey  String?   @unique
+  livemode        Boolean   @default(false)
+  issuedAt        DateTime  @default(now())
+  dueAt           DateTime?
+  paidAt          DateTime?
+  voidedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  subscription CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, number])
+  @@index([organizationId, issuedAt])
+  @@index([clientId, issuedAt])
 }
