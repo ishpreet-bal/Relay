@@ -48,7 +48,8 @@ export interface CompletionResult {
 let anthropicClient: Anthropic | null = null;
 let openaiClient: OpenAI | null = null;
 
-function anthropic() {
+/** The shared Anthropic client (throws when no key is configured). */
+export function anthropic() {
   const key = env().ANTHROPIC_API_KEY;
   if (!key) throw new NotConfiguredError('anthropic', 'No AI provider is connected. Set ANTHROPIC_API_KEY.');
   anthropicClient ??= new Anthropic({ apiKey: key, maxRetries: 0 });

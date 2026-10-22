@@ -68,6 +68,8 @@ export const MODELS = {
   personalize: 'claude-sonnet-5',
   /** Claim extraction and support checks on drafts. */
   verify: 'claude-haiku-4-5-20251001',
+  /** The in-app assistant: answers questions with read-only tools. */
+  assistant: 'claude-sonnet-5',
   /** Cheap, high-volume classification and extraction. */
   classify: 'claude-haiku-4-5-20251001',
   /** Fallback provider equivalents. */

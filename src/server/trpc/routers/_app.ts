@@ -9,6 +9,7 @@ import { pipelineRouter } from './pipeline';
 import { studioRouter } from './studio';
 import { deliveryRouter } from './delivery';
 import { billingRouter } from './billing';
+import { assistantRouter } from './assistant';
 import { researchRouter } from './research';
 import { messagesRouter } from './messages';
 import { campaignsRouter } from './campaigns';
@@ -35,6 +36,7 @@ export const appRouter = router({
   studio: studioRouter,
   delivery: deliveryRouter,
   billing: billingRouter,
+  assistant: assistantRouter,
   research: researchRouter,
   messages: messagesRouter,
   campaigns: campaignsRouter,

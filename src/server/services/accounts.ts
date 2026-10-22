@@ -147,6 +147,27 @@ export async function listAccounts(access: AccessContext, filter: AccountFilter)
   return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null };
 }
 
+/**
+ * The sales pipeline as a board: count and the top accounts by score in
+ * each status. Closed statuses (lost, disqualified) are counted only.
+ */
+export async function accountBoard(access: AccessContext, clientId?: string | null, perColumn = 30) {
+  const scope = { ...clientFilter(access, clientId), deletedAt: null, mergedIntoId: null };
+  const counts = await db.account.groupBy({ by: ['status'], where: scope, _count: true });
+  const open = ['DISCOVERED', 'ENRICHED', 'QUALIFIED', 'ACTIVE_OUTREACH', 'ENGAGED', 'CALLING', 'MEETING_BOOKED', 'WON'] as const;
+  const columns = await Promise.all(open.map(async (status) => ({
+    status,
+    count: counts.find((c) => c.status === status)?._count ?? 0,
+    items: await db.account.findMany({
+      where: { ...scope, status },
+      orderBy: [{ score: 'desc' }, { id: 'asc' }],
+      take: perColumn,
+      select: { id: true, name: true, city: true, industry: true, score: true, temperature: true, nextFollowUpAt: true, lastContactedAt: true, opportunityTier: true },
+    }),
+  })));
+  return { columns, closed: { LOST: counts.find((c) => c.status === 'LOST')?._count ?? 0, DISQUALIFIED: counts.find((c) => c.status === 'DISQUALIFIED')?._count ?? 0 } };
+}
+
 export async function countAccounts(access: AccessContext, filter: AccountFilter) {
   return db.account.count({ where: await resolveFilter(access, filter) });
 }

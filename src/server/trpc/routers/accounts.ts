@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { router, permissionProcedure } from '../init';
 import {
+  accountBoard,
   accountFacets, accountFieldsSchema, accountFilterSchema, accountInputSchema, archiveAccount, countAccounts,
   createAccount, getAccountDetail, listAccounts, overrideScore, setAccountStatus, updateAccount, findAccount,
 } from '@/server/services/accounts';
@@ -66,6 +67,10 @@ export const accountsRouter = router({
       await recordAudit({ session: ctx.session, action: 'account.update', entityType: 'Account', entityId: input.id, before, after });
       return after;
     }),
+
+  board: permissionProcedure('account:read')
+    .input(z.object({ clientId: z.string().uuid().nullish() }).default({}))
+    .query(({ ctx, input }) => accountBoard(ctx.access, input.clientId)),
 
   setStatus: permissionProcedure('account:write')
     .input(z.object({ id: z.string().uuid(), status: z.enum(ACCOUNT_STATUSES), reason: z.string().max(500).optional() }))
