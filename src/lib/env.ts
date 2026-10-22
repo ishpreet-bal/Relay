@@ -37,6 +37,8 @@ const serverSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
   APOLLO_API_KEY: z.string().optional(),
+  /** Shown on the public privacy policy as the address for access, correction and deletion requests. */
+  PRIVACY_CONTACT_EMAIL: z.string().email().optional(),
 
   ENCRYPTION_KEY: z.string().length(44, 'must be a base64-encoded 32-byte key'),
   UNSUBSCRIBE_SIGNING_KEY: z.string().min(32),

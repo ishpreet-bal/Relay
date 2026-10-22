@@ -188,13 +188,18 @@ export async function sendViaGmail(mailbox: Mailbox, email: OutboundEmail, fetch
 // ---------------------------------------------------------------------------
 
 type Resolver = (host: string) => Promise<string[][]>;
+const GOOGLE_CONSUMER_DOMAINS = new Set(['gmail.com', 'googlemail.com']);
 
 /** SPF includes Google's servers and Google's DKIM key is published (selector "google"). */
 export async function gmailDomainStatus(domain: string, resolve: Resolver = resolveTxt) {
+  // Google signs and authorizes mail from its own consumer domains under its own selectors.
+  if (GOOGLE_CONSUMER_DOMAINS.has(domain.toLowerCase())) {
+    return { spf: true, dkim: true, detail: `Google authenticates mail sent from ${domain.toLowerCase()} addresses` };
+  }
   const txt = async (host: string) => (await resolve(host).catch(() => [])).map((chunks) => chunks.join(''));
   const [root, dkim] = await Promise.all([txt(domain), txt(`google._domainkey.${domain}`)]);
   const spfRecord = root.find((r) => r.toLowerCase().startsWith('v=spf1'));
-  const spf = !!spfRecord && /include:_spf\.google\.com/i.test(spfRecord);
+  const spf = !!spfRecord && /(include|redirect)[:=]_spf\.google\.com/i.test(spfRecord);
   const dkimOk = dkim.some((r) => /v=DKIM1/i.test(r) && /p=[A-Za-z0-9+/]/.test(r));
   return {
     spf, dkim: dkimOk,
