@@ -267,12 +267,14 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ✅ Discovery profiles, runs, schedules, budgets, results, provenance, run monitoring
 - ✅ Retention sweep for time-limited source data
 - 🟡 Scheduled runs: worker every 15 min, cron daily (Hobby) — worker not deployed
-- ⬜ Email verification connector (ZeroBounce/Hunter)
-- ⬜ Gmail OAuth sending and approval queue on Gmail
-- ⬜ Pipeline Kanban with the brief's stages
+- 🟡 Email verification: ZeroBounce and Hunter adapters, Verify on contacts (faked-provider tests pass; needs a key and a live run)
+- 🟡 Gmail sending: OAuth connect per mailbox, Gmail API send behind the same send gate and review queue, DNS domain check (faked-Google tests pass; needs an OAuth client and a live run)
+- ✅ Sales pipeline board (accounts by status) and the opportunity board
 - ✅ Automation library (Studio templates) with synthetic demos tied to opportunities (phase E)
 - ✅ Cost ledger budgets by category with 50/80/100% warnings (phase C)
-- ⬜ AI assistant over permissioned tools
+- 🟡 Ask Relay: read-only assistant with permission-filtered tools (scripted-model tests pass; needs ANTHROPIC_API_KEY for a live run)
+- ✅ Platform health alerts (stuck queues, paused providers, dead letters, failed webhooks, failing customer apps)
+- ✅ Customer portal: Applications (branded dashboard, records, submit, approvals, activity)
 
 ### Brief 2
 
@@ -282,7 +284,7 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ✅ Phase D — Studio foundation, two-tenant isolation test, Studio screens (see section 4)
 - ✅ Phase E — opportunity to application, acceptance test passing (see section 4)
 - ✅ Phase F — subscriptions, metering, invoices, Stripe test-mode adapter, profitability (see section 4); Stripe API calls untested without a key
-- ⬜ Phase G — scale validation with measured numbers
+- ✅ Phase G — scale validation at 100k companies, three bottlenecks found and fixed, numbers before and after (see section 4)
 
 ---
 
@@ -293,13 +295,20 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 | `GOOGLE_PLACES_API_KEY` | Google Cloud console → enable "Places API (New)" → API key restricted to that API | discovery |
 | `APOLLO_API_KEY` (+ `APOLLO_COST_PER_CREDIT_MILLICENTS`) | Apollo → Settings → API | company search, contacts, email lookup |
 | `ANTHROPIC_API_KEY` | platform.claude.com | research, drafting, verification |
-| `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` | vendor dashboard | email verification (connector not built yet) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud OAuth client | Gmail sending, customer Google integrations |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (test mode) | Stripe dashboard, test mode | customer subscription tests |
+| `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` (+ `*_COST_PER_CHECK_MILLICENTS`) | vendor dashboard | email verification before sending |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud → APIs & Services → enable Gmail API → OAuth client (Web), authorised redirect URI `https://<your domain>/api/oauth/google/callback`. `gmail.send` is a sensitive scope: unverified apps work for test users you add; Google's app verification is needed beyond that | sending from Gmail / Workspace mailboxes |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (test mode first) | Stripe dashboard → Developers; webhook endpoint `/api/webhooks/stripe` with customer.subscription.* and invoice.* events | customer subscriptions (and the workspace plan) |
+| `CUSTOMER_BILLING_LIVE=enabled` | only when you decide to charge real customers | allows a live Stripe key to create customer charges |
 | Worker host | Railway or Fly | a process running `npm run worker` with the same env |
 
 Set them in Vercel → Project → Settings → Environment Variables (and the
 worker's environment), then use each connector's check on the Connectors page.
+
+Preview deployments of feature branches currently fail at `prisma migrate
+deploy` because the database variables are set for Production only. That is
+the safe state (a preview never migrates the production database). To get
+working previews, give the Preview environment its own database (a Supabase
+branch), never the production one.
 
 ---
 
@@ -652,4 +661,76 @@ invoice issued, MRR shown.
 the adapter's requests are unit-tested against a fake client, and webhook
 handling against locally signed events. Taxes are not calculated (0). One
 currency per subscription; reports group by currency.
+
+### Phase G — scale validation (2026-10-22)
+
+**Method**: `scripts/scale/validate.ts` creates a throwaway workspace with
+synthetic data, measures, and deletes it. It refuses non-local databases
+unless `SCALE_ALLOW=1`. Same parameters both runs: 100,000 companies,
+20,000 screened, 10,000 queue tasks (concurrency 16, 4 workers), 50 customer
+applications × 40 runs (4 workers). Machine: 4 vCPU Xeon 2.8 GHz, 16 GB,
+local Postgres 16, Node 22. Results are in `docs/scale/`.
+
+| Measure | Before | After fixes |
+|---|---|---|
+| Bulk load | 4,048 companies/s | 3,815/s |
+| First-time scoring (4 workers) | (inside screening) | 177 accounts/s |
+| Screening, already-scored accounts (2 jobs per workspace) | 57/s *including first-time scoring* | 2,268/s |
+| Funnel metrics at 100k, p50 / p95 | 97 / 123 ms | 131 / 168 ms |
+| Explorer, top by score, p50 / p95 | 72 / 84 ms | 73 / 94 ms |
+| Explorer, name search, p50 / p95 | 300 / 906 ms | 97 / 130 ms |
+| Explorer, industry + city filters, p50 / p95 | 20 / 26 ms | 27 / 42 ms |
+| Dedup lookup against 100k, p50 / p95 | 11.5 / 185 ms | 14 / 26 ms |
+| Queue: 10,000 tasks creating companies in a 100k-company client | 18/s | 51/s |
+| Customer workflows: 2,000 runs across 50 apps | 45/s, all succeeded | 42/s, all succeeded |
+| Customer isolation | 40 records per app, 0 in another customer | same |
+
+**What the measurements found and what changed**
+- Company matching OR-ed its strong keys together with relation subqueries,
+  which scanned every account in the client, and its near-miss lookup used
+  a parameterised LIKE prefix that Postgres planned as a walk over every
+  name sharing a first word. Strong keys are now separate indexed lookups,
+  and near-misses are the 20 alphabetical neighbours on each side. Creating
+  a company in a 100k-company client went from 168 to 50 ms (p50).
+- Explorer search had no index for substring matching: trigram GIN indexes
+  on company name, domain, city and contact email and last name, with
+  contact matches looked up first so the search is an OR of indexable
+  conditions.
+- Screening did several queries per account; it now reads a batch in one
+  query and writes it in one statement.
+
+**Limits of what was measured**: one machine with a local database; no
+network latency to the database or providers; synthetic companies with
+uniform names (every name shares its first word, a worst case for
+near-miss matching and the reason the old lookup was slow). Small changes
+between runs (funnel metrics 97 → 131 ms) are within run-to-run variation
+on a shared machine, not attributed to a change. Supabase over its pooler,
+real provider latency, and 1M-company volumes are not measured. The
+forecast for 1M companies in the cost model remains a projection.
+
+**Migrations**: `20261022060000_search_trigram_indexes` (five GIN indexes;
+`pg_trgm` is already installed in production, in `public`).
+
+### Also added after phase F
+
+- Platform health alerts (`services/monitoring.ts`), raised and resolved by
+  the scheduled maintenance pass, shown on the System page; tested on
+  Postgres.
+- Customer portal Applications: the customer's deployed apps in their
+  branding with dashboard figures, records, submit forms, approvals and
+  activity; staff "view as" is read-only.
+- Email verification (ZeroBounce, Hunter): only a provider's VALID counts as
+  verified; unknown stays unverified.
+- Sales pipeline board.
+- Ask Relay: Claude with read-only tools filtered by role and scoped by
+  access; tool output treated as data; budgeted and logged.
+- Gmail sending: OAuth per mailbox (send-only scope, signed state, account
+  must match the mailbox), encrypted refresh token, Gmail API send behind
+  the existing send gate with unsubscribe headers, DNS-based SPF/DKIM check,
+  revoke on disconnect. Migration `20261022070000_gmail_mailboxes`.
+
+None of the new provider integrations (ZeroBounce, Hunter, Google, Stripe,
+Anthropic for the assistant) has been called live from this environment:
+their tests fake the provider. Each shows a clear not-configured state until
+its keys are set.
 
