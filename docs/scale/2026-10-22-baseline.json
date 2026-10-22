@@ -1,0 +1,97 @@
+{
+  "startedAt": "2026-10-22T14:29:17.678Z",
+  "machine": {
+    "cpus": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "memoryGb": 16,
+    "node": "v22.22.0"
+  },
+  "database": "postgresql://postgres:***@localhost:5432/relay_mig",
+  "params": {
+    "companies": 100000,
+    "screened": 20000,
+    "tasks": 10000,
+    "apps": 50,
+    "runsPerApp": 40,
+    "workers": 4
+  },
+  "bulkLoad": {
+    "companies": 100000,
+    "seconds": 24.7,
+    "perSecond": 4048
+  },
+  "screening": {
+    "jobsQueued": 100,
+    "accountsScreened": 20000,
+    "seconds": 348.1,
+    "perSecond": 57,
+    "stages": {
+      "DISCOVERED": 80000,
+      "SCREENED_OUT": 20000
+    }
+  },
+  "readLatencyMs": {
+    "funnelMetrics": {
+      "n": 15,
+      "p50": 96.6,
+      "p95": 123,
+      "max": 123
+    },
+    "explorer: top by score": {
+      "n": 15,
+      "p50": 72.1,
+      "p95": 83.7,
+      "max": 83.7
+    },
+    "explorer: search by name": {
+      "n": 15,
+      "p50": 299.8,
+      "p95": 905.8,
+      "max": 905.8
+    },
+    "explorer: industry + city filters": {
+      "n": 15,
+      "p50": 20.1,
+      "p95": 26.2,
+      "max": 26.2
+    }
+  },
+  "dedupLookupMs": {
+    "n": 400,
+    "p50": 11.5,
+    "p95": 184.6,
+    "max": 222.7,
+    "matchedExisting": 100,
+    "ofExisting": 200
+  },
+  "queue": {
+    "tasks": 10000,
+    "enqueueSeconds": 2.8,
+    "seconds": 555.5,
+    "perSecond": 18,
+    "maxConcurrent": 16,
+    "concurrencyLimit": 16,
+    "byStatus": {
+      "COMPLETED": 10000
+    },
+    "companiesWritten": 10000
+  },
+  "customerWorkflows": {
+    "applications": 50,
+    "runs": 2000,
+    "startSeconds": 24.4,
+    "seconds": 44.1,
+    "perSecond": 45,
+    "byStatus": {
+      "SUCCEEDED": 2000
+    },
+    "recordsPerApp": {
+      "min": 40,
+      "max": 40,
+      "expected": 40
+    },
+    "recordsInAnotherCustomer": 0
+  },
+  "cleanupSeconds": 10.4,
+  "finishedAt": "2026-10-22T14:46:40.511Z"
+}

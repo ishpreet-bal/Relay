@@ -8,6 +8,7 @@ const LINKS = [
   { href: '/portal', label: 'Overview' },
   { href: '/portal/meetings', label: 'Meetings' },
   { href: '/portal/campaigns', label: 'Campaigns' },
+  { href: '/portal/apps', label: 'Applications' },
   { href: '/portal/profile', label: 'Your business' },
 ];
 

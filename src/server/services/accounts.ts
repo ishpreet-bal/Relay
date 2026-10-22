@@ -68,7 +68,24 @@ export const accountFilterSchema = z.object({
 });
 export type AccountFilter = z.infer<typeof accountFilterSchema>;
 
-export function buildWhere(access: AccessContext, f: AccountFilter): Prisma.AccountWhereInput {
+/**
+ * The where clause for a filter. Contact matches for a search are looked up
+ * first, so the search itself is an OR of indexable conditions (trigram
+ * indexes on name, domain and city) rather than one that includes a
+ * correlated subquery, which forces a full scan.
+ */
+export async function resolveFilter(access: AccessContext, f: AccountFilter): Promise<Prisma.AccountWhereInput> {
+  if (!f.search) return buildWhere(access, f);
+  const contacts = await db.contact.findMany({
+    where: { ...clientFilter(access, f.clientId), deletedAt: null, OR: [{ email: { contains: f.search, mode: 'insensitive' } }, { lastName: { contains: f.search, mode: 'insensitive' } }] },
+    select: { accountId: true },
+    distinct: ['accountId'],
+    take: 1000,
+  });
+  return buildWhere(access, f, contacts.map((c) => c.accountId).filter((x): x is string => !!x));
+}
+
+export function buildWhere(access: AccessContext, f: AccountFilter, contactAccountIds?: string[]): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = { ...clientFilter(access, f.clientId), deletedAt: null };
   const and: Prisma.AccountWhereInput[] = [];
 
@@ -78,10 +95,12 @@ export function buildWhere(access: AccessContext, f: AccountFilter): Prisma.Acco
         { name: { contains: f.search, mode: 'insensitive' } },
         { domain: { contains: f.search, mode: 'insensitive' } },
         { city: { contains: f.search, mode: 'insensitive' } },
-        { contacts: { some: { OR: [
-          { email: { contains: f.search, mode: 'insensitive' } },
-          { lastName: { contains: f.search, mode: 'insensitive' } },
-        ] } } },
+        contactAccountIds
+          ? { id: { in: contactAccountIds } }
+          : { contacts: { some: { OR: [
+            { email: { contains: f.search, mode: 'insensitive' } },
+            { lastName: { contains: f.search, mode: 'insensitive' } },
+          ] } } },
       ],
     });
   }
@@ -102,7 +121,7 @@ export function buildWhere(access: AccessContext, f: AccountFilter): Prisma.Acco
 
 export async function listAccounts(access: AccessContext, filter: AccountFilter) {
   const rows = await db.account.findMany({
-    where: buildWhere(access, filter),
+    where: await resolveFilter(access, filter),
     // Cursor pagination: the table is sorted by score, and offset paging
     // drifts as scores update underneath the operator.
     orderBy: [{ [filter.sort]: filter.direction }, { id: 'asc' }],
@@ -128,8 +147,8 @@ export async function listAccounts(access: AccessContext, filter: AccountFilter)
   return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null };
 }
 
-export function countAccounts(access: AccessContext, filter: AccountFilter) {
-  return db.account.count({ where: buildWhere(access, filter) });
+export async function countAccounts(access: AccessContext, filter: AccountFilter) {
+  return db.account.count({ where: await resolveFilter(access, filter) });
 }
 
 export async function accountFacets(access: AccessContext, clientId?: string | null) {

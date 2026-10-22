@@ -30,13 +30,14 @@ export const sessionRouter = router({
    */
   capabilities: protectedProcedure.query(async ({ ctx }) => {
     const org = ctx.access.organizationId;
-    const [companyData, contactData, emailFinder, emailSending, ai] = await Promise.all([
+    const [companyData, contactData, emailFinder, emailSending, ai, emailVerification] = await Promise.all([
       isCapabilityAvailable(org, 'COMPANY_DATA'),
       isCapabilityAvailable(org, 'CONTACT_DATA'),
       isCapabilityAvailable(org, 'EMAIL_FINDER'),
       isCapabilityAvailable(org, 'EMAIL_SENDING'),
       isCapabilityAvailable(org, 'AI'),
+      isCapabilityAvailable(org, 'EMAIL_VERIFICATION'),
     ]);
-    return { companyData, contactData, emailFinder, emailSending, ai };
+    return { companyData, contactData, emailFinder, emailSending, ai, emailVerification };
   }),
 });

@@ -270,7 +270,7 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ⬜ Email verification connector (ZeroBounce/Hunter)
 - ⬜ Gmail OAuth sending and approval queue on Gmail
 - ⬜ Pipeline Kanban with the brief's stages
-- ⬜ Automation library with synthetic demos tied to opportunities (phase E)
+- ✅ Automation library (Studio templates) with synthetic demos tied to opportunities (phase E)
 - ✅ Cost ledger budgets by category with 50/80/100% warnings (phase C)
 - ⬜ AI assistant over permissioned tools
 
@@ -280,8 +280,8 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 - ✅ Phase B — queues, throttles, breakers, attempts, dead letter, ops page, 1,000-task test (see section 4)
 - ✅ Phase C — staged qualification, freshness, research versions, budgets, forecasts (see section 4)
 - ✅ Phase D — Studio foundation, two-tenant isolation test, Studio screens (see section 4)
-- ⬜ Phase E — opportunity-to-application workflow
-- ⬜ Phase F — subscriptions, metering, Stripe test mode, profitability
+- ✅ Phase E — opportunity to application, acceptance test passing (see section 4)
+- ✅ Phase F — subscriptions, metering, invoices, Stripe test-mode adapter, profitability (see section 4); Stripe API calls untested without a key
 - ⬜ Phase G — scale validation with measured numbers
 
 ---
@@ -530,4 +530,126 @@ nullable columns).
 assessments, personalised demos on synthetic data, proposals, projects with
 estimate vs actual), then phase F (subscriptions, metering, Stripe test
 mode, profitability).
+
+### Phase E — opportunity to application (2026-10-22)
+
+**Built**
+- Opportunities (`services/delivery/opportunities.ts`) come from the latest
+  deep research (one per researched opportunity that cites a verified fact,
+  idempotent per research version) or are added by hand.
+- Solution matching (`services/delivery/matching.ts`) against the Studio
+  template catalogue: overlap between the words describing the work and each
+  template's use cases, name and description, plus an industry bonus.
+  Reuse class: exact, configuration, moderate or custom, with the reasons
+  (matched terms, industry, barriers). Not feasible is only ever a person's
+  call. Effort: from scratch ≈ 2.5 × the template's build estimate; reuse
+  needs 15/35/65/100% of that; with three or more closed projects on the
+  template, the estimate is scaled by their actual ÷ estimated hours.
+  A person can override the template and class with a reason.
+- Assessment (`services/delivery/assessment.ts`): tasks per week, minutes per
+  task, automatable share (low–high), loaded hourly cost, optional error rate
+  and cost, each with its source (stated by the prospect, observed, research
+  estimate, our assumption). The projection is a low/high scenario with
+  payback against the price, labelled PROJECTED, and it names unconfirmed
+  inputs. Research's hours seed an assessment whose inputs are all marked
+  unconfirmed.
+- Review gate: only a qualified opportunity (assessed, not "not feasible")
+  gets a demo or a proposal.
+- Demos: the matched template as a sandbox app on a per-workspace demo
+  client (kind DEMO, hidden from client lists and never billed), branded with
+  the company's public name, filled by test runs on synthetic variations of
+  each workflow's test input.
+- Proposals: priced from the rate card (hours × day rate ÷ 8, discovery fee,
+  the template's monthly price); the projection is shown as a scenario with
+  its inputs. An opportunity's proposal must be approved internally before it
+  can be sent or accepted. Acceptance is the share-link signature or a
+  recorded authorisation (who, and the evidence).
+- Conversion (admin): the customer tenant, a delivery project carrying the
+  estimate and price, and a draft application. Production still goes through
+  Studio's test gate.
+- Delivery projects: time entries by category, estimate against actual and
+  cost at the internal hourly rate; closing a project feeds calibration.
+- Deep research now matches against the Studio catalogue.
+- Screens: Opportunities board, opportunity page (evidence, match, reasons,
+  estimates, assessment, decision, demo, proposal, customer), account panel,
+  Projects.
+
+**Migration**: `20261022040000_opportunity_to_application` (additive: four
+tables, `Client.kind`, `Organization.internalHourlyCostCents`, four nullable
+proposal columns).
+
+**Tests**: acceptance (`delivery/__tests__/opportunity.int.test.ts`, six
+cases on Postgres): research → two opportunities (one exact template match,
+one custom), idempotent sync; qualifying refused without an assessment; the
+projection labelled and naming its unconfirmed input; no demo for a custom
+build; a demo in the DEMO client with only synthetic test records; proposal
+priced by arithmetic; acceptance refused before approval (service and share
+link); conversion creating customer, project and a draft app (idempotent);
+production deploy refused until tests pass, then allowed; the first
+production record lands in the customer's own tenant; time logged against
+the estimate; calibration kicks in at three closed projects. Seven unit
+tests (stemming, scoring, classes, effort, projection, input validation,
+synthetic variations). Browser check of the whole flow (board, review,
+demo, approval, acceptance, conversion, time logging) passed after one fix
+(an approval could report an error after it had saved).
+
+**Limits**: matching is lexical; synonyms the templates don't use won't
+match (a person can override). Effort factors are starting assumptions
+until real projects calibrate them. No live model call was made in this
+environment.
+
+### Phase F — billing and business operations (2026-10-22)
+
+**Built**
+- Customer subscriptions (`services/customer-billing/`): setup fee, monthly
+  fee, runs included, price per extra run (thousandths of a cent). Drafts
+  until the workspace owner authorises them; the demo client is never billed.
+- Ledger provider: Relay issues the setup invoice at authorisation, a period
+  invoice in arrears at each period end (monthly fee plus runs above the
+  included amount), and a prorated final invoice on immediate cancellation;
+  each once (idempotency key), numbered INV-YYYY-NNNN; payment is recorded by
+  hand; open invoices can be voided.
+- Stripe provider (`stripe-adapter.ts`): customer, product and an emailed
+  monthly subscription (send_invoice, net 14) with the setup fee on the first
+  invoice, all with idempotency keys; runs above the included amount are
+  added as an invoice item to the next invoice; cancel now or at period end.
+  A live key is refused unless `CUSTOMER_BILLING_LIVE=enabled`.
+- Webhooks: the existing Stripe endpoint (signature verified, each event
+  processed once) routes customer-subscription events by metadata, mirrors
+  Stripe invoices and subscription status, marks past due on failed payment,
+  and does not apply a live-mode event while live billing is off (it raises
+  a critical alert instead).
+- Metering: succeeded production runs from the platform's own records, per
+  period (`MeteredUsage`). Failed and test runs are not billed.
+- The daily maintenance pass closes ended periods (and catches up if several
+  have passed).
+- Reports: MRR and ARR, MRR history, invoiced, collected, outstanding,
+  overdue, churned subscriptions; per-customer margin for a month (revenue
+  minus delivery time at the internal hourly cost and the template's
+  infrastructure estimate). Provider costs and research spent to win the
+  customer are shown in their own currency, not converted.
+- Billing page (owner only).
+
+**Migration**: `20261022050000_customer_billing` (additive: three tables).
+
+**Tests**: acceptance (`customer-billing/__tests__/billing.int.test.ts`, six
+cases on Postgres, test mode, no live charges): no billing for the demo
+client; nothing invoiced before authorisation; setup invoice; 130 succeeded
+production runs metered (10 failed, 20 test and another customer's 50 not
+counted); one period invoice of $450 + 30 × $0.05; a second cycle adds
+nothing; paid once; immediate cancellation prorated 15 of 31 days; cancel at
+period end takes effect at the next close; MRR, ARR, invoiced, collected,
+outstanding, churn, MRR history and a customer's margin match hand
+calculations; live keys refused without the switch; webhooks: a forged
+signature rejected, a signed event applied once (replay deduplicated) and
+the invoice mirrored as paid, a live-mode event not applied and alerted.
+Four unit tests on invoice arithmetic and on the exact requests sent to
+Stripe (idempotency keys, metadata, collection method, setup item, overage).
+Browser check: subscription drafted from a project, authorised, setup
+invoice issued, MRR shown.
+
+**Limits**: no call to the Stripe API itself has been made (no key here);
+the adapter's requests are unit-tested against a fake client, and webhook
+handling against locally signed events. Taxes are not calculated (0). One
+currency per subscription; reports group by currency.
 

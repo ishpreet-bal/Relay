@@ -10,6 +10,7 @@ import type { Capability, ConnectorDefinition, ProviderContext, ProviderResult }
 import { apolloConnector } from './providers/apollo';
 import { googlePlacesConnector } from './providers/google-places';
 import { resendConnector } from './providers/resend';
+import { hunterConnector, zeroBounceConnector } from './providers/email-verification';
 
 /**
  * Every connector Relay knows about, including the ones designed for but
@@ -57,8 +58,8 @@ export const CONNECTORS: readonly ConnectorDefinition[] = [
   companyWebsite,
   googlePlacesConnector,
   apolloConnector,
-  planned('hunter', 'Hunter', ['EMAIL_FINDER', 'EMAIL_VERIFICATION'], 'Email finding and verification.', ['HUNTER_API_KEY']),
-  planned('zerobounce', 'ZeroBounce', ['EMAIL_VERIFICATION'], 'Email deliverability verification before sending.', ['ZEROBOUNCE_API_KEY']),
+  zeroBounceConnector,
+  hunterConnector,
   resendConnector,
   planned('google_workspace', 'Gmail / Google Calendar', ['EMAIL_SENDING', 'CALENDAR'], 'Send from a real Gmail inbox and book meetings on Google Calendar.', ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']),
   planned('microsoft_365', 'Outlook / Microsoft Calendar', ['EMAIL_SENDING', 'CALENDAR'], 'Send from Outlook and book meetings on Microsoft calendars.', ['MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET']),

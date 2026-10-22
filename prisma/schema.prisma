@@ -643,6 +643,10 @@ model Account {
   automationOpportunities Opportunity[]
 
   @@unique([clientId, domain])
+  // Trigram indexes for the explorer's substring search (ILIKE '%…%').
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Account_name_trgm_idx")
+  @@index([domain(ops: raw("gin_trgm_ops"))], type: Gin, map: "Account_domain_trgm_idx")
+  @@index([city(ops: raw("gin_trgm_ops"))], type: Gin, map: "Account_city_trgm_idx")
   @@index([clientId, pipelineStage, screeningScore(sort: Desc)])
   @@index([organizationId, pipelineStage])
   @@index([nextRefreshAt])
@@ -792,6 +796,8 @@ model Contact {
   provenance   DataProvenance[]
 
   @@unique([accountId, email])
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_email_trgm_idx")
+  @@index([lastName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_lastName_trgm_idx")
   @@index([organizationId, email])
   @@index([clientId, score(sort: Desc)])
 }

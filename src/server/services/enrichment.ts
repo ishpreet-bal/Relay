@@ -151,6 +151,38 @@ export async function discoverContacts(access: AccessContext, accountId: string,
   return { status: 'SUCCESS' as const, provider: outcome.provider, added };
 }
 
+const VERIFY_TTL_DAYS = 30;
+
+/**
+ * Checks a contact's email with a connected verification provider (cached
+ * for 30 days per address). Only a provider's VALID counts as verified;
+ * "couldn't tell" stays unverified.
+ */
+export async function verifyContactEmail(access: AccessContext, contactId: string) {
+  const contact = await db.contact.findFirst({ where: { id: contactId, ...clientFilter(access), deletedAt: null } });
+  if (!contact) throw new NotFoundError('Contact');
+  if (!contact.email) throw new DomainError('This contact has no email to verify.');
+  const ctx = { organizationId: contact.organizationId, clientId: contact.clientId, accountId: contact.accountId, contactId };
+  const outcome = await runChain<{ verification: 'UNVERIFIED' | 'VALID' | 'RISKY' | 'INVALID' | 'CATCH_ALL' }>(
+    ctx,
+    'EMAIL_VERIFICATION',
+    { operation: 'email.verify', lookupKey: contact.email.toLowerCase(), ttlDays: VERIFY_TTL_DAYS, usageType: 'EMAIL_VERIFICATION' },
+    (def) => def.emailVerification?.verifyEmail({ email: contact.email! }, ctx) ?? null,
+  );
+  if (outcome.result.status !== 'SUCCESS' || !outcome.result.data) {
+    return { status: outcome.result.status, provider: outcome.provider, verification: contact.emailVerification, error: outcome.result.error ?? null };
+  }
+  const { verification } = outcome.result.data;
+  await db.contact.update({ where: { id: contactId }, data: { emailVerification: verification, emailVerifiedAt: verification === 'VALID' ? new Date() : null } });
+  await recordProvenance(
+    { organizationId: contact.organizationId, contactId },
+    { emailVerification: verification },
+    { source: 'PROVIDER', provider: outcome.provider, providerRecordId: outcome.providerRecordId, status: verification === 'VALID' ? 'VERIFIED' : 'PROVIDER_REPORTED', confidence: outcome.result.confidence ?? null },
+  );
+  await rescoreAccount(contact.accountId);
+  return { status: 'SUCCESS' as const, provider: outcome.provider, verification, error: null };
+}
+
 /** Looks up a work email for one contact. Costs provider credits; cached for reuse. */
 export async function revealEmail(access: AccessContext, contactId: string) {
   const contact = await db.contact.findFirst({

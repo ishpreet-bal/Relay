@@ -5,7 +5,7 @@ import {
   getContactDetail, listContacts, updateContact,
 } from '@/server/services/contacts';
 import { currentProvenance } from '@/server/services/provenance';
-import { revealEmail } from '@/server/services/enrichment';
+import { revealEmail, verifyContactEmail } from '@/server/services/enrichment';
 import { recordAudit } from '@/lib/audit';
 
 export const contactsRouter = router({
@@ -57,4 +57,8 @@ export const contactsRouter = router({
   revealEmail: permissionProcedure('account:write')
     .input(z.object({ id: z.string().uuid() }))
     .mutation(({ ctx, input }) => revealEmail(ctx.access, input.id)),
+
+  verifyEmail: permissionProcedure('account:write')
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(({ ctx, input }) => verifyContactEmail(ctx.access, input.id)),
 });

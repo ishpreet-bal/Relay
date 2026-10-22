@@ -1,5 +1,5 @@
 import { startOfDay } from 'date-fns';
-import type { PipelineStage, Prisma } from '@prisma/client';
+import { Prisma, type PipelineStage } from '@prisma/client';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { assertClientAccess, type AccessContext } from '@/server/access/scope';
@@ -56,14 +56,18 @@ export async function screenAccounts(organizationId: string, accountIds: string[
   const summary = { screened: 0, qualified: 0, screenedOut: 0, analysesQueued: 0 };
   const toAnalyze: string[] = [];
 
-  for (const id of accountIds) {
-    let account = await db.account.findFirst({ where: { id, organizationId, deletedAt: null }, select: SCREENING_SELECT });
-    if (!account) continue;
-    if (!account.scoredAt || !account.scoreBreakdown) {
-      await rescoreAccount(id);
-      account = await db.account.findFirst({ where: { id }, select: SCREENING_SELECT });
-      if (!account) continue;
-    }
+  // Accounts are normally scored when created; score any that weren't first.
+  const unscored = await db.account.findMany({
+    where: { id: { in: accountIds }, organizationId, deletedAt: null, OR: [{ scoredAt: null }, { scoreBreakdown: { equals: Prisma.DbNull } }] },
+    select: { id: true },
+  });
+  for (const a of unscored) await rescoreAccount(a.id);
+
+  // One read and one write for the whole batch.
+  const accounts = await db.account.findMany({ where: { id: { in: accountIds }, organizationId, deletedAt: null }, select: SCREENING_SELECT });
+  const now = new Date();
+  const rows: Prisma.Sql[] = [];
+  for (const account of accounts) {
     const result = screenAccount({
       score: account.scoreBreakdown as unknown as AccountScore | null,
       hasWebsite: !!account.websiteUrl,
@@ -76,17 +80,20 @@ export async function screenAccounts(organizationId: string, accountIds: string[
       doNotContact: account.doNotContact,
     }, settings);
     const stage = stageAfterScreening(account.pipelineStage, account.stagePinned, result.advance);
-    await db.account.update({
-      where: { id },
-      data: {
-        screeningScore: result.score, screeningReasons: reasonsJson(result), screenedAt: new Date(),
-        opportunityTier: result.tier, pipelineStage: stage, nextRefreshAt: refreshDue(result.tier, stage, settings),
-      },
-    });
+    const refresh = refreshDue(result.tier, stage, settings);
+    rows.push(Prisma.sql`(${account.id}::uuid, ${result.score}::int, ${JSON.stringify(reasonsJson(result))}::jsonb, ${result.tier}::"OpportunityTier", ${stage}::"PipelineStage", ${refresh}::timestamp(3))`);
     summary.screened++;
     if (stage === 'QUALIFIED') summary.qualified++;
     if (stage === 'SCREENED_OUT') summary.screenedOut++;
-    if (stage === 'QUALIFIED' && account.websiteUrl) toAnalyze.push(id);
+    if (stage === 'QUALIFIED' && account.websiteUrl) toAnalyze.push(account.id);
+  }
+  if (rows.length) {
+    await db.$executeRaw`
+      UPDATE "Account" AS a
+      SET "screeningScore" = v.score, "screeningReasons" = v.reasons, "screenedAt" = ${now}::timestamp(3),
+          "opportunityTier" = v.tier, "pipelineStage" = v.stage, "nextRefreshAt" = v.refresh, "updatedAt" = ${now}::timestamp(3)
+      FROM (VALUES ${Prisma.join(rows)}) AS v(id, score, reasons, tier, stage, refresh)
+      WHERE a.id = v.id`;
   }
 
   if (settings.autoAnalyze && toAnalyze.length) {

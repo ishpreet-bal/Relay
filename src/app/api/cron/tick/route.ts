@@ -33,6 +33,8 @@ export async function GET(req: Request) {
   const deadline = started + BUDGET_MS;
   const workerId = 'cron';
 
+  // Report in first, so this tick's own health check counts it as a live worker.
+  await heartbeat(workerId, 'cron', 0, null);
   const maintenance = await scheduledMaintenance();
   let jobs = 0;
   let rescored = 0;
