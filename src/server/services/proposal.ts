@@ -29,7 +29,7 @@ export interface LineItem {
 }
 
 /** Effort multipliers per phase, applied to the total build estimate. */
-const PHASE_SHAPE = [
+export const PHASE_SHAPE = [
   { phase: 'Discovery and mapping', share: 0.15, deliverables: ['Process walkthrough with your team', 'Current-state workflow map', 'Agreed success measures'] },
   { phase: 'Build', share: 0.55, deliverables: ['Automation built and connected to your systems', 'Test environment you can try before go-live'] },
   { phase: 'Rollout and training', share: 0.20, deliverables: ['Go-live with your team', 'Written runbook and short training session'] },
@@ -166,7 +166,7 @@ export async function buildProposal(params: {
 }
 
 /** Sequential per-organization numbering: ORG-2026-0042. */
-async function nextProposalNumber(organizationId: string) {
+export async function nextProposalNumber(organizationId: string) {
   const year = new Date().getFullYear();
   const prefix = `${year}-`;
 
@@ -218,6 +218,8 @@ export async function acceptProposal(params: { shareToken: string; signatureName
   if (!proposal) return null;
   if (proposal.expiresAt && proposal.expiresAt < new Date()) return { expired: true as const };
   if (proposal.status === 'ACCEPTED') return { alreadyAccepted: true as const, proposal };
+  // An opportunity's proposal needs internal approval before a customer can accept it.
+  if (proposal.opportunityId && !proposal.approvedAt) return { notApproved: true as const };
 
   const updated = await db.proposal.update({
     where: { id: proposal.id },

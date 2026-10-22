@@ -3,16 +3,17 @@ import OpenAI from 'openai';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { NotConfiguredError } from '@/server/errors';
-import { costCents, costMillicents, MODELS } from './pricing';
+import { costCents, costMillicents, MODELS, PRICING } from './pricing';
 import { assertBudget } from './budget';
 import { recordUsage, type UsageAttribution } from '@/server/services/usage';
 import { logger } from '@/lib/logger';
+import { ProviderUnavailableError, reportProviderResult, takeProviderSlot } from '@/server/queues/throttle';
 import type { UsageType } from '@prisma/client';
 
 export interface CompletionRequest {
   organizationId: string;
   /** What this call is for — becomes AiRun.kind and drives cost reporting. */
-  kind: 'research' | 'personalize' | 'verify' | 'proposal' | 'portfolio' | 'classify';
+  kind: 'research' | 'deep_research' | 'personalize' | 'verify' | 'proposal' | 'portfolio' | 'classify';
   entityId?: string;
   /** Who the cost belongs to, for unit economics. */
   attribution?: UsageAttribution;
@@ -23,6 +24,13 @@ export interface CompletionRequest {
   temperature?: number;
   /** Forces a JSON-only response and strips any stray prose or fences. */
   json?: boolean;
+  /**
+   * JSON Schema the response must match. On models that support structured
+   * outputs it is enforced by the API; elsewhere the prompt must ask for it.
+   */
+  jsonSchema?: Record<string, unknown>;
+  /** Thinking depth on current models; omit for the model's default. */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   model?: string;
   fallbackModel?: string;
 }
@@ -55,6 +63,7 @@ function openai() {
 
 const USAGE_TYPE: Record<CompletionRequest['kind'], UsageType> = {
   research: 'AI_RESEARCH',
+  deep_research: 'AI_DEEP_RESEARCH',
   personalize: 'AI_PERSONALIZATION',
   verify: 'AI_VERIFICATION',
   proposal: 'AI_OTHER',
@@ -91,7 +100,7 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
   try {
     let result: CompletionResult;
     try {
-      result = await withRetries(() => callAnthropic(req, primary), 3);
+      result = await withRetries(() => throttledAnthropic(req, primary), 3);
     } catch (primaryError) {
       const fallback = req.fallbackModel ?? MODELS.fallbackResearch;
       if (!openai()) throw primaryError;
@@ -116,7 +125,7 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
       ...req.attribution,
       provider: result.provider,
       type: USAGE_TYPE[req.kind],
-      costMillicents: costMillicents(result.model, result.tokensIn, result.tokensOut),
+      costMillicents: PRICING[result.model] ? costMillicents(result.model, result.tokensIn, result.tokensOut) : result.costCents * 1000,
       aiRunId: run.id,
       metadata: { model: result.model, tokensIn: result.tokensIn, tokensOut: result.tokensOut, promptVersion: req.promptVersion },
     });
@@ -134,6 +143,29 @@ export async function complete(req: CompletionRequest): Promise<CompletionResult
   }
 }
 
+/**
+ * One Anthropic call under the shared request budget and breaker. Only the
+ * provider's own faults (network, 408/409/429/5xx) count toward opening the
+ * breaker; a bad request is ours, not theirs.
+ */
+async function throttledAnthropic(req: CompletionRequest, model: string) {
+  await takeProviderSlot('anthropic');
+  try {
+    const result = await callAnthropic(req, model);
+    await reportProviderResult('anthropic', { ok: true });
+    return result;
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    if (!status || RETRYABLE.has(status)) {
+      await reportProviderResult('anthropic', {
+        ok: false, error: err instanceof Error ? err.message : String(err),
+        retryAfter: status === 429 ? new Date(Date.now() + 30_000) : undefined,
+      });
+    }
+    throw err;
+  }
+}
+
 async function withRetries<T>(fn: () => Promise<T>, attempts: number): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -141,6 +173,10 @@ async function withRetries<T>(fn: () => Promise<T>, attempts: number): Promise<T
       return await fn();
     } catch (err) {
       lastError = err;
+      // A paused provider won't recover in seconds; let the caller reschedule.
+      if (err instanceof ProviderUnavailableError) throw err;
+      // The same request would refuse or truncate again.
+      if (err instanceof ModelOutputError) throw err;
       const status = (err as { status?: number })?.status;
       if (status && !RETRYABLE.has(status)) throw err;
       if (i === attempts - 1) break;
@@ -152,20 +188,72 @@ async function withRetries<T>(fn: () => Promise<T>, attempts: number): Promise<T
   throw lastError;
 }
 
+/**
+ * Current Claude models (Opus 4.7+, Sonnet 5+, Haiku 5.5, Fable, Mythos)
+ * reject non-default sampling parameters and assistant-turn prefills with a
+ * 400, and think adaptively by default (thinking counts toward max_tokens).
+ */
+export function hasModernRequestSurface(model: string) {
+  return /^claude-(opus-(4-[78]|5)|sonnet-5|haiku-5|fable|mythos)/.test(model);
+}
+
+/** Opus 4.6 and Sonnet 4.6 already reject prefills but still accept temperature. */
+function rejectsPrefill(model: string) {
+  return hasModernRequestSurface(model) || /^claude-(opus|sonnet)-4-6/.test(model);
+}
+
+export class ModelOutputError extends Error {
+  constructor(message: string, public reason: 'refusal' | 'max_tokens') {
+    super(message);
+    this.name = 'ModelOutputError';
+  }
+}
+
+/**
+ * Models that may decline some requests under their safeguards and accept a
+ * server-side fallback: on a decline the API re-runs the request on a
+ * fallback model in the same call instead of returning a refusal.
+ */
+function supportsServerFallback(model: string) {
+  return /^claude-(opus-5|fable-5-1|sonnet-5-5)/.test(model);
+}
+
 async function callAnthropic(req: CompletionRequest, model: string): Promise<CompletionResult> {
   const started = Date.now();
-  const response = await anthropic().messages.create({
+  const modern = hasModernRequestSurface(model);
+  const prefill = req.json && !rejectsPrefill(model);
+  const fallback = supportsServerFallback(model);
+  const params = {
     model,
-    max_tokens: req.maxTokens ?? 4096,
-    temperature: req.temperature ?? 0.2,
+    // Adaptive thinking shares max_tokens with the answer; leave it room.
+    max_tokens: modern ? Math.max(req.maxTokens ?? 4096, 16_000) : req.maxTokens ?? 4096,
+    ...(modern ? {} : { temperature: req.temperature ?? 0.2 }),
     system: req.system,
     messages: [
-      { role: 'user', content: req.user },
-      // Prefilling the assistant turn with an opening brace is the most reliable
-      // way to get JSON without a preamble.
-      ...(req.json ? [{ role: 'assistant' as const, content: '{' }] : []),
+      { role: 'user' as const, content: req.user },
+      // Older models: prefilling an opening brace is the most reliable way to
+      // get JSON without a preamble. Current models use structured outputs.
+      ...(prefill ? [{ role: 'assistant' as const, content: '{' }] : []),
     ],
-  });
+    ...(modern && (req.jsonSchema || req.effort) ? {
+      output_config: {
+        ...(req.jsonSchema ? { format: { type: 'json_schema', schema: req.jsonSchema } } : {}),
+        ...(req.effort ? { effort: req.effort } : {}),
+      },
+    } : {}),
+    ...(fallback ? { fallbacks: 'default' } : {}),
+  };
+  // output_config and fallbacks are newer than this SDK's types; the API accepts them.
+  const response = await anthropic().messages.create(
+    params as Anthropic.MessageCreateParamsNonStreaming,
+    fallback ? { headers: { 'anthropic-beta': 'server-side-fallback-2026-07-01' } } : undefined,
+  );
+  // With a fallback, another model may have answered; bill at its rates.
+  const servedBy = typeof response.model === 'string' && response.model ? response.model : model;
+
+  const stop = response.stop_reason as string | null;
+  if (stop === 'refusal') throw new ModelOutputError('The model declined this request.', 'refusal');
+  if (stop === 'max_tokens') throw new ModelOutputError('The model ran out of output tokens before finishing.', 'max_tokens');
 
   const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -173,12 +261,12 @@ async function callAnthropic(req: CompletionRequest, model: string): Promise<Com
     .join('');
 
   return {
-    text: req.json ? `{${text}` : text,
+    text: prefill ? `{${text}` : text,
     provider: 'anthropic',
-    model,
+    model: servedBy,
     tokensIn: response.usage.input_tokens,
     tokensOut: response.usage.output_tokens,
-    costCents: costCents(model, response.usage.input_tokens, response.usage.output_tokens),
+    costCents: costCents(PRICING[servedBy] ? servedBy : model, response.usage.input_tokens, response.usage.output_tokens),
     latencyMs: Date.now() - started,
   };
 }

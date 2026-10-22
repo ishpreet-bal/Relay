@@ -14,6 +14,7 @@ import { Table, Th, Td } from '@/components/ui/table';
 import { ErrorNote, Loading } from '@/components/ui/states';
 import { Ago } from '@/components/ui/time';
 import { cn } from '@/lib/utils';
+import { JobDialog, ProvidersPanel, QueuesPanel, WorkersPanel } from './operations';
 
 const STATUS_TONE: Record<JobStatus, Tone> = { QUEUED: 'neutral', RUNNING: 'accent', COMPLETED: 'positive', FAILED: 'negative', CANCELLED: 'neutral', RETRYING: 'warning' };
 const dollars = (millicents: number) => `$${(millicents / 100_000).toFixed(2)}`;
@@ -22,11 +23,13 @@ const dollars = (millicents: number) => `$${(millicents / 100_000).toFixed(2)}`;
  * What the machinery is doing: background jobs, research that failed, model
  * calls, provider lookups, and what all of it cost. For Relay staff only.
  */
-export function SystemPage({ canRetry }: { canRetry: boolean }) {
+export function SystemPage({ canRetry, canControl }: { canRetry: boolean; canControl: boolean }) {
   const { clientId, clients } = useActiveClient();
   const [status, setStatus] = useState<JobStatus[] | undefined>(undefined);
+  const [deadOnly, setDeadOnly] = useState(false);
+  const [openJob, setOpenJob] = useState<string | null>(null);
   const summary = trpc.ops.jobSummary.useQuery(undefined, { refetchInterval: 15_000 });
-  const jobs = trpc.ops.jobs.useQuery({ status, limit: 100 }, { refetchInterval: 15_000 });
+  const jobs = trpc.ops.jobs.useQuery({ status, deadLetter: deadOnly || undefined, limit: 100 }, { refetchInterval: 15_000 });
   const failedResearch = trpc.ops.failedResearch.useQuery();
   const aiRuns = trpc.ops.aiRuns.useQuery({ limit: 30 });
   const providerLog = trpc.ops.providerLog.useQuery({ limit: 30 });
@@ -50,13 +53,25 @@ export function SystemPage({ canRetry }: { canRetry: boolean }) {
           <Kpi label="Spend (30d)" value={costs.data ? dollars(costs.data.totalMillicents) : '—'} caption={clientId ? 'this client' : 'all clients'} />
         </div>
 
-        <Section title="Background jobs"
+        <QueuesPanel canControl={canControl} canRetry={canRetry} />
+
+        <div className="grid xl:grid-cols-2 gap-6">
+          <ProvidersPanel canControl={canControl} />
+          <WorkersPanel />
+        </div>
+
+        <Section title="Background jobs" hint="Select a job to see every attempt, its payload and what it cost."
                  action={
-                   <select aria-label="Filter jobs" className="input h-7 w-36 text-micro" value={status?.[0] ?? ''}
-                           onChange={(e) => setStatus(e.target.value ? [e.target.value as JobStatus] : undefined)}>
-                     <option value="">All statuses</option>
-                     {(['QUEUED', 'RUNNING', 'RETRYING', 'FAILED', 'COMPLETED', 'CANCELLED'] as const).map((s) => <option key={s} value={s}>{humanize(s)}</option>)}
-                   </select>
+                   <div className="flex items-center gap-2">
+                     <label className="flex items-center gap-1 text-[11px] text-muted">
+                       <input type="checkbox" checked={deadOnly} onChange={(e) => setDeadOnly(e.target.checked)} /> Dead letters only
+                     </label>
+                     <select aria-label="Filter jobs" className="input h-7 w-36 text-micro" value={status?.[0] ?? ''}
+                             onChange={(e) => setStatus(e.target.value ? [e.target.value as JobStatus] : undefined)}>
+                       <option value="">All statuses</option>
+                       {(['QUEUED', 'RUNNING', 'RETRYING', 'FAILED', 'COMPLETED', 'CANCELLED'] as const).map((s) => <option key={s} value={s}>{humanize(s)}</option>)}
+                     </select>
+                   </div>
                  }>
           <ErrorNote error={jobs.error ?? retry.error ?? cancel.error} />
           {jobs.isPending ? <Loading /> : !jobs.data?.length ? <p className="card p-4 text-micro text-muted">No jobs.</p> : (
@@ -64,9 +79,15 @@ export function SystemPage({ canRetry }: { canRetry: boolean }) {
               <thead><tr><Th>Job</Th><Th>Status</Th><Th className="text-right">Attempts</Th><Th>When</Th><Th>Error</Th>{canRetry && <Th />}</tr></thead>
               <tbody>
                 {jobs.data.map((j) => (
-                  <tr key={j.id}>
-                    <Td className="text-micro">{humanize(j.type)}<span className="block text-[11px] text-muted">{clientName(j.clientId)}</span></Td>
-                    <Td><Pill tone={STATUS_TONE[j.status]}>{j.status.toLowerCase()}</Pill></Td>
+                  <tr key={j.id} className="hover:bg-raised/60">
+                    <Td className="text-micro">
+                      <button type="button" className="text-left hover:text-accent" onClick={() => setOpenJob(j.id)}>{humanize(j.type)}</button>
+                      <span className="block text-[11px] text-muted">{j.queue} · {clientName(j.clientId)}</span>
+                    </Td>
+                    <Td>
+                      <Pill tone={STATUS_TONE[j.status]}>{j.deadLetteredAt ? 'dead letter' : j.status.toLowerCase()}</Pill>
+                      {j.waitingReason && <span className="block text-[11px] text-held max-w-[200px] truncate" title={j.waitingReason}>{j.waitingReason}</span>}
+                    </Td>
                     <Td className="num text-right">{j.attempts}/{j.maxAttempts}</Td>
                     <Td className="text-micro text-muted">{j.status === 'QUEUED' || j.status === 'RETRYING' ? <>runs <Ago date={j.runAt} /></> : <Ago date={j.finishedAt ?? j.updatedAt} />}</Td>
                     <Td className="text-[11px] text-blocked max-w-[320px] truncate" >{j.error}</Td>
@@ -148,6 +169,7 @@ export function SystemPage({ canRetry }: { canRetry: boolean }) {
           </Section>
         </div>
       </PageBody>
+      {openJob && <JobDialog id={openJob} onClose={() => setOpenJob(null)} />}
     </>
   );
 }

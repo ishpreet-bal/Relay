@@ -1,17 +1,12 @@
 import { hostname } from 'node:os';
-import type { Job } from '@prisma/client';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { runResearch } from './ai/research';
-import { BudgetExceededError } from './ai/budget';
-import { systemAccess } from './access/scope';
-import { NotConfiguredError } from './errors';
 import { runSequencer } from './services/sequencer';
 import { enforceContextualGuardrail } from './services/tier-performance';
-import { rescoreAccount } from './services/scoring';
 import { refreshQueue } from './services/call-queue';
-import { claimJobs, completeJob, failJob, releaseStaleJobs } from './services/jobs';
-import { discoverContacts, enrichAccount } from './services/enrichment';
+import { heartbeat, processGroup, processResearch, processStaleScores } from './services/job-runner';
+import { scheduledMaintenance } from './services/scheduler';
+import type { WorkerGroup } from './queues/registry';
 
 /**
  * The background worker. Claims work with FOR UPDATE SKIP LOCKED so several
@@ -20,125 +15,33 @@ import { discoverContacts, enrichAccount } from './services/enrichment';
  * releases its lock rather than stranding a job.
  *
  * Each cycle: research queue, generic jobs, stale scores, sequencing, and on
- * slower clocks the call-queue refresh and daily guardrails.
+ * slower clocks scheduled discovery and maintenance, the call-queue refresh
+ * and daily guardrails. Job execution itself lives in services/job-runner so
+ * the cron tick can share it when no worker is deployed.
  *
- * Run with: npm run worker
+ * Run with: npm run worker                      (every queue)
+ *           npm run worker -- --group=studio      (customer workflows and billing only)
+ *           npm run worker -- --group=intelligence (prospecting: discovery, research, outreach)
+ * Running studio in its own process keeps a prospecting backlog from ever
+ * delaying a paying customer's automation.
  */
+const GROUP = parseGroup(process.argv.find((a) => a.startsWith('--group='))?.split('=')[1] ?? process.env.WORKER_GROUP ?? 'all');
+const RUNS_INTELLIGENCE = GROUP === 'all' || GROUP === 'intelligence';
+const RUNS_PLATFORM = GROUP === 'all' || GROUP === 'platform' || GROUP === 'intelligence';
+
+function parseGroup(v: string): WorkerGroup | 'all' {
+  if (v === 'all' || v === 'intelligence' || v === 'studio' || v === 'platform') return v;
+  throw new Error(`Unknown worker group "${v}" (expected all, intelligence, studio or platform)`);
+}
 const POLL_INTERVAL_MS = 15_000;
 const RESEARCH_CONCURRENCY = 2;
 const JOB_CONCURRENCY = 4;
 const RESCORE_BATCH = 50;
-const WORKER_ID = `${hostname()}:${process.pid}`;
+const WORKER_ID = `${GROUP}@${hostname()}:${process.pid}`;
+/** How long one job may run before pausable work (discovery) yields. */
+const JOB_SLICE_MS = 4 * 60_000;
 
 let shuttingDown = false;
-
-// ---------------------------------------------------------------------------
-// Research (its own queue: Research rows with status QUEUED)
-// ---------------------------------------------------------------------------
-
-interface ClaimedResearch { id: string; accountId: string; organizationId: string }
-
-async function claimResearchJobs(limit: number): Promise<ClaimedResearch[]> {
-  return db.$queryRaw<ClaimedResearch[]>`
-    UPDATE "Research"
-    SET status = 'RUNNING', "updatedAt" = NOW()
-    WHERE id IN (
-      SELECT id FROM "Research"
-      WHERE status = 'QUEUED'
-      ORDER BY "createdAt" ASC
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING id, "accountId", "organizationId";
-  `;
-}
-
-async function processResearch() {
-  const jobs = await claimResearchJobs(RESEARCH_CONCURRENCY);
-  await Promise.all(jobs.map(async (job) => {
-    try {
-      await runResearch(job.organizationId, job.accountId);
-      logger.info('research.completed', { accountId: job.accountId });
-    } catch (err) {
-      if (err instanceof BudgetExceededError) {
-        // Not the account's fault. Requeue so it resumes when budget allows.
-        await db.research.update({ where: { id: job.id }, data: { status: 'QUEUED', error: err.message } });
-        logger.warn('research.budget_exhausted', { accountId: job.accountId });
-        return;
-      }
-      logger.error('research.failed', { accountId: job.accountId, error: err });
-    }
-  }));
-  return jobs.length;
-}
-
-// ---------------------------------------------------------------------------
-// Generic jobs
-// ---------------------------------------------------------------------------
-
-type Handler = (job: Job) => Promise<unknown>;
-
-function requireOrg(job: Job) {
-  if (!job.organizationId) throw new Error('Job has no organization');
-  return systemAccess(job.organizationId);
-}
-
-const HANDLERS: Partial<Record<Job['type'], Handler>> = {
-  RESCORE: async (job) => {
-    if (job.entityId) return rescoreAccount(job.entityId).then(() => ({ rescored: 1 }));
-    const accounts = await db.account.findMany({
-      where: { organizationId: job.organizationId ?? undefined, ...(job.clientId ? { clientId: job.clientId } : {}), deletedAt: null },
-      select: { id: true },
-    });
-    for (const a of accounts) await rescoreAccount(a.id);
-    return { rescored: accounts.length };
-  },
-  CALL_QUEUE_REFRESH: (job) => refreshQueue(requireOrg(job).organizationId, job.clientId),
-  ACCOUNT_ENRICHMENT: (job) => enrichAccount(requireOrg(job), job.entityId!),
-  CONTACT_ENRICHMENT: (job) => discoverContacts(requireOrg(job), job.entityId!, Number((job.payload as { limit?: number } | null)?.limit ?? 5)),
-  RESEARCH: (job) => runResearch(requireOrg(job).organizationId, job.entityId!).then((r) => ({ signals: r.signalsCreated, groundingRate: r.report.groundingRate })),
-};
-
-async function processJobs() {
-  const jobs = await claimJobs(WORKER_ID, JOB_CONCURRENCY);
-  await Promise.all(jobs.map(async (job) => {
-    const handler = HANDLERS[job.type];
-    if (!handler) {
-      await failJob(job, new Error(`No handler for ${job.type}`), { retryable: false });
-      return;
-    }
-    try {
-      const result = await handler(job);
-      await completeJob(job.id, (result ?? null) as never);
-    } catch (err) {
-      // Missing configuration will not fix itself by retrying.
-      const retryable = !(err instanceof NotConfiguredError);
-      if (err instanceof BudgetExceededError) {
-        await db.job.update({ where: { id: job.id }, data: { status: 'RETRYING', runAt: new Date(Date.now() + 3600_000), error: err.message, lockedAt: null, lockedBy: null } });
-        return;
-      }
-      await failJob(job, err, { retryable });
-      logger.error('job.failed', { jobId: job.id, type: job.type, error: err });
-    }
-  }));
-  return jobs.length;
-}
-
-// ---------------------------------------------------------------------------
-// Stale scores (ICP changes and migrations mark scores stale with scoredAt = null)
-// ---------------------------------------------------------------------------
-
-async function processStaleScores() {
-  const stale = await db.account.findMany({
-    where: { scoredAt: null, deletedAt: null },
-    select: { id: true },
-    take: RESCORE_BATCH,
-  });
-  for (const a of stale) {
-    try { await rescoreAccount(a.id); } catch (err) { logger.error('rescore.failed', { accountId: a.id, error: err }); }
-  }
-  return stale.length;
-}
 
 // ---------------------------------------------------------------------------
 // Sequencing, per workspace
@@ -172,12 +75,18 @@ async function processSequences() {
 
 const HOUR = 3600_000;
 let lastQueueRefresh = 0;
+let lastMaintenance = 0;
 let lastDaily = 0;
 
 async function processPeriodic() {
+  if (Date.now() - lastMaintenance >= 15 * 60_000) {
+    lastMaintenance = Date.now();
+    // Due discovery schedules, company-key backfill, retention sweep.
+    try { await scheduledMaintenance(); } catch (err) { logger.error('maintenance.error', { error: err }); }
+  }
+
   if (Date.now() - lastQueueRefresh >= HOUR) {
     lastQueueRefresh = Date.now();
-    await releaseStaleJobs();
     const orgs = await db.organization.findMany({ where: { deletedAt: null }, select: { id: true, name: true } });
     for (const org of orgs) {
       try {
@@ -205,18 +114,20 @@ async function processPeriodic() {
 }
 
 async function loop() {
-  logger.info('worker.started', { workerId: WORKER_ID });
+  logger.info('worker.started', { workerId: WORKER_ID, group: GROUP });
   while (!shuttingDown) {
     try {
-      const research = await processResearch();
-      const jobs = await processJobs();
-      const rescored = await processStaleScores();
-      await processSequences();
-      await processPeriodic();
+      const research = RUNS_INTELLIGENCE ? await processResearch(RESEARCH_CONCURRENCY) : 0;
+      const jobs = await processGroup(WORKER_ID, GROUP, JOB_CONCURRENCY, { deadline: Date.now() + JOB_SLICE_MS });
+      const rescored = RUNS_INTELLIGENCE ? await processStaleScores(RESCORE_BATCH) : 0;
+      if (RUNS_INTELLIGENCE) await processSequences();
+      if (RUNS_PLATFORM) await processPeriodic();
+      await heartbeat(WORKER_ID, GROUP, research + jobs + rescored, null);
       // Back off only when idle; keep draining while there's work.
       if (research + jobs + rescored === 0) await sleep(POLL_INTERVAL_MS);
     } catch (err) {
       logger.error('worker.loop_error', { error: err });
+      await heartbeat(WORKER_ID, GROUP, 0, err instanceof Error ? err.message.slice(0, 500) : String(err));
       await sleep(POLL_INTERVAL_MS);
     }
   }

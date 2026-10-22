@@ -3,6 +3,7 @@ import { subDays } from 'date-fns';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { clientFilter, type AccessContext } from '@/server/access/scope';
+import { currentJob } from '@/server/queues/context';
 
 /**
  * Unit economics. Every external cost — model calls, enrichment lookups,
@@ -30,6 +31,12 @@ export async function recordUsage(params: UsageAttribution & {
   messageId?: string;
   metadata?: Prisma.InputJsonValue;
   occurredAt?: Date;
+  /** The cost is a list-price estimate, not what the provider reported. */
+  isEstimate?: boolean;
+  operation?: string;
+  durationMs?: number;
+  /** Defaults to the job this code is running inside. */
+  jobId?: string | null;
 }) {
   try {
     await db.usageRecord.create({
@@ -48,6 +55,10 @@ export async function recordUsage(params: UsageAttribution & {
         messageId: params.messageId ?? null,
         metadata: params.metadata,
         occurredAt: params.occurredAt ?? new Date(),
+        isEstimate: params.isEstimate ?? false,
+        operation: params.operation ?? null,
+        durationMs: params.durationMs ?? null,
+        jobId: params.jobId ?? currentJob()?.jobId ?? null,
       },
     });
   } catch (err) {

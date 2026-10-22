@@ -19,7 +19,7 @@ export async function PortalGate({ session, path }: { session: Session; path: st
     );
   }
   const clients = await db.client.findMany({
-    where: { organizationId: session.organizationId, archivedAt: null },
+    where: { organizationId: session.organizationId, archivedAt: null, kind: 'CUSTOMER' },
     orderBy: { name: 'asc' },
     select: { id: true, name: true },
   });

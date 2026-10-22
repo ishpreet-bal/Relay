@@ -1,4 +1,4 @@
-import type { EmailVerification, Seniority } from '@prisma/client';
+import type { DataSource, EmailVerification, Seniority } from '@prisma/client';
 
 /**
  * Relay is an orchestration layer over data and communication providers.
@@ -9,6 +9,7 @@ import type { EmailVerification, Seniority } from '@prisma/client';
  */
 
 export type Capability =
+  | 'COMPANY_DISCOVERY'
   | 'COMPANY_DATA'
   | 'CONTACT_DATA'
   | 'EMAIL_FINDER'
@@ -107,6 +108,82 @@ export interface PhoneDataProvider {
   ): Promise<ProviderResult<{ directPhone: string | null; mobilePhone: string | null }>>;
 }
 
+/** One search against a discovery source: a category in a place. */
+export interface DiscoveryQuery {
+  /** Free-text form, e.g. "machine shop in Mississauga, ON, Canada". */
+  text: string;
+  industry: string | null;
+  city: string | null;
+  region: string | null;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
+  radiusKm: number | null;
+  employeeMin: number | null;
+  employeeMax: number | null;
+  keywords: string[];
+  /** For structured sources: every place to search, in one request. */
+  locations: string[];
+  pageSize: number;
+  pageToken: string | null;
+}
+
+/**
+ * A business as a source reports it. Only business facts: no personal data
+ * is requested from discovery sources.
+ */
+export interface DiscoveredCompany {
+  externalId: string;
+  name: string;
+  websiteUrl: string | null;
+  phone: string | null;
+  addressLine: string | null;
+  city: string | null;
+  region: string | null;
+  postalCode: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  industry: string | null;
+  categories: string[];
+  employeeCount: number | null;
+  linkedinUrl: string | null;
+  description: string | null;
+  foundedYear: number | null;
+  /** OPERATIONAL, CLOSED_TEMPORARILY, CLOSED_PERMANENTLY, or null when unknown. */
+  businessStatus: string | null;
+  /** The source's own page for this business, for attribution. */
+  sourceUrl: string | null;
+}
+
+export interface DiscoveryPage {
+  companies: DiscoveredCompany[];
+  nextPageToken: string | null;
+}
+
+export interface DiscoveryProvider {
+  source: DataSource;
+  /**
+   * text: one free-text search per category and place (map-style sources).
+   * structured: one filtered search across all categories and places.
+   */
+  queryStyle: 'text' | 'structured';
+  /**
+   * licensed: results may be stored as the account record (under your
+   * subscription's terms).
+   * locate-only: results may only be used to find the business; the record
+   * is built from its own website, and only the source's id is kept.
+   */
+  storage: 'licensed' | 'locate-only';
+  /** Days this source's coordinates may be cached, when it allows that at all. */
+  coordinateRetentionDays: number | null;
+  /** Most pages one query may be paged through. */
+  maxPages: number;
+  /** Cost of one request, and whether that figure is an estimate. */
+  requestCost(): { millicents: number; isEstimate: boolean };
+  search(query: DiscoveryQuery): Promise<ProviderResult<DiscoveryPage>>;
+}
+
 export interface OutboundEmail {
   from: string;
   to: string;
@@ -158,6 +235,7 @@ export interface ConnectorDefinition {
   docsUrl?: string;
   /** Default position in fallback chains (lower runs first). */
   defaultPriority: number;
+  discovery?: DiscoveryProvider;
   company?: CompanyProvider;
   contacts?: ContactProvider;
   emailFinder?: EmailFinderProvider;

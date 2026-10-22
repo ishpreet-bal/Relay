@@ -3,9 +3,12 @@ import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { NotConfiguredError } from '@/server/errors';
 import { recordUsage } from '@/server/services/usage';
+import { ProviderUnavailableError, reportProviderResult, takeProviderSlot } from '@/server/queues/throttle';
+import { assertCategoryBudget } from '@/server/services/pipeline/budgets';
 import { findCachedRecord, recordProviderCall } from './records';
 import type { Capability, ConnectorDefinition, ProviderContext, ProviderResult } from './types';
 import { apolloConnector } from './providers/apollo';
+import { googlePlacesConnector } from './providers/google-places';
 import { resendConnector } from './providers/resend';
 
 /**
@@ -52,6 +55,7 @@ function planned(id: string, name: string, capabilities: Capability[], descripti
 
 export const CONNECTORS: readonly ConnectorDefinition[] = [
   companyWebsite,
+  googlePlacesConnector,
   apolloConnector,
   planned('hunter', 'Hunter', ['EMAIL_FINDER', 'EMAIL_VERIFICATION'], 'Email finding and verification.', ['HUNTER_API_KEY']),
   planned('zerobounce', 'ZeroBounce', ['EMAIL_VERIFICATION'], 'Email deliverability verification before sending.', ['ZEROBOUNCE_API_KEY']),
@@ -154,6 +158,7 @@ export async function runChain<T>(
   }
 
   let last: ChainOutcome<T> | null = null;
+  let unavailable: ProviderUnavailableError | null = null;
   for (const def of chain) {
     const cached = await findCachedRecord({ organizationId: ctx.organizationId, provider: def.id, operation: op.operation, lookupKey: op.lookupKey });
     if (cached) {
@@ -168,6 +173,15 @@ export async function runChain<T>(
       continue;
     }
 
+    // Live calls cost money: the enrichment budget is checked before each.
+    if (op.usageType !== 'EXTERNAL_DATA') await assertCategoryBudget(ctx.organizationId, 'enrichment');
+    // A provider that is rate-limited or paused is skipped for the next in the chain.
+    try {
+      await takeProviderSlot(def.id);
+    } catch (err) {
+      if (err instanceof ProviderUnavailableError) { unavailable = err; continue; }
+      throw err;
+    }
     const pending = call(def);
     if (!pending) continue; // this provider does not support the operation
     let result: ProviderResult<T>;
@@ -176,6 +190,7 @@ export async function runChain<T>(
     } catch (err) {
       result = { status: 'ERROR', costMillicents: 0, error: err instanceof Error ? err.message : 'Request failed' };
     }
+    await reportProviderResult(def.id, result.status === 'ERROR' ? { ok: false, error: result.error ?? 'Request failed' } : { ok: true });
 
     const record = await recordProviderCall({
       organizationId: ctx.organizationId,
@@ -216,6 +231,7 @@ export async function runChain<T>(
     if (result.status === 'SUCCESS') return outcome;
     last = outcome;
   }
+  if (!last && unavailable) throw unavailable;
   if (!last) throw new NotConfiguredError(capability, `No connected provider supports ${op.operation}.`);
   return last;
 }

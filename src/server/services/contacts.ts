@@ -215,7 +215,7 @@ export const contactFilterSchema = z.object({
 });
 export type ContactFilter = z.infer<typeof contactFilterSchema>;
 
-function contactWhere(access: AccessContext, f: ContactFilter): Prisma.ContactWhereInput {
+export function contactWhere(access: AccessContext, f: ContactFilter): Prisma.ContactWhereInput {
   const where: Prisma.ContactWhereInput = { ...clientFilter(access, f.clientId), deletedAt: null, account: { deletedAt: null } };
   const and: Prisma.ContactWhereInput[] = [];
   if (f.accountId) where.accountId = f.accountId;

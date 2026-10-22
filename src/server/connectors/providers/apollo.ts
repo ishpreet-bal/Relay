@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { EmailVerification, Seniority } from '@prisma/client';
 import type {
-  CompanyProfile, ConnectorDefinition, ContactCandidate, ContactProvider, CompanyProvider, EmailFinderProvider, ProviderResult,
+  CompanyProfile, ConnectorDefinition, ContactCandidate, ContactProvider, CompanyProvider, DiscoveredCompany, DiscoveryPage,
+  DiscoveryProvider, EmailFinderProvider, ProviderResult,
 } from '../types';
 import { toDomain } from '@/lib/utils';
 
@@ -111,6 +112,89 @@ function errorResult<T>(r: { status: number; text: string }): ProviderResult<T> 
   return { status: 'ERROR', costMillicents: 0, error: `Apollo responded ${r.status}: ${r.text}`, raw: r.text };
 }
 
+// Organization search results: the same fields, more of them optional.
+const searchOrgSchema = organizationSchema.extend({
+  id: z.string(),
+  street_address: str,
+  postal_code: str,
+  raw_address: str,
+}).passthrough();
+
+/** Credits one search page costs on your plan (Apollo bills search pages on most API plans). */
+function searchCreditsPerPage() {
+  const v = Number(process.env.APOLLO_SEARCH_CREDITS_PER_PAGE ?? 1);
+  return Number.isFinite(v) && v >= 0 ? v : 1;
+}
+
+export function employeeRange(min: number | null, max: number | null): string[] {
+  if (min === null && max === null) return [];
+  return [`${Math.max(1, min ?? 1)},${max ?? 1_000_000}`];
+}
+
+export function toDiscovered(o: z.infer<typeof searchOrgSchema>): DiscoveredCompany | null {
+  if (!o.name) return null;
+  return {
+    externalId: o.id,
+    name: o.name,
+    websiteUrl: o.website_url ?? (o.primary_domain ? `https://${o.primary_domain}` : null),
+    phone: o.primary_phone?.number ?? o.phone ?? null,
+    addressLine: o.street_address,
+    city: o.city,
+    region: o.state,
+    postalCode: o.postal_code,
+    country: o.country,
+    latitude: null,
+    longitude: null,
+    industry: o.industry,
+    categories: (o.keywords ?? []).slice(0, 10),
+    employeeCount: o.estimated_num_employees,
+    linkedinUrl: o.linkedin_url,
+    description: o.short_description,
+    foundedYear: o.founded_year,
+    businessStatus: null,
+    sourceUrl: null,
+  };
+}
+
+const discovery: DiscoveryProvider = {
+  source: 'APOLLO',
+  queryStyle: 'structured',
+  // Storage of Apollo data is governed by your Apollo subscription terms.
+  storage: 'licensed',
+  coordinateRetentionDays: null,
+  maxPages: 5,
+  requestCost: () => ({ millicents: creditMillicents() * searchCreditsPerPage(), isEstimate: true }),
+  async search(q): Promise<ProviderResult<DiscoveryPage>> {
+    const page = q.pageToken ? Number(q.pageToken) : 1;
+    const r = await call('/api/v1/mixed_companies/search', {
+      method: 'POST',
+      body: {
+        ...(q.locations.length ? { organization_locations: q.locations } : {}),
+        ...(q.keywords.length ? { q_organization_keyword_tags: q.keywords } : {}),
+        ...(employeeRange(q.employeeMin, q.employeeMax).length ? { organization_num_employees_ranges: employeeRange(q.employeeMin, q.employeeMax) } : {}),
+        page,
+        per_page: Math.min(100, Math.max(1, q.pageSize)),
+      },
+    });
+    if (!r.ok) return errorResult(r);
+    const body = r.json as { organizations?: unknown[]; accounts?: unknown[]; pagination?: { page?: number; total_pages?: number } } | null;
+    const rows = [...(body?.organizations ?? []), ...(body?.accounts ?? [])];
+    const companies = rows
+      .map((row) => searchOrgSchema.safeParse(row))
+      .filter((p) => p.success)
+      .map((p) => toDiscovered(p.data!))
+      .filter((c): c is DiscoveredCompany => !!c);
+    const totalPages = body?.pagination?.total_pages ?? page;
+    const cost = creditMillicents() * searchCreditsPerPage();
+    return {
+      status: companies.length ? 'SUCCESS' : 'NOT_FOUND',
+      data: { companies, nextPageToken: page < totalPages ? String(page + 1) : null },
+      costMillicents: cost,
+      raw: { results: companies.length, page, totalPages },
+    };
+  },
+};
+
 const company: CompanyProvider = {
   async enrichCompany({ domain }) {
     const r = await call('/api/v1/organizations/enrich', { method: 'GET', query: { domain } });
@@ -205,12 +289,13 @@ const emailFinder: EmailFinderProvider = {
 export const apolloConnector: ConnectorDefinition = {
   id: 'apollo',
   name: 'Apollo',
-  capabilities: ['COMPANY_DATA', 'CONTACT_DATA', 'EMAIL_FINDER'],
-  description: 'Company firmographics, people search by title and seniority, and work email lookup.',
+  capabilities: ['COMPANY_DISCOVERY', 'COMPANY_DATA', 'CONTACT_DATA', 'EMAIL_FINDER'],
+  description: 'Company search by industry, location and size; company firmographics; people search by title and seniority; work email lookup.',
   requiredEnv: ['APOLLO_API_KEY'],
   implemented: true,
   docsUrl: 'https://docs.apollo.io/reference',
   defaultPriority: 20,
+  discovery,
   company,
   contacts,
   emailFinder,

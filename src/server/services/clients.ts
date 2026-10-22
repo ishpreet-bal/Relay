@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { startOfMonth } from 'date-fns';
 import { db } from '@/lib/db';
-import { toDomain } from '@/lib/utils';
+import { canonicalDomain } from './companies/normalize';
 import { clientFilter, assertClientAccess, type AccessContext } from '@/server/access/scope';
 import { NotFoundError } from '@/server/errors';
 import { markScoresStale } from './scoring';
@@ -67,7 +67,7 @@ export async function createClient(access: AccessContext, raw: ClientInput) {
       ...input,
       organizationId: access.organizationId,
       slug: await uniqueSlug(access.organizationId, input.name),
-      domain: toDomain(input.websiteUrl),
+      domain: canonicalDomain(input.websiteUrl),
       status: input.status ?? 'ONBOARDING',
     },
   });
@@ -92,7 +92,7 @@ export async function updateClient(access: AccessContext, id: string, raw: Parti
     where: { id },
     data: {
       ...patch,
-      ...(patch.websiteUrl !== undefined ? { domain: toDomain(patch.websiteUrl) } : {}),
+      ...(patch.websiteUrl !== undefined ? { domain: canonicalDomain(patch.websiteUrl) } : {}),
       ...(patch.status === 'ACTIVE' ? { onboardedAt: new Date() } : {}),
     },
   });
@@ -115,7 +115,8 @@ export async function archiveClient(access: AccessContext, id: string) {
 export async function listClients(access: AccessContext) {
   const scope = clientFilter(access);
   const clients = await db.client.findMany({
-    where: { organizationId: access.organizationId, archivedAt: null, ...(scope.clientId ? { id: scope.clientId } : {}) },
+    // The demo sandbox holds synthetic data only and isn't a customer to manage or prospect for.
+    where: { organizationId: access.organizationId, archivedAt: null, kind: 'CUSTOMER', ...(scope.clientId ? { id: scope.clientId } : {}) },
     orderBy: [{ status: 'asc' }, { name: 'asc' }],
     include: {
       _count: {

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
-  ArrowLeft, Database, ExternalLink, Mail, MailCheck, Phone, PhoneCall, PhoneOff, Plus, Radio, RefreshCw, Sparkles,
+  ArrowLeft, CopyCheck, Database, ExternalLink, Mail, MailCheck, Phone, PhoneCall, PhoneOff, Plus, Radio, RefreshCw, Sparkles,
   Star, Trash2, UserSearch, X,
 } from 'lucide-react';
 import type { AccountStatus, SignalType } from '@prisma/client';
@@ -26,6 +26,8 @@ import { AccountStatusPill, SignalPill, VerificationBadge } from '@/components/d
 import { ResearchPanel } from '@/components/research/research-panel';
 import { EnrollDialog } from '@/components/campaigns/enroll-dialog';
 import { Timeline } from './timeline';
+import { AccountFunnel } from '@/components/pipeline/account-funnel';
+import { AccountOpportunities } from '@/components/delivery/opportunity-ui';
 import { ContactFormDialog } from './contact-form-dialog';
 import { cn } from '@/lib/utils';
 
@@ -87,6 +89,7 @@ export function AccountDetail({ id, can }: { id: string; can: AccountPermissions
               )}
             </p>
             {a.researchSummary && <p className="text-sm mt-2 max-w-3xl">{a.researchSummary}</p>}
+            <DuplicateBanner accountId={a.id} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {can.write && <button type="button" className="btn-outline h-8 text-micro" onClick={() => setDialog('status')}>Change status</button>}
@@ -169,11 +172,37 @@ export function AccountDetail({ id, can }: { id: string; can: AccountPermissions
               )}
             </Section>
 
+            <AccountFunnel account={a} canRun={can.research} canOverride={can.override} />
+
+            <AccountOpportunities accountId={a.id} caps={{ write: can.write, review: can.override }} />
+
             <Section title="Details">
               <dl className="card p-3 grid grid-cols-[110px_1fr] gap-y-1.5 text-micro">
                 <Detail label="Phone" value={a.phone} />
+                <Detail label="Address" value={[a.addressLine, a.postalCode].filter(Boolean).join(' ') || null} />
+                <Detail label="Business model" value={a.businessModel} />
                 <Detail label="Revenue" value={a.revenueRange} />
                 <Detail label="Founded" value={a.foundedYear?.toString()} />
+                {socialLinks(a.socialProfiles).length > 0 && (
+                  <Detail label="Profiles" value={
+                    <span className="flex flex-wrap gap-x-2">
+                      {socialLinks(a.socialProfiles).map(([network, url]) => (
+                        <a key={network} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 hover:text-accent capitalize">
+                          {network}<ExternalLink className="size-3" />
+                        </a>
+                      ))}
+                    </span>
+                  } />
+                )}
+                {a.parent && <Detail label="Part of" value={<Link href={`/accounts/${a.parent.id}`} className="hover:text-accent">{a.parent.name}</Link>} />}
+                {a.branches.length > 0 && (
+                  <Detail label="Locations" value={
+                    <span className="flex flex-col">
+                      {a.branches.map((b) => <Link key={b.id} href={`/accounts/${b.id}`} className="hover:text-accent truncate">{b.city ?? b.name}</Link>)}
+                    </span>
+                  } />
+                )}
+                <Detail label="Verified" value={a.lastVerifiedAt ? <Ago date={a.lastVerifiedAt} /> : 'not yet'} />
                 <Detail label="Source" value={a.source.toLowerCase().replace(/_/g, ' ')} />
                 <Detail label="Owner" value={a.owner ? [a.owner.firstName, a.owner.lastName].filter(Boolean).join(' ') : null} />
                 <Detail label="Added" value={<Ago date={a.createdAt} />} />
@@ -196,6 +225,28 @@ export function AccountDetail({ id, can }: { id: string; can: AccountPermissions
 }
 
 type AccountData = RouterOutputs['accounts']['byId'];
+
+function socialLinks(value: unknown): Array<[string, string]> {
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value as Record<string, unknown>)
+    .filter((e): e is [string, string] => typeof e[1] === 'string' && /^https?:\/\//.test(e[1]));
+}
+
+/** A note when this account might be the same company as another one. */
+function DuplicateBanner({ accountId }: { accountId: string }) {
+  const dups = trpc.accounts.duplicatesOf.useQuery({ accountId });
+  const first = dups.data?.[0];
+  if (!first) return null;
+  const other = first.account.id === accountId ? first.candidate : first.account;
+  return (
+    <p className="mt-3 inline-flex flex-wrap items-center gap-1.5 rounded-md border border-held/30 bg-held/10 px-2.5 py-1.5 text-micro">
+      <CopyCheck className="size-3.5 text-held" />
+      Might be the same company as <Link href={`/accounts/${other.id}`} className="font-medium hover:text-accent">{other.name}</Link>
+      <span className="text-muted">({Math.round(first.score * 100)}% match{dups.data!.length > 1 ? `, +${dups.data!.length - 1} more` : ''})</span>
+      <Link href="/duplicates" className="text-accent hover:underline">Review</Link>
+    </p>
+  );
+}
 
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   return (

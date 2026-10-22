@@ -2,6 +2,9 @@ import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { appRouter } from '@/server/trpc/routers/_app';
 import { createContext } from '@/server/trpc/init';
 
+// Some procedures do bounded long work (a discovery step runs for up to ~45s).
+export const maxDuration = 60;
+
 const handler = (req: Request) =>
   fetchRequestHandler({
     endpoint: '/api/trpc',

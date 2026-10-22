@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Building2, Users, Layers, PhoneCall, CalendarCheck, BookOpen, BarChart3, Briefcase,
-  ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X,
+  ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow, Lightbulb, ClipboardList,
 } from 'lucide-react';
 import type { Role } from '@prisma/client';
 import { cn } from '@/lib/utils';
@@ -16,8 +16,10 @@ interface NavItem {
   label: string;
   icon: typeof Users;
   permission: Permission;
-  badge?: 'review' | 'calls';
+  badge?: keyof NavCounts;
 }
+
+export interface NavCounts { review: number; calls: number; duplicates: number }
 
 // Ordered by the work: find and understand prospects, reach them, talk to
 // them, then set up and run the machine.
@@ -33,8 +35,11 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
   {
     label: 'Prospects',
     items: [
+      { href: '/discovery', label: 'Discovery', icon: Radar, permission: 'account:read' },
+      { href: '/pipeline', label: 'Research funnel', icon: Filter, permission: 'account:read' },
       { href: '/accounts', label: 'Accounts', icon: Building2, permission: 'account:read' },
       { href: '/contacts', label: 'Contacts', icon: Users, permission: 'account:read' },
+      { href: '/duplicates', label: 'Duplicates', icon: CopyCheck, permission: 'account:read', badge: 'duplicates' },
     ],
   },
   {
@@ -43,6 +48,14 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
       { href: '/campaigns', label: 'Campaigns', icon: Layers, permission: 'campaign:read' },
       { href: '/review', label: 'Review queue', icon: ShieldCheck, permission: 'message:read', badge: 'review' },
       { href: '/analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics:read' },
+    ],
+  },
+  {
+    label: 'Delivery',
+    items: [
+      { href: '/opportunities', label: 'Opportunities', icon: Lightbulb, permission: 'account:read' },
+      { href: '/studio', label: 'Studio', icon: AppWindow, permission: 'studio:read' },
+      { href: '/projects', label: 'Projects', icon: ClipboardList, permission: 'proposal:read' },
     ],
   },
   {
@@ -73,7 +86,7 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
   },
 ];
 
-export function Sidebar({ role, counts }: { role: Role; counts: { review: number; calls: number } }) {
+export function Sidebar({ role, counts }: { role: Role; counts: NavCounts }) {
   return (
     <nav aria-label="Main" className="hidden md:flex w-[220px] shrink-0 border-r border-hairline bg-surface flex-col">
       <Brand />
@@ -87,7 +100,7 @@ export function Sidebar({ role, counts }: { role: Role; counts: { review: number
 }
 
 /** The same navigation in a drawer, for narrow screens. */
-export function MobileNav({ role, counts }: { role: Role; counts: { review: number; calls: number } }) {
+export function MobileNav({ role, counts }: { role: Role; counts: NavCounts }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   useEffect(() => setOpen(false), [pathname]);
@@ -120,7 +133,7 @@ function Brand() {
   );
 }
 
-function NavList({ role, counts }: { role: Role; counts: { review: number; calls: number } }) {
+function NavList({ role, counts }: { role: Role; counts: NavCounts }) {
   const pathname = usePathname();
   return (
     <div className="flex-1 p-2 overflow-y-auto space-y-3">

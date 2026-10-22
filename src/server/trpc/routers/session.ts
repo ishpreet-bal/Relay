@@ -17,7 +17,7 @@ export const sessionRouter = router({
   clients: protectedProcedure.query(({ ctx }) => {
     const ids = ctx.access.clients.kind === 'clients' ? ctx.access.clients.ids : null;
     return ctx.db.client.findMany({
-      where: { organizationId: ctx.access.organizationId, archivedAt: null, ...(ids ? { id: { in: [...ids] } } : {}) },
+      where: { organizationId: ctx.access.organizationId, archivedAt: null, kind: 'CUSTOMER', ...(ids ? { id: { in: [...ids] } } : {}) },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, status: true },
     });

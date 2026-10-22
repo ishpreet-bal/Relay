@@ -84,6 +84,9 @@ export async function saveSignals(
   }
 
   if (created.length) {
+    // A new event is a reason to look again: screening is cheap, and a
+    // previously screened-out account may now qualify.
+    await db.account.update({ where: { id: account.id }, data: { screenedAt: null } });
     await logActivity({
       organizationId: account.organizationId, clientId: account.clientId, accountId: account.id,
       type: 'SIGNAL_DETECTED',

@@ -6,6 +6,8 @@ import { logActivity } from '@/server/services/activity';
 import { saveSignals } from '@/server/services/signals';
 import { advanceAccountStatus } from '@/server/services/accounts';
 import { recordProviderCall } from '@/server/connectors/records';
+import { afterAnalysis, type Trigger } from '@/server/services/pipeline/gates';
+import { assertCategoryBudget } from '@/server/services/pipeline/budgets';
 import { complete, parseJson } from './provider';
 import { MODELS } from './pricing';
 import { groundItems, mergeReports, parseEventDate, type GroundingReport, type VerifiedCitation } from './grounding';
@@ -57,7 +59,7 @@ const clamp = (n: unknown, fallback = 0.5) => {
  * crawled text are removed before anything is written, so downstream drafting
  * can only ever reference material that survived verification.
  */
-export async function runResearch(organizationId: string, accountId: string) {
+export async function runResearch(organizationId: string, accountId: string, opts: { trigger?: Trigger } = {}) {
   const account = await db.account.findFirstOrThrow({
     where: { id: accountId, organizationId, deletedAt: null },
     include: {
@@ -73,6 +75,7 @@ export async function runResearch(organizationId: string, accountId: string) {
   if (!account.websiteUrl) {
     throw new ResearchError('This account has no website to research.', 'NO_WEBSITE');
   }
+  await assertCategoryBudget(organizationId, 'analysis');
 
   const offer = account.client.offers[0] ?? null;
   const icp = account.client.icps.find((i) => i.id === account.icpId) ?? account.client.icps[0] ?? null;
@@ -238,6 +241,9 @@ export async function runResearch(organizationId: string, accountId: string) {
         + (report.rejectedClaims.length ? ` ${report.rejectedClaims.length} unsupported items were discarded.` : ''),
       metadata: { groundingRate: report.groundingRate, costCents: completion.costCents },
     });
+
+    // Keep this run as a version and let the funnel decide what comes next.
+    await afterAnalysis(organizationId, accountId, opts.trigger ?? 'MANUAL');
 
     return { research, report, pagesCrawled: crawl.pages.length, signalsCreated: createdSignals.length };
   } catch (err) {

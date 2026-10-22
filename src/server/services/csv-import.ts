@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { toDomain } from '@/lib/utils';
+import { canonicalDomain, normalizeCompanyName, normalizeLocality } from './companies/normalize';
 import type { AccessContext } from '@/server/access/scope';
 import { assertClientAccess } from '@/server/access/scope';
 import { createAccount, type AccountInput } from './accounts';
@@ -122,7 +122,9 @@ export function groupRows(
     if (!name) { failed.push({ row: line, reason: 'Missing company name' }); continue; }
 
     const website = at(row, 'websiteUrl');
-    const key = toDomain(website) ?? `${name.toLowerCase()}|${(at(row, 'city') ?? '').toLowerCase()}`;
+    // Rows for the same company become one account. A shared host (a Facebook
+    // page) says nothing about which company a row is, so it never groups rows.
+    const key = canonicalDomain(website) ?? `${normalizeCompanyName(name)}|${normalizeLocality(at(row, 'city'))}`;
     const employees = at(row, 'employeeCount');
 
     let group = groups.get(key);

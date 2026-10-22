@@ -10,7 +10,8 @@ import { db } from '@/lib/db';
 
 export const TRACKED_ACCOUNT_FIELDS = [
   'name', 'websiteUrl', 'domain', 'phone', 'industry', 'employeeCount', 'employeeRange',
-  'revenueRange', 'city', 'region', 'country', 'description', 'linkedinUrl',
+  'revenueRange', 'city', 'region', 'country', 'description', 'linkedinUrl', 'addressLine', 'postalCode',
+  'latitude', 'longitude',
 ] as const;
 
 export const TRACKED_CONTACT_FIELDS = [
@@ -27,6 +28,8 @@ export interface ProvenanceSource {
   confidence?: number | null;
   createdById?: string | null;
   retrievedAt?: Date;
+  /** For sources whose terms limit how long data may be kept. */
+  retentionUntil?: Date | null;
 }
 
 function stringify(value: unknown): string | null {
@@ -77,6 +80,7 @@ export async function recordProvenance(
       confidence: from.confidence ?? null,
       createdById: from.createdById ?? null,
       retrievedAt: from.retrievedAt ?? new Date(),
+      retentionUntil: from.retentionUntil ?? null,
     })),
   });
   return changed.length;

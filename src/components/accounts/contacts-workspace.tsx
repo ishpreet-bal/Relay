@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { Mail, MailCheck, Phone, PhoneOff, Search, Users } from 'lucide-react';
+import { Download, Mail, MailCheck, Phone, PhoneOff, Search, Users } from 'lucide-react';
 import type { Seniority } from '@prisma/client';
 import { trpc } from '@/lib/trpc/client';
 import { useActiveClient } from '@/components/shell/active-client';
@@ -18,7 +18,7 @@ import { cn, formatCompact } from '@/lib/utils';
 
 type Sort = 'score' | 'createdAt' | 'lastName' | 'lastContactedAt';
 
-export function ContactsWorkspace({ canEnroll }: { canEnroll: boolean }) {
+export function ContactsWorkspace({ canEnroll, canExport }: { canEnroll: boolean; canExport: boolean }) {
   const { clientId } = useActiveClient();
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -52,7 +52,13 @@ export function ContactsWorkspace({ canEnroll }: { canEnroll: boolean }) {
 
   return (
     <>
-      <Topbar title="Contacts" />
+      <Topbar title="Contacts"
+              actions={canExport && (
+                <a className="btn-ghost h-8 text-micro" href={`/api/export/contacts?filters=${encodeURIComponent(JSON.stringify(input))}`}
+                   title="Download the filtered list as CSV">
+                  <Download className="size-3.5" /> Export
+                </a>
+              )} />
       <PageBody width="full">
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <label className="relative w-full sm:w-64">

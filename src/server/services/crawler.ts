@@ -1,4 +1,7 @@
 import * as cheerio from 'cheerio';
+import { safeFetch } from './net-guard';
+
+export const CRAWLER_USER_AGENT = 'RelayBot/1.0 (research for a single named prospect)';
 
 export interface CrawledPage {
   /** Stable short id (p1, p2…) used as the citation key in prompts. */
@@ -18,7 +21,7 @@ export interface CrawlResult {
   errors: Array<{ url: string; reason: string }>;
 }
 
-const USER_AGENT = 'RelayBot/1.0 (research for a single named prospect)';
+const USER_AGENT = CRAWLER_USER_AGENT;
 const MAX_PAGES = 8;
 const MAX_CHARS_PER_PAGE = 12_000;
 const FETCH_TIMEOUT_MS = 12_000;
@@ -85,13 +88,14 @@ function detectSignals(html: string, $: cheerio.CheerioAPI) {
   };
 }
 
-async function fetchPage(url: string): Promise<{ html: string; finalUrl: string } | null> {
+export async function fetchPage(url: string): Promise<{ html: string; finalUrl: string } | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    // Prospect URLs come from outside; safeFetch refuses private networks
+    // and checks every redirect hop.
+    const res = await safeFetch(url, {
       signal: controller.signal,
-      redirect: 'follow',
       headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' },
     });
     if (!res.ok) return null;
@@ -99,7 +103,7 @@ async function fetchPage(url: string): Promise<{ html: string; finalUrl: string 
     if (!type.includes('html')) return null;
     // Guard against a 50MB page taking down the worker.
     const body = await res.text();
-    return { html: body.slice(0, 800_000), finalUrl: res.url };
+    return { html: body.slice(0, 800_000), finalUrl: res.url || url };
   } catch {
     return null;
   } finally {
@@ -108,9 +112,9 @@ async function fetchPage(url: string): Promise<{ html: string; finalUrl: string 
 }
 
 /** Minimal robots.txt check for our user-agent and the wildcard group. */
-async function isAllowed(origin: string, path: string): Promise<boolean> {
+export async function isAllowed(origin: string, path: string): Promise<boolean> {
   try {
-    const res = await fetch(`${origin}/robots.txt`, {
+    const res = await safeFetch(`${origin}/robots.txt`, {
       headers: { 'user-agent': USER_AGENT },
       signal: AbortSignal.timeout(6000),
     });
