@@ -296,7 +296,8 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 | `APOLLO_API_KEY` (+ `APOLLO_COST_PER_CREDIT_MILLICENTS`) | Apollo → Settings → API | company search, contacts, email lookup |
 | `ANTHROPIC_API_KEY` | platform.claude.com | research, drafting, verification |
 | `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` (+ `*_COST_PER_CHECK_MILLICENTS`) | vendor dashboard | email verification before sending |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud → APIs & Services → enable Gmail API → OAuth client (Web), authorised redirect URI `https://<your domain>/api/oauth/google/callback`. `gmail.send` is a sensitive scope: unverified apps work for test users you add; Google's app verification is needed beyond that | sending from Gmail / Workspace mailboxes |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud → APIs & Services → enable Gmail API → OAuth client (Web), authorised redirect URI `https://<your domain>/api/oauth/google/callback`. `gmail.send` is a sensitive scope: unverified apps work for test users you add; Google's app verification is needed beyond that. The consent screen's home page is `/about` and its privacy policy is `/privacy` (both public) | sending from Gmail / Workspace mailboxes |
+| `PRIVACY_CONTACT_EMAIL` (optional) | the address people write to for access, correction or deletion requests | shown on the public privacy policy; without it the page says to reply to any email received |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (test mode first) | Stripe dashboard → Developers; webhook endpoint `/api/webhooks/stripe` with customer.subscription.* and invoice.* events | customer subscriptions (and the workspace plan) |
 | `CUSTOMER_BILLING_LIVE=enabled` | only when you decide to charge real customers | allows a live Stripe key to create customer charges |
 | Worker host | Railway or Fly | a process running `npm run worker` with the same env |

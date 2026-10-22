@@ -60,6 +60,9 @@ describe('gmail building blocks', () => {
     const dns = (records: Record<string, string[][]>) => async (host: string) => records[host] ?? Promise.reject(new Error('ENOTFOUND'));
     expect(await gmail.gmailDomainStatus('example.com', dns({ 'example.com': [['v=spf1 include:_spf.google.com ~all']], 'google._domainkey.example.com': [['v=DKIM1; k=rsa; p=MIIBIjAN', 'BgkqhkiG']] }))).toMatchObject({ spf: true, dkim: true });
     expect(await gmail.gmailDomainStatus('example.com', dns({ 'example.com': [['v=spf1 include:mailgun.org ~all']] }))).toMatchObject({ spf: false, dkim: false });
+    expect(await gmail.gmailDomainStatus('example.com', dns({ 'example.com': [['v=spf1 redirect=_spf.google.com']] }))).toMatchObject({ spf: true });
+    // Google authenticates its own consumer domains; no DNS lookup is needed (or would find the "google" selector).
+    expect(await gmail.gmailDomainStatus('Gmail.com', dns({}))).toMatchObject({ spf: true, dkim: true });
   });
 });
 
