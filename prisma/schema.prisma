@@ -1205,6 +1205,14 @@ model Mailbox {
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
 
+  /// Gmail: the OAuth refresh token (AES-256-GCM), never returned to a browser.
+  oauthRefreshTokenEnc String?
+  /// The Google account that granted access; must be the mailbox's own address.
+  oauthEmail           String?
+  oauthScopes          String[]  @default([])
+  oauthConnectedAt     DateTime?
+  oauthError           String?
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   messages     Message[]
   campaigns    Campaign[]

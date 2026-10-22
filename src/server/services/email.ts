@@ -7,6 +7,8 @@ import { issueUnsubscribeToken, unsubscribeUrl, oneClickUnsubscribeUrl } from '.
 import { logActivity } from './activity';
 import { advanceAccountStatus } from './accounts';
 import { recordUsage } from './usage';
+import { sendViaGmail } from './gmail';
+import type { OutboundEmail } from '@/server/connectors/types';
 
 export interface SendOutcome {
   sent: boolean;
@@ -29,13 +31,15 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
     return { sent: false, messageId, verdict };
   }
 
-  const [provider] = await chainFor(message.organizationId, 'EMAIL_SENDING');
-  if (!provider?.emailSending) throw new NotConfiguredError('EMAIL_SENDING', 'No email sending provider is connected.');
-
   const contact = await db.contact.findUniqueOrThrow({ where: { id: message.contactId! } });
   const mailbox = message.mailboxId
     ? await db.mailbox.findUniqueOrThrow({ where: { id: message.mailboxId } })
     : await db.mailbox.findFirstOrThrow({ where: { organizationId: message.organizationId, isActive: true } });
+  // A Gmail mailbox sends through its own Google account; others through the sending provider.
+  const provider = mailbox.provider === 'GMAIL'
+    ? { id: 'gmail', emailSending: { send: (email: OutboundEmail) => sendViaGmail(mailbox, email) } }
+    : (await chainFor(message.organizationId, 'EMAIL_SENDING')).find((p) => p.emailSending);
+  if (!provider?.emailSending) throw new NotConfiguredError('EMAIL_SENDING', 'No email sending provider is connected.');
 
   const token = await issueUnsubscribeToken(message.organizationId, contact.email!);
   const url = unsubscribeUrl(token);

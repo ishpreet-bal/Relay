@@ -33,6 +33,9 @@ const serverSchema = z.object({
   CUSTOMER_BILLING_LIVE: z.enum(['enabled']).optional(),
 
   GOOGLE_PLACES_API_KEY: z.string().optional(),
+  /** Google OAuth client (web) for sending from Gmail mailboxes. */
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
   APOLLO_API_KEY: z.string().optional(),
 
   ENCRYPTION_KEY: z.string().length(44, 'must be a base64-encoded 32-byte key'),

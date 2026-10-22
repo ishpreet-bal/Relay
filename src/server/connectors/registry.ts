@@ -61,7 +61,11 @@ export const CONNECTORS: readonly ConnectorDefinition[] = [
   zeroBounceConnector,
   hunterConnector,
   resendConnector,
-  planned('google_workspace', 'Gmail / Google Calendar', ['EMAIL_SENDING', 'CALENDAR'], 'Send from a real Gmail inbox and book meetings on Google Calendar.', ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']),
+  {
+    id: 'google_workspace', name: 'Gmail', capabilities: ['EMAIL_SENDING'], implemented: true, defaultPriority: 30,
+    description: 'Send from a real Gmail or Google Workspace inbox. Connect each mailbox under Settings › Mailboxes (OAuth, send-only permission). Calendar booking is not built.',
+    requiredEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'], docsUrl: 'https://developers.google.com/gmail/api/guides/sending',
+  },
   planned('microsoft_365', 'Outlook / Microsoft Calendar', ['EMAIL_SENDING', 'CALENDAR'], 'Send from Outlook and book meetings on Microsoft calendars.', ['MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET']),
   planned('twilio', 'Twilio', ['PHONE'], 'Click-to-call, call recording and SMS.', ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN']),
   planned('hubspot', 'HubSpot', ['CRM'], 'Push qualified accounts, contacts and meetings into the client\'s CRM.', ['HUBSPOT_PRIVATE_APP_TOKEN']),
