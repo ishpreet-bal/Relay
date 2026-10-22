@@ -6,7 +6,6 @@ import {
   listOpportunities, manualOpportunitySchema, markLost, OPPORTUNITY_STATUSES, overrideMatch, overrideSchema, recordAcceptance, review, syncFromResearch,
 } from '@/server/services/delivery/opportunities';
 import { deleteTimeEntry, getProject, listProjects, logTime, PROJECT_STATUSES, setProjectStatus, timeEntrySchema } from '@/server/services/delivery/projects';
-import { env } from '@/lib/env';
 
 const id = z.string().uuid();
 
@@ -61,7 +60,7 @@ export const deliveryRouter = router({
     .mutation(async ({ ctx, input }) => {
       const p = await approveProposal(ctx.access, ctx.session.userId, input.proposalId);
       await recordAudit({ session: ctx.session, action: 'proposal.approve', entityType: 'Proposal', entityId: p.id });
-      return { ...p, shareUrl: `${env().APP_URL}/p/${p.shareToken}` };
+      return p;
     }),
 
   recordAcceptance: permissionProcedure('proposal:send')

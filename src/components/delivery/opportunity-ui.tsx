@@ -46,7 +46,7 @@ export function OpportunityBoard({ caps }: { caps: DeliveryCaps }) {
           </EmptyState>
         ) : (
           <>
-            <div className="grid grid-flow-col auto-cols-[minmax(240px,1fr)] gap-3 overflow-x-auto pb-2">
+            <div className="grid grid-flow-col auto-cols-[minmax(190px,1fr)] gap-3 overflow-x-auto pb-2">
               {COLUMNS.map((status) => {
                 const col = items.filter((o) => o.status === status);
                 return (
