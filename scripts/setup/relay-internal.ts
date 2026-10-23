@@ -2,7 +2,9 @@
  * Configures Relay's own company as the first, internal client of Relay
  * Intelligence: its business profile, its two offers, one ideal customer
  * profile and one discovery profile per target industry, the playbook its
- * outreach follows, and the research funnel's daily limits and budgets.
+ * outreach follows, one draft campaign per offer (every email reviewed,
+ * research-based drafts only), and the research funnel's daily limits and
+ * budgets.
  *
  * Everything goes through the same services the app uses, so validation and
  * defaults are the app's. Safe to run again: existing offers, profiles and
@@ -17,6 +19,7 @@ import { createIcp, createOffer, updateClient, updateIcp, updateOffer, type IcpI
 import { createPlaybook, updatePlaybook, type PlaybookInput } from '@/server/services/playbooks';
 import { createProfile, updateProfile, type DiscoveryProfileInput } from '@/server/services/discovery/profiles';
 import { updatePipelineSettings } from '@/server/services/pipeline/settings';
+import { createCampaign } from '@/server/services/campaigns';
 
 const [organizationId, clientId, userId] = process.argv.slice(2);
 if (!organizationId || !clientId) {
@@ -276,7 +279,24 @@ async function main() {
   }
 
   const existingPlaybook = await db.playbook.findFirst({ where: { clientId, name: PLAYBOOK.name } });
-  if (existingPlaybook) await updatePlaybook(access, existingPlaybook.id, PLAYBOOK); else await createPlaybook(access, clientId!, PLAYBOOK);
+  const playbook = existingPlaybook ? await updatePlaybook(access, existingPlaybook.id, PLAYBOOK) : await createPlaybook(access, clientId!, PLAYBOOK);
+
+  // One draft campaign per offer. Drafts only: they need a connected mailbox
+  // and the client's mailing address before they can be activated, and every
+  // email waits in the review queue.
+  for (const offerName of [LEAD_GEN, AUTOMATION]) {
+    const name = `Relay: ${offerName}`;
+    if (await db.campaign.findFirst({ where: { clientId, name } })) continue;
+    const offer = await db.offer.findFirstOrThrow({ where: { clientId, name: offerName } });
+    await createCampaign(access, {
+      clientId: clientId!, name, offerId: offer.id, playbookId: playbook.id,
+      objective: `First conversations with researched GTA and Ontario businesses about ${offerName}.`,
+      timezone: 'America/Toronto', sendDays: [1, 2, 3, 4, 5], sendStartHour: 9, sendEndHour: 16, dailyCap: 10,
+      approvalMode: 'REVIEW_ALL', maxContactsPerAccount: 1, callFollowUp: true,
+      // Only drafts grounded in research on the company itself.
+      allowContextual: false, contextualDailyCap: 0,
+    });
+  }
 
   for (const s of SEGMENTS) {
     const profile: DiscoveryProfileInput = {
@@ -326,6 +346,7 @@ async function main() {
     icps: await db.idealCustomerProfile.count({ where: { clientId } }),
     playbooks: await db.playbook.count({ where: { clientId } }),
     discoveryProfiles: await db.discoveryProfile.count({ where: { clientId, archivedAt: null } }),
+    campaigns: await db.campaign.count({ where: { clientId } }),
   };
   console.log(JSON.stringify(summary));
   await db.$disconnect();
