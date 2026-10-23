@@ -108,6 +108,8 @@ describe.skipIf(!reachable)('discovery run (database)', () => {
       city: 'Mississauga', region: 'ON', postalCode: 'L5A 1W2', source: 'GOOGLE_PLACES', industry: 'machine shop', discoveryRunId: run.id,
     });
     expect(acme.identifiers).toEqual([expect.objectContaining({ provider: 'google_places', externalId: 'place-acme' })]);
+    // Scored before the search filled in its industry and city, so the score is marked for recomputing.
+    expect(acme.scoredAt).toBeNull();
 
     const provenance = await db.dataProvenance.findMany({ where: { accountId: acme.id, isCurrent: true } });
     const by = Object.fromEntries(provenance.map((p) => [p.field, p]));

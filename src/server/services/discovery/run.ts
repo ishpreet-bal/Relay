@@ -575,7 +575,9 @@ async function applySearchContext(ctx: IngestContext, accountId: string, def: Co
   if (!account.city && query.city) searched.city = query.city;
   if (!account.region && query.region) searched.region = query.region;
   if (Object.keys(searched).length) {
-    await db.account.update({ where: { id: accountId }, data: searched });
+    // The account was scored when it was created, before it had an industry
+    // or a city; mark the score stale so it is recomputed with them.
+    await db.account.update({ where: { id: accountId }, data: { ...searched, scoredAt: null } });
     await recordProvenance({ organizationId: ctx.run.organizationId, accountId }, searched, { source: 'OTHER', provider: 'discovery_search', status: 'UNVERIFIED', confidence: 0.5 });
   }
   const days = def.discovery!.coordinateRetentionDays;
