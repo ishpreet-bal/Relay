@@ -295,6 +295,7 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 | `GOOGLE_PLACES_API_KEY` | Google Cloud console → enable "Places API (New)" → API key restricted to that API | discovery |
 | `APOLLO_API_KEY` (+ `APOLLO_COST_PER_CREDIT_MILLICENTS`) | Apollo → Settings → API | company search, contacts, email lookup |
 | `ANTHROPIC_API_KEY` | platform.claude.com | research, drafting, verification |
+| `ANTHROPIC_WORKSPACE_ID` (optional) | Claude Console → the workspace's ID. Only for an API key that isn't scoped to a workspace (Anthropic then rejects requests without it); a key created inside a workspace needs nothing extra | every AI call |
 | `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` (+ `*_COST_PER_CHECK_MILLICENTS`) | vendor dashboard | email verification before sending |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud → APIs & Services → enable Gmail API → OAuth client (Web), authorised redirect URI `https://<your domain>/api/oauth/google/callback`. `gmail.send` is a sensitive scope: unverified apps work for test users you add; Google's app verification is needed beyond that. The consent screen's home page is `/about` and its privacy policy is `/privacy` (both public) | sending from Gmail / Workspace mailboxes |
 | `PRIVACY_CONTACT_EMAIL` (optional) | the address people write to for access, correction or deletion requests | shown on the public privacy policy; without it the page says to reply to any email received |

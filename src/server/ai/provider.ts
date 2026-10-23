@@ -52,7 +52,12 @@ let openaiClient: OpenAI | null = null;
 export function anthropic() {
   const key = env().ANTHROPIC_API_KEY;
   if (!key) throw new NotConfiguredError('anthropic', 'No AI provider is connected. Set ANTHROPIC_API_KEY.');
-  anthropicClient ??= new Anthropic({ apiKey: key, maxRetries: 0 });
+  const workspace = env().ANTHROPIC_WORKSPACE_ID;
+  anthropicClient ??= new Anthropic({
+    apiKey: key, maxRetries: 0,
+    // A key not scoped to a workspace must name one on every request.
+    ...(workspace ? { defaultHeaders: { 'anthropic-workspace-id': workspace } } : {}),
+  });
   return anthropicClient;
 }
 function openai() {
