@@ -95,6 +95,7 @@ model Organization {
   activities        Activity[]
   discoveryRuns     DiscoveryRun[]
   discoveryProfiles DiscoveryProfile[]
+  callLeads         CallLead[]
   applications      ClientApplication[]
   duplicates        DuplicateCandidate[]
   savedViews        SavedView[]
@@ -278,6 +279,7 @@ model Client {
   research          Research[]
   activities        Activity[]
   discoveryProfiles DiscoveryProfile[]
+  callLeads         CallLead[]
   applications      ClientApplication[]
   subscriptions     CustomerSubscription[]
 
@@ -915,6 +917,50 @@ model DiscoveryProfile {
   runs         DiscoveryRun[]
 
   @@index([organizationId, isActive, nextRunAt])
+}
+
+/**
+ * A business discovery found without a website of its own (none listed, only
+ * a social or directory page, or a site that didn't load). Relay can't build
+ * a record from it: Google's terms allow keeping only the place id. So it
+ * waits on a call list, and its name, phone and address are read live from
+ * Google when someone opens it, never stored. What is stored is Relay's own:
+ * the search that found it and what happened on the phone. DO_NOT_CALL is
+ * permanent, which makes this the internal do-not-call list as well.
+ */
+model CallLead {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  clientId       String    @db.Uuid
+  profileId      String?   @db.Uuid
+  runId          String?   @db.Uuid
+  /// Where the id comes from, e.g. google_places.
+  provider       String
+  /// The provider's stable id (a Google place id): the only thing kept from the listing.
+  externalId     String
+  /// NO_WEBSITE, SOCIAL_ONLY or SITE_UNREACHABLE.
+  reason         String
+  /// The search that found it (our query, not the listing).
+  searchTerm     String?
+  searchCity     String?
+  searchRegion   String?
+  /// NEW, CALLBACK, CALLED, INTERESTED, NOT_INTERESTED, DO_NOT_CALL or CONVERTED.
+  status         String    @default("NEW")
+  notes          String?   @db.Text
+  callbackAt     DateTime?
+  calls          Int       @default(0)
+  lastCalledAt   DateTime?
+  lastCalledById String?   @db.Uuid
+  /// The account created from what the business said on the call.
+  accountId      String?   @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider, externalId])
+  @@index([organizationId, clientId, status])
 }
 
 enum DiscoveryOutcome {

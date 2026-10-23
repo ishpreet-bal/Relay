@@ -122,6 +122,63 @@ export function toCompany(place: Place): DiscoveredCompany | null {
   };
 }
 
+// Place Details with a phone number is an Enterprise-tier request. Google's
+// price per lookup is configurable (GOOGLE_PLACES_DETAILS_COST_MILLICENTS)
+// and every recorded cost from it is an estimate.
+const DEFAULT_DETAILS_MILLICENTS = 2_500;
+const DETAILS_FIELDS = [
+  'id', 'displayName', 'formattedAddress', 'nationalPhoneNumber', 'internationalPhoneNumber', 'websiteUri',
+  'googleMapsUri', 'businessStatus', 'primaryTypeDisplayName', 'rating', 'userRatingCount',
+].join(',');
+
+export function detailsCost() {
+  const configured = Number(process.env.GOOGLE_PLACES_DETAILS_COST_MILLICENTS);
+  const valid = Number.isFinite(configured) && configured >= 0 && process.env.GOOGLE_PLACES_DETAILS_COST_MILLICENTS !== undefined;
+  return { millicents: valid ? configured : DEFAULT_DETAILS_MILLICENTS, isEstimate: true };
+}
+
+export interface PlaceListing {
+  name: string | null;
+  phone: string | null;
+  internationalPhone: string | null;
+  address: string | null;
+  websiteUrl: string | null;
+  mapsUrl: string;
+  businessStatus: string | null;
+  category: string | null;
+  rating: number | null;
+  ratingCount: number | null;
+}
+
+/**
+ * One business's current Google listing, for display only. Places content
+ * may not be stored, so callers show it and let it go; only the place id is
+ * kept.
+ */
+export async function placeListing(placeId: string, fetchImpl: typeof fetch = fetch): Promise<PlaceListing> {
+  const res = await fetchImpl(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    headers: { 'x-goog-api-key': apiKey(), 'x-goog-fieldmask': DETAILS_FIELDS },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const raw = await res.text();
+  let json: unknown = null;
+  try { json = raw ? JSON.parse(raw) : null; } catch { /* non-JSON error page */ }
+  if (!res.ok) throw new Error(errorMessage({ status: res.status, json, text: raw.slice(0, 500) }));
+  const place = placeSchema.extend({ rating: z.number().nullish(), userRatingCount: z.number().nullish() }).parse(json);
+  return {
+    name: place.displayName?.text?.trim() || null,
+    phone: place.nationalPhoneNumber ?? null,
+    internationalPhone: place.internationalPhoneNumber ?? null,
+    address: place.formattedAddress ?? null,
+    websiteUrl: place.websiteUri ?? null,
+    mapsUrl: place.googleMapsUri ?? mapsUrl(place.id),
+    businessStatus: place.businessStatus ?? null,
+    category: place.primaryTypeDisplayName?.text ?? null,
+    rating: place.rating ?? null,
+    ratingCount: place.userRatingCount ?? null,
+  };
+}
+
 async function post(body: unknown, fieldMask: string) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',

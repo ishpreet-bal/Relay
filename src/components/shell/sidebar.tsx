@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Building2, Users, Layers, PhoneCall, CalendarCheck, BookOpen, BarChart3, Briefcase,
-  ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow, Lightbulb, ClipboardList, Receipt, Columns3, Sparkles,
+  ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow, Lightbulb, ClipboardList, Receipt, Columns3, Sparkles, Store,
 } from 'lucide-react';
 import type { Role } from '@prisma/client';
 import { cn } from '@/lib/utils';
@@ -42,6 +42,7 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
       { href: '/accounts', label: 'Accounts', icon: Building2, permission: 'account:read' },
       { href: '/sales', label: 'Sales pipeline', icon: Columns3, permission: 'account:read' },
       { href: '/contacts', label: 'Contacts', icon: Users, permission: 'account:read' },
+      { href: '/no-website', label: 'No-website leads', icon: Store, permission: 'call:read' },
       { href: '/duplicates', label: 'Duplicates', icon: CopyCheck, permission: 'account:read', badge: 'duplicates' },
       { href: '/campaigns', label: 'Campaigns', icon: Layers, permission: 'campaign:read' },
       { href: '/review', label: 'Review queue', icon: ShieldCheck, permission: 'message:read', badge: 'review' },
