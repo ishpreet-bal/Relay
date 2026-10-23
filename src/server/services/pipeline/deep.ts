@@ -10,6 +10,8 @@ import { buildDeepResearchPrompt, DEEP_RESEARCH_PROMPT_VERSION, DEEP_RESEARCH_SC
 import { isCapabilityAvailable } from '@/server/connectors/registry';
 import { discoverContacts } from '@/server/services/enrichment';
 import { estimateRoi } from '@/server/services/roi';
+import { syncFromResearch } from '@/server/services/delivery/opportunities';
+import { ensureBuiltinTemplates } from '@/server/studio/applications';
 import { logActivity } from '@/server/services/activity';
 import { assertCategoryBudget } from './budgets';
 
@@ -41,6 +43,13 @@ const outputSchema = z.object({
   unknowns: z.array(z.object({ question: z.string(), whyItMatters: z.string() })).default([]),
   contactStrategy: z.object({ angle: z.string(), evidenceFactIds: ids, channel: z.enum(['email', 'phone', 'either']), caution: z.string() }).nullable(),
   overallFit: z.object({ score: z.number(), rationale: z.string() }),
+  serviceFit: z.array(z.object({
+    offer: z.string(),
+    fit: z.enum(['strong', 'possible', 'weak', 'none']),
+    rationale: z.string(),
+    evidenceFactIds: ids,
+    proposal: z.string().default(''),
+  })).default([]),
 });
 export type DeepResearchOutput = z.infer<typeof outputSchema>;
 
@@ -50,10 +59,11 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
 
 /**
  * Keeps only claims that cite at least one real fact, strips invented ids
- * and unknown catalogue slugs, and bounds the numbers. Pure, so it can be
- * tested without a model.
+ * and unknown catalogue slugs, and bounds the numbers. A strong or possible
+ * fit for one of our offers must cite facts too; weak and none need not.
+ * Pure, so it can be tested without a model.
  */
-export function validateDeepOutput(raw: unknown, factIds: Set<string>, slugs: Set<string>) {
+export function validateDeepOutput(raw: unknown, factIds: Set<string>, slugs: Set<string>, offerNames: string[] = []) {
   const parsed = outputSchema.parse(raw);
   const keep = (refs: string[]) => refs.filter((r) => factIds.has(r));
   const rejected: string[] = [];
@@ -79,8 +89,16 @@ export function validateDeepOutput(raw: unknown, factIds: Set<string>, slugs: Se
   const contactStrategy = parsed.contactStrategy && strategyRefs.length ? { ...parsed.contactStrategy, evidenceFactIds: strategyRefs } : null;
   if (parsed.contactStrategy && !contactStrategy) rejected.push('contact strategy');
 
+  const offers = new Map(offerNames.map((n) => [n.trim().toLowerCase(), n]));
+  const serviceFit = parsed.serviceFit
+    .map((f) => ({ ...f, kind: 'AI_HYPOTHESIS' as const, offer: offers.get(f.offer.trim().toLowerCase()) ?? '', evidenceFactIds: keep(f.evidenceFactIds) }))
+    .filter((f) => f.offer)
+    .filter((f) => (f.fit === 'weak' || f.fit === 'none' || f.evidenceFactIds.length ? true : (rejected.push(`service fit: ${f.offer}`), false)))
+    .map((f) => (f.fit === 'none' ? { ...f, proposal: '' } : f));
+
   return {
     businessModel: { ...parsed.businessModel, evidenceFactIds: keep(parsed.businessModel.evidenceFactIds) },
+    serviceFit,
     processes,
     opportunities,
     unknowns: parsed.unknowns,
@@ -111,7 +129,7 @@ export async function runDeepResearch(organizationId: string, accountId: string,
     include: {
       research: true,
       signals: { where: { dismissedAt: null }, orderBy: { detectedAt: 'desc' }, take: 15 },
-      client: { include: { offers: { where: { isActive: true }, take: 1 } } },
+      client: { include: { offers: { where: { isActive: true }, orderBy: { createdAt: 'asc' }, take: 4 } } },
     },
   });
   if (!account) throw new NotFoundError('Account');
@@ -122,6 +140,7 @@ export async function runDeepResearch(organizationId: string, accountId: string,
   await assertCategoryBudget(organizationId, 'deep');
 
   // Studio templates are the solution catalogue; the older demo-site library fills in.
+  await ensureBuiltinTemplates();
   const [studio, legacy] = await Promise.all([
     db.appTemplate.findMany({
       where: { OR: [{ organizationId: null }, { organizationId }], archivedAt: null, versions: { some: { status: 'PUBLISHED' } } },
@@ -155,7 +174,7 @@ export async function runDeepResearch(organizationId: string, accountId: string,
       signals: account.signals.map((s) => ({ type: s.type, title: s.title, eventDate: s.eventDate?.toISOString().slice(0, 10) ?? null })),
       detectedSoftware: research.detectedSoftware,
       observedSignals: (research.observedSignals ?? {}) as Record<string, boolean>,
-      offer: account.client.offers[0]?.summary ?? null,
+      offers: account.client.offers.map((o) => ({ name: o.name, summary: o.summary })),
       catalogue,
     }),
     json: true,
@@ -164,7 +183,7 @@ export async function runDeepResearch(organizationId: string, accountId: string,
     maxTokens: 16_000,
   });
 
-  const result = validateDeepOutput(parseJson(completion.text), new Set(facts.map((f) => f.id)), new Set(catalogue.map((c) => c.slug)));
+  const result = validateDeepOutput(parseJson(completion.text), new Set(facts.map((f) => f.id)), new Set(catalogue.map((c) => c.slug)), account.client.offers.map((o) => o.name));
   const roi = roiScenarios(result.opportunities);
 
   // Decision-makers only through a permitted, connected provider.
@@ -191,7 +210,7 @@ export async function runDeepResearch(organizationId: string, accountId: string,
       trigger,
       summary: result.businessModel.description,
       facts: { businessModel: result.businessModel, processes: result.processes, basis: facts } as unknown as Prisma.InputJsonValue,
-      hypotheses: { opportunities: result.opportunities, roi, contactStrategy: result.contactStrategy, overallFit: result.overallFit, rejected: result.rejected } as unknown as Prisma.InputJsonValue,
+      hypotheses: { opportunities: result.opportunities, serviceFit: result.serviceFit, roi, contactStrategy: result.contactStrategy, overallFit: result.overallFit, rejected: result.rejected } as unknown as Prisma.InputJsonValue,
       unknowns: result.unknowns as unknown as Prisma.InputJsonValue,
       sources: { contacts, analysisVersion: account.researchVersion } as unknown as Prisma.InputJsonValue,
       model: completion.model,
@@ -207,6 +226,16 @@ export async function runDeepResearch(organizationId: string, accountId: string,
       researchCostMillicents: { increment: costMillicents },
     },
   });
+  // Each evidence-backed idea becomes an opportunity, matched and estimated,
+  // waiting for a person to assess and qualify it.
+  let opportunitiesCreated = 0;
+  if (result.opportunities.length) {
+    try {
+      opportunitiesCreated = (await syncFromResearch(systemAccess(organizationId), accountId)).created;
+    } catch (err) {
+      logger.warn('deep_research.opportunities_failed', { accountId, error: err });
+    }
+  }
   await logActivity({
     organizationId, clientId: account.clientId, accountId, type: 'RESEARCH_COMPLETED',
     title: 'Deep research completed',
@@ -214,5 +243,5 @@ export async function runDeepResearch(organizationId: string, accountId: string,
       + (result.rejected.length ? ` ${result.rejected.length} unsupported items were discarded.` : ''),
     metadata: { versionId: version.id, costMillicents },
   });
-  return { versionId: version.id, opportunities: result.opportunities.length, fit: result.overallFit.score, rejected: result.rejected.length, contacts };
+  return { versionId: version.id, opportunities: result.opportunities.length, opportunitiesCreated, fit: result.overallFit.score, rejected: result.rejected.length, contacts };
 }

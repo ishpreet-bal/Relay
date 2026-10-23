@@ -21,6 +21,8 @@ const serverSchema = z.object({
   CLERK_WEBHOOK_SECRET: z.string().min(1),
 
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  /** Needed only for an API key that isn't scoped to a workspace: the workspace its requests run in. */
+  ANTHROPIC_WORKSPACE_ID: z.string().min(1).optional(),
   OPENAI_API_KEY: z.string().min(1).optional(),
   AI_MONTHLY_BUDGET_CENTS: z.coerce.number().int().positive().default(50_000),
 

@@ -14,13 +14,16 @@ import { recordUsage } from '@/server/services/usage';
 import { enqueueJob } from '@/server/services/jobs';
 import { ProviderUnavailableError, throttled } from '@/server/queues/throttle';
 import { assertCategoryBudget, CategoryBudgetError } from '@/server/services/pipeline/budgets';
-import { exclusionReason, nextRunAfter, planQueries, type PlanningProfile } from './plan';
+import { exclusionReason, MAX_REQUESTS_PER_RUN, nextRunAfter, planQueries, rotate, type PlanningProfile } from './plan';
 import { budgetLevel, monthSpendMillicents } from './profiles';
 import { confirmName, readSiteIdentity, type SiteIdentity } from './site-identity';
 
 /**
- * A discovery run: every search a profile plans, against each connected
- * source, until the result limit, the monthly budget or the source runs out.
+ * A discovery run: the searches a profile plans, against each connected
+ * source, until it has found its number of new businesses, made its share of
+ * paid requests, or hit the monthly budget. Each run starts where the
+ * previous one stopped, so a scheduled profile keeps reaching businesses it
+ * hasn't seen instead of repeating its first searches.
  *
  * Runs advance in steps that each fit inside a deadline (a serverless
  * function's time limit, or a worker's time slice) and save a cursor, so the
@@ -47,6 +50,10 @@ export interface RunDetails {
   stopReason: string | null;
   warnings: string[];
   costIsEstimate: boolean;
+  /** Where each source's plan starts in this run (a position in planQueries). */
+  offsets: Record<string, number>;
+  /** Where the next run should start each source's plan. */
+  nextOffsets: Record<string, number>;
 }
 
 /** Leave this much of a step's time for one page of results (search, site reads, matching). */
@@ -66,6 +73,8 @@ export function readDetails(value: Prisma.JsonValue | null, sources: string[]): 
     stopReason: v.stopReason ?? null,
     warnings: v.warnings ?? [],
     costIsEstimate: v.costIsEstimate ?? false,
+    offsets: v.offsets ?? {},
+    nextOffsets: v.nextOffsets ?? v.offsets ?? {},
   };
 }
 
@@ -93,6 +102,9 @@ export async function startDiscoveryRun(access: AccessContext, userId: string | 
   const spent = await monthSpendMillicents(profileId);
   const overBudget = budgetLevel(spent, profile.monthlyBudgetCents) === 'reached';
   const now = new Date();
+  // Pick up the plan where the previous run of this profile stopped.
+  const previous = await db.discoveryRun.findFirst({ where: { profileId }, orderBy: { createdAt: 'desc' }, select: { details: true, sources: true } });
+  const offsets = previous ? readDetails(previous.details, previous.sources).nextOffsets : {};
   const run = await db.discoveryRun.create({
     data: {
       organizationId: access.organizationId,
@@ -107,7 +119,7 @@ export async function startDiscoveryRun(access: AccessContext, userId: string | 
       error: overBudget ? "This month's budget for the profile is used up. Raise it or wait for next month." : null,
       finishedAt: overBudget ? now : null,
       createdById: userId,
-      details: readDetails(null, profile.sources) as unknown as Prisma.InputJsonValue,
+      details: { ...readDetails(null, profile.sources), offsets, nextOffsets: offsets } as unknown as Prisma.InputJsonValue,
     },
   });
   if (overBudget) {
@@ -195,18 +207,29 @@ export async function executeDiscoveryStep(runId: string, opts: { deadline: numb
       continue;
     }
     stats.status = 'RUNNING';
-    const queries = planQueries(plan, def.discovery.queryStyle);
+    const offset = details.offsets[sourceId] ?? 0;
+    const queries = rotate(planQueries(plan, def.discovery.queryStyle), offset);
     const resume = si === cursor.source;
 
     for (let qi = resume ? cursor.query : 0; qi < queries.length; qi++) {
       const resumeQuery = resume && qi === cursor.query;
       let page = resumeQuery ? cursor.page : 0;
       let pageToken = resumeQuery ? cursor.pageToken : null;
+      // The next run starts after the last search this one began.
+      details.nextOffsets[sourceId] = (offset + qi + 1) % queries.length;
 
       while (page < def.discovery.maxPages) {
-        if (counters.found >= plan.maxResultsPerRun) {
-          details.stopReason = `Reached the limit of ${plan.maxResultsPerRun} results per run`;
+        // Only businesses new to Relay count: known ones are refreshed, not "found" again.
+        if (counters.imported >= plan.maxResultsPerRun) {
+          details.stopReason = `Found ${plan.maxResultsPerRun} new businesses, the limit for one run`;
           stats.status = 'DONE';
+          details.nextOffsets[sourceId] = (offset + qi) % queries.length;
+          break sources;
+        }
+        if (counters.queriesRun >= MAX_REQUESTS_PER_RUN) {
+          details.stopReason = `Stopped after ${MAX_REQUESTS_PER_RUN} searches; the next run continues from here`;
+          stats.status = 'DONE';
+          details.nextOffsets[sourceId] = (offset + qi) % queries.length;
           break sources;
         }
         if (Date.now() + PAGE_TIME_MS > opts.deadline) {
@@ -276,7 +299,7 @@ export async function executeDiscoveryStep(runId: string, opts: { deadline: numb
 
         const fresh = (result.data?.companies ?? []).filter((c) => !seen.has(`${def.id}:${c.externalId}`));
         fresh.forEach((c) => seen.add(`${def.id}:${c.externalId}`));
-        const batch = fresh.slice(0, plan.maxResultsPerRun - counters.found);
+        const batch = fresh.slice(0, plan.maxResultsPerRun - counters.imported);
         stats.results += batch.length;
         const outcomes = await ingestPage(ctx, def, batch, query, plan);
         for (const o of outcomes) tally(counters, o);
@@ -552,7 +575,9 @@ async function applySearchContext(ctx: IngestContext, accountId: string, def: Co
   if (!account.city && query.city) searched.city = query.city;
   if (!account.region && query.region) searched.region = query.region;
   if (Object.keys(searched).length) {
-    await db.account.update({ where: { id: accountId }, data: searched });
+    // The account was scored when it was created, before it had an industry
+    // or a city; mark the score stale so it is recomputed with them.
+    await db.account.update({ where: { id: accountId }, data: { ...searched, scoredAt: null } });
     await recordProvenance({ organizationId: ctx.run.organizationId, accountId }, searched, { source: 'OTHER', provider: 'discovery_search', status: 'UNVERIFIED', confidence: 0.5 });
   }
   const days = def.discovery!.coordinateRetentionDays;

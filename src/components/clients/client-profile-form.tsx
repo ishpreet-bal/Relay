@@ -19,6 +19,7 @@ export interface ClientProfileValues {
   senderName: string;
   senderTitle: string;
   bookingUrl: string;
+  mailingAddress: string;
   primaryContactName: string;
   primaryContactEmail: string;
   primaryContactPhone: string;
@@ -37,7 +38,7 @@ export function profileValuesFrom(c: ClientLike | null | undefined, internal: bo
     differentiators: l(c?.differentiators), existingCustomers: l(c?.existingCustomers),
     averageDealValue: typeof c?.averageDealValueCents === 'number' ? String(c.averageDealValueCents / 100) : '',
     currency: s(c?.currency) || 'CAD', timezone: s(c?.timezone) || 'America/Toronto',
-    senderName: s(c?.senderName), senderTitle: s(c?.senderTitle), bookingUrl: s(c?.bookingUrl),
+    senderName: s(c?.senderName), senderTitle: s(c?.senderTitle), bookingUrl: s(c?.bookingUrl), mailingAddress: s(c?.mailingAddress),
     primaryContactName: s(c?.primaryContactName), primaryContactEmail: s(c?.primaryContactEmail), primaryContactPhone: s(c?.primaryContactPhone),
     ...(internal ? { status: (c?.status as ClientProfileValues['status']) ?? 'ONBOARDING', notes: s(c?.notes) } : {}),
   };
@@ -61,6 +62,7 @@ export function profilePayload(v: ClientProfileValues) {
     senderName: n(v.senderName),
     senderTitle: n(v.senderTitle),
     bookingUrl: v.bookingUrl.trim(),
+    mailingAddress: n(v.mailingAddress),
     primaryContactName: n(v.primaryContactName),
     primaryContactEmail: v.primaryContactEmail.trim(),
     primaryContactPhone: n(v.primaryContactPhone),
@@ -134,6 +136,7 @@ export function ClientProfileForm({ initial, internal, submitLabel, pending, err
           <Field label="Their title">{(id) => <input id={id} className="input" value={v.senderTitle} onChange={text('senderTitle')} />}</Field>
         </div>
         <Field label="Booking link" hint="Optional. Used when a prospect asks for a time.">{(id) => <input id={id} type="url" className="input" value={v.bookingUrl} onChange={text('bookingUrl')} />}</Field>
+        <Field label="Mailing address" hint="Printed at the foot of every email, as Canada's anti-spam law (CASL) requires. Nothing is sent without it. A PO box or registered office is fine.">{(id) => <input id={id} className="input" value={v.mailingAddress} onChange={text('mailingAddress')} placeholder="123 Example St, Suite 400, Toronto, ON M5V 1A1" />}</Field>
       </fieldset>
 
       <fieldset className="space-y-3">

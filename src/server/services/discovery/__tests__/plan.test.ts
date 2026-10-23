@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DiscoveredCompany } from '@/server/connectors/types';
-import { GTA_DEFAULTS, MAX_QUERIES_PER_RUN, exclusionReason, nextRunAfter, planQueries, searchTerms, type PlanningProfile } from '../plan';
+import { GTA_DEFAULTS, MAX_PLANNED_QUERIES, exclusionReason, nextRunAfter, planQueries, rotate, searchTerms, type PlanningProfile } from '../plan';
 
 const profile = (over: Partial<PlanningProfile> = {}): PlanningProfile => ({
   country: 'CA', regions: ['ON'], cities: ['Mississauga', 'Brampton'], latitude: 43.65, longitude: -79.38, radiusKm: 30,
@@ -43,8 +43,15 @@ describe('planQueries (text sources)', () => {
   });
 
   it('caps the number of searches', () => {
-    const q = planQueries(profile({ industries: Array.from({ length: 10 }, (_, i) => `cat ${i}`), cities: [...GTA_DEFAULTS.cities] }), 'text');
-    expect(q).toHaveLength(MAX_QUERIES_PER_RUN);
+    const q = planQueries(profile({ industries: Array.from({ length: 40 }, (_, i) => `cat ${i}`), cities: [...GTA_DEFAULTS.cities] }), 'text');
+    expect(q).toHaveLength(MAX_PLANNED_QUERIES);
+  });
+
+  it('rotates the plan so each run starts where the last one stopped', () => {
+    expect(rotate(['a', 'b', 'c', 'd'], 1)).toEqual(['b', 'c', 'd', 'a']);
+    expect(rotate(['a', 'b', 'c'], 5)).toEqual(['c', 'a', 'b']);
+    expect(rotate(['a', 'b'], -1)).toEqual(['b', 'a']);
+    expect(rotate([], 3)).toEqual([]);
   });
 
   it('plans nothing without a category or keyword', () => {

@@ -11,9 +11,9 @@
  * content from steering the model.
  */
 
-export const DEEP_RESEARCH_PROMPT_VERSION = 'deep-research/2026-10-22.1';
+export const DEEP_RESEARCH_PROMPT_VERSION = 'deep-research/2026-10-23.service-fit.1';
 
-export const DEEP_RESEARCH_SYSTEM = `You assess whether a business could benefit from workflow automation, for an automation agency deciding whether and how to approach it.
+export const DEEP_RESEARCH_SYSTEM = `You assess whether a business could benefit from what our company sells (the offers listed), and in particular from workflow automation, for a team deciding whether and how to approach it.
 
 You are given verified facts about the business, each with an id like "f3". They are the only things you know about it. Rules:
 1. Every process, opportunity and contact strategy you describe must cite the ids of the facts it rests on in evidenceFactIds. If you cannot cite at least one fact, leave the item out.
@@ -22,7 +22,8 @@ You are given verified facts about the business, each with an id like "f3". They
 4. Put what can only be learned by asking the business in unknowns, phrased as discovery-call questions.
 5. Match opportunities only to solutions in the catalogue provided, by slug, and only when the fit is direct. An empty list is fine.
 6. Do not name or describe individual people, and do not suggest contact details. Contact strategy is about the angle and channel, not who.
-7. overallFit is 0-100: how strong the evidence is that this business has a problem the agency can solve, not how big the business is.`;
+7. overallFit is 0-100: how strong the evidence is that this business has a problem we can solve, not how big the business is.
+8. serviceFit: one entry per offer listed, by its exact name. fit is strong, possible, weak or none. strong and possible must cite facts; say in the rationale what you observed and what you are inferring. proposal is the specific first engagement we could propose to this business for that offer, in one sentence, or empty when fit is none.`;
 
 export interface DeepResearchContext {
   company: { name: string; industry: string | null; city: string | null; region: string | null; employeeCount: number | null; website: string | null };
@@ -32,7 +33,7 @@ export interface DeepResearchContext {
   signals: Array<{ type: string; title: string; eventDate: string | null }>;
   detectedSoftware: string[];
   observedSignals: Record<string, boolean>;
-  offer: string | null;
+  offers: Array<{ name: string; summary: string }>;
   catalogue: Array<{ slug: string; title: string; industry: string; tagline: string }>;
 }
 
@@ -64,9 +65,9 @@ Software fingerprints: ${ctx.detectedSoftware.join(', ') || 'none detected'}
 Patterns: ${observed}
 </observed_on_website>
 
-<agency_offer>
-${ctx.offer ?? 'Workflow automation for small and mid-sized businesses.'}
-</agency_offer>
+<our_offers>
+${ctx.offers.map((o) => `- "${o.name}": ${o.summary}`).join('\n') || '- "Workflow automation": Workflow automation for small and mid-sized businesses.'}
+</our_offers>
 
 <solution_catalogue>
 ${catalogue}
@@ -81,7 +82,7 @@ const strings = { type: 'array', items: { type: 'string' } };
 export const DEEP_RESEARCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['businessModel', 'processes', 'opportunities', 'unknowns', 'contactStrategy', 'overallFit'],
+  required: ['businessModel', 'processes', 'opportunities', 'unknowns', 'contactStrategy', 'overallFit', 'serviceFit'],
   properties: {
     businessModel: {
       type: 'object', additionalProperties: false, required: ['description', 'evidenceFactIds'],
@@ -134,6 +135,19 @@ export const DEEP_RESEARCH_SCHEMA = {
     overallFit: {
       type: 'object', additionalProperties: false, required: ['score', 'rationale'],
       properties: { score: { type: 'number' }, rationale: { type: 'string' } },
+    },
+    serviceFit: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['offer', 'fit', 'rationale', 'evidenceFactIds', 'proposal'],
+        properties: {
+          offer: { type: 'string' },
+          fit: { type: 'string', enum: ['strong', 'possible', 'weak', 'none'] },
+          rationale: { type: 'string' },
+          evidenceFactIds: strings,
+          proposal: { type: 'string' },
+        },
+      },
     },
   },
 } as const;

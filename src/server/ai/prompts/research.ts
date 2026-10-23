@@ -8,13 +8,13 @@ import { CLAIM_TYPES, SIGNAL_TYPES } from '@/lib/domain';
  * AiRun, so a quality regression can be traced to the exact prompt that caused
  * it and old results can be selectively re-run.
  */
-export const RESEARCH_PROMPT_VERSION = 'research/2026-10-06.offer-aware.1';
+export const RESEARCH_PROMPT_VERSION = 'research/2026-10-23.multi-offer.1';
 
 export { CLAIM_TYPES, SIGNAL_TYPES };
 
 export const RESEARCH_SYSTEM = `You are a research analyst preparing a salesperson to contact a company. You read the company's own website and report what it says — nothing else.
 
-The salesperson works for a business that sells something specific (described below). Your job is to answer: what is true about this company, what has happened recently that might make them care, and why might they need what our client sells?
+The salesperson works for a business that sells one or more specific offers (described below). Your job is to answer: what is true about this company, what has happened recently that might make them care, and which of our client's offers might they need, and why?
 
 EVIDENCE RULES — these are absolute:
 1. Every fact, signal, attribute and relevance angle must be supported by text on the pages provided. Cite the page id and quote the supporting text verbatim.
@@ -52,6 +52,8 @@ export interface ResearchAttribute {
 }
 
 export interface ResearchRelevance {
+  /** The name of the offer this angle is about, exactly as listed. */
+  offer?: string;
   angle: string;
   reasoning: string;
   confidence: number;
@@ -83,7 +85,7 @@ export interface ResearchContext {
     productsServices: string[];
     serviceAreas: string[];
   };
-  offer: { summary: string; valueProposition: string | null } | null;
+  offers: Array<{ name: string; summary: string; valueProposition: string | null }>;
   icp: { name: string; requiredAttributes: string[]; signalKeywords: string[] } | null;
   detectedSoftware: string[];
   pages: CrawledPage[];
@@ -95,8 +97,8 @@ export function buildResearchPrompt(ctx: ResearchContext): string {
     .map((p) => `<page id="${p.id}" url="${p.url}" title="${p.title.replace(/"/g, "'")}">\n${p.text}\n</page>`)
     .join('\n\n');
 
-  const offer = ctx.offer
-    ? `Offer: ${ctx.offer.summary}${ctx.offer.valueProposition ? `\nWhy it matters: ${ctx.offer.valueProposition}` : ''}`
+  const offer = ctx.offers.length
+    ? `Offers:\n${ctx.offers.map((o) => `- "${o.name}": ${o.summary}${o.valueProposition ? ` Why it matters: ${o.valueProposition}` : ''}`).join('\n')}`
     : 'Offer: not specified — research the company itself and leave relevance empty unless the pages make a need obvious.';
 
   return `<today>${ctx.today}</today>
@@ -143,11 +145,11 @@ Respond with JSON matching exactly this shape:
     { "attribute": "the attribute text from the ICP", "assessment": "MET | NOT_MET | UNKNOWN", "note": "one sentence", "evidence": [{ "pageId": "p1", "quote": "exact text" }] }
   ],
   "relevance": [
-    { "angle": "Short label", "reasoning": "Observation (quoted below) → why it might connect to our client's offer. Phrase as a possibility, not a fact.", "confidence": 0.0, "evidence": [{ "pageId": "p3", "quote": "exact text" }] }
+    { "offer": "the offer's name, exactly as listed", "angle": "Short label", "reasoning": "Observation (quoted below) → why it might connect to that offer. Phrase as a possibility, not a fact.", "confidence": 0.0, "evidence": [{ "pageId": "p3", "quote": "exact text" }] }
   ],
   "talkingPoints": ["Something specific a caller could mention, grounded in the facts above."],
   "overallConfidence": 0.0
 }
 
-Return up to 8 facts, up to 5 signals, one entry per ICP attribute (UNKNOWN needs no evidence), and up to 3 relevance angles. Return only the JSON object.`;
+Return up to 8 facts, up to 5 signals, one entry per ICP attribute (UNKNOWN needs no evidence), and up to 2 relevance angles per offer (none for an offer the pages give no reason for). Return only the JSON object.`;
 }

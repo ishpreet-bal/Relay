@@ -1,5 +1,6 @@
 import { hostname } from 'node:os';
 import { db } from '@/lib/db';
+import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { runSequencer } from './services/sequencer';
 import { enforceContextualGuardrail } from './services/tier-performance';
@@ -142,6 +143,16 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     logger.info('worker.stopping', { signal });
     shuttingDown = true;
   });
+}
+
+// Refuse to start half-configured: without this a worker missing DATABASE_URL
+// reports itself running while every cycle fails, and AI, sending and
+// unsubscribe links fail later, one variable at a time.
+try {
+  env();
+} catch (err) {
+  logger.error('worker.config_invalid', { error: err });
+  process.exit(1);
 }
 
 loop().catch((err) => {

@@ -31,7 +31,7 @@ const reachable = dbTestsAllowed() && await db.$queryRaw`SELECT 1`.then(() => tr
 const { createAccount } = await import('@/server/services/accounts');
 const { systemAccess } = await import('@/server/access/scope');
 const { processQueues } = await import('@/server/services/job-runner');
-const { enqueuePendingScreening, queueAnalysis, setStage } = await import('../gates');
+const { enqueuePendingScreening, queueAnalysis, queueQualifiedBacklog, setStage } = await import('../gates');
 const { refreshAccount } = await import('../refresh');
 const { funnelMetrics } = await import('../funnel');
 const { updatePipelineSettings } = await import('../settings');
@@ -152,6 +152,17 @@ describe.skipIf(!reachable)('research funnel (database)', () => {
     expect([fit, capped].filter((a) => a.pipelineStage === 'QUALIFIED')).toHaveLength(1);
     expect(await db.job.count({ where: { organizationId: orgId, type: 'RESEARCH' } })).toBe(1);
     expect(await db.job.count({ where: { organizationId: orgId, type: 'RESEARCH', entityId: ids.poor } })).toBe(0);
+
+    // The account that missed today's allowance waits for room, best first, and is queued only once.
+    expect(await queueQualifiedBacklog(orgId)).toBe(0);
+    await updatePipelineSettings(orgId, null as never, { maxAnalysesPerDay: 2 });
+    expect(await queueQualifiedBacklog(orgId)).toBe(1);
+    const backlog = await db.job.findFirstOrThrow({ where: { organizationId: orgId, type: 'RESEARCH', entityId: capped.researchVersion ? fit.id : capped.id } });
+    expect(backlog.payload).toMatchObject({ trigger: 'AUTO' });
+    expect(await queueQualifiedBacklog(orgId)).toBe(0);
+    // Leave it waiting for the tests below.
+    await db.job.update({ where: { id: backlog.id }, data: { status: 'CANCELLED' } });
+    await updatePipelineSettings(orgId, null as never, { maxAnalysesPerDay: 1 });
   });
 
   it('keeps verified facts, hypotheses and unknowns apart, and deep research cites only real facts', async () => {

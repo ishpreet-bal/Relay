@@ -11,7 +11,7 @@ import { EvidenceDrawer } from './evidence-drawer';
 
 interface Citation { pageId: string; quote: string; url: string; pageTitle: string; matchType: string; similarity: number }
 interface Fact { id: string; claimType: ClaimType; statement: string; citations: Citation[] }
-interface Angle { angle: string; reasoning: string; confidence: number; citations: Citation[] }
+interface Angle { offer?: string | null; angle: string; reasoning: string; confidence: number; citations: Citation[] }
 interface Attribute { attribute: string; assessment: 'MET' | 'NOT_MET' | 'UNKNOWN'; note: string; citations: Citation[] }
 interface Report { totalClaims: number; groundedClaims: number; groundingRate: number; rejectedClaims: Array<{ claim: string; reason: string }> }
 
@@ -107,6 +107,7 @@ export function ResearchPanel({ accountId, canRun, hasWebsite }: { accountId: st
               <li key={i} className="card p-3">
                 <div className="flex items-start gap-2">
                   <p className="text-[13px] font-medium flex-1">{a.angle}</p>
+                  {a.offer && <Pill>{a.offer}</Pill>}
                   <span className="num text-[11px] text-muted" title="Model confidence after verification">{Math.round(a.confidence * 100)}%</span>
                 </div>
                 <p className="text-micro text-muted mt-1">{a.reasoning}</p>

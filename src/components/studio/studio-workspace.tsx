@@ -35,7 +35,7 @@ export function StudioWorkspace(caps: StudioCaps) {
   const [creating, setCreating] = useState<{ templateVersionId?: string } | null>(null);
   return (
     <>
-      <Topbar title="Studio"
+      <Topbar title="Relay Studio"
               actions={caps.canWrite && (
                 <button type="button" className="btn-primary h-8 text-micro" onClick={() => setCreating({})}><Plus className="size-3.5" /> New application</button>
               )} />

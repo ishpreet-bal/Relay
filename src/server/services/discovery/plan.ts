@@ -22,8 +22,22 @@ export interface PlanningProfile {
   maxResultsPerRun: number;
 }
 
-/** Upper bound on searches in one run, whatever the profile says. */
-export const MAX_QUERIES_PER_RUN = 40;
+/** Upper bound on the searches a profile plans. Runs work through them in turn. */
+export const MAX_PLANNED_QUERIES = 400;
+
+/** Paid search requests one run may make, however few new businesses it finds. */
+export const MAX_REQUESTS_PER_RUN = 15;
+
+/**
+ * The plan starting at `offset`, wrapping around: each scheduled run picks up
+ * the searches after the ones the previous run used, so a daily profile walks
+ * its whole category × city grid instead of repeating the first searches.
+ */
+export function rotate<T>(items: T[], offset: number): T[] {
+  if (!items.length) return items;
+  const start = ((Math.trunc(offset) % items.length) + items.length) % items.length;
+  return [...items.slice(start), ...items.slice(0, start)];
+}
 
 /** The default market: the Greater Toronto Area and nearby Southern Ontario. */
 export const GTA_DEFAULTS = {
@@ -115,7 +129,7 @@ export function planQueries(p: PlanningProfile, style: 'text' | 'structured'): D
         locations: [],
         pageSize: Math.min(20, Math.max(1, p.maxResultsPerRun)),
       });
-      if (queries.length >= MAX_QUERIES_PER_RUN) return queries;
+      if (queries.length >= MAX_PLANNED_QUERIES) return queries;
     }
   }
   return queries;

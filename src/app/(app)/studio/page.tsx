@@ -2,7 +2,7 @@ import { pageSession } from '@/lib/page-auth';
 import { can } from '@/lib/rbac';
 import { StudioWorkspace } from '@/components/studio/studio-workspace';
 
-export const metadata = { title: 'Studio' };
+export const metadata = { title: 'Relay Studio' };
 
 export default async function StudioPage() {
   const session = await pageSession('studio:read');

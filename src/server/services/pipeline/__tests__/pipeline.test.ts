@@ -105,6 +105,24 @@ describe('validateDeepOutput', () => {
   it('rejects output that does not match the schema', () => {
     expect(() => validateDeepOutput({ nope: true }, new Set(), new Set())).toThrow();
   });
+
+  it('keeps a fit for each of our offers, and a strong or possible fit only with evidence', () => {
+    const offers = ['AI Lead Generation & Customer Acquisition', 'Custom AI & Business Process Automation'];
+    const v = validateDeepOutput({
+      ...raw,
+      serviceFit: [
+        { offer: 'custom ai & business process automation', fit: 'strong', rationale: 'Quotes arrive by email (observed); retyping them is an inference.', evidenceFactIds: ['r2', 'zz'], proposal: 'A quote intake form that creates job cards.' },
+        { offer: 'AI Lead Generation & Customer Acquisition', fit: 'possible', rationale: 'Guess', evidenceFactIds: [], proposal: 'Prospecting' },
+        { offer: 'Payroll outsourcing', fit: 'strong', rationale: 'Not something we sell', evidenceFactIds: ['r1'], proposal: 'x' },
+        { offer: offers[0], fit: 'none', rationale: 'Sells only to consumers.', evidenceFactIds: [], proposal: 'should be dropped' },
+      ],
+    }, new Set(['r1', 'r2']), new Set(), offers);
+    expect(v.serviceFit).toEqual([
+      expect.objectContaining({ offer: offers[1], fit: 'strong', evidenceFactIds: ['r2'], kind: 'AI_HYPOTHESIS' }),
+      expect.objectContaining({ offer: offers[0], fit: 'none', proposal: '' }),
+    ]);
+    expect(v.rejected).toContain(`service fit: ${offers[0]}`);
+  });
 });
 
 describe('roiScenarios', () => {

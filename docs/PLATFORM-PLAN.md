@@ -3,7 +3,7 @@
 Written 2026-10-21 from the code on branch `claude/busy-noether-wkwta7`, in
 response to two briefs: the lead-intelligence platform brief and its
 extension (scalable research, Studio, recurring revenue). The briefs call the
-product "Foundry"; the product is named **Relay** everywhere in code and UI.
+product "Foundry"; the product is named **Relay** everywhere in code and UI. Its two systems are **Relay Intelligence** (discovery, research, qualification, outreach) and **Relay Studio** (custom automation applications, reusable solutions, deployment, recurring client management). Internal identifiers that predate the rename (the `foundry_*` Stripe price lookup keys, the organization slug, the Supabase project name) are left as they are so nothing that depends on them breaks.
 
 This document is the running architecture review and checklist. Each phase
 section is updated when the phase lands; nothing is marked done without a
@@ -295,6 +295,7 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 | `GOOGLE_PLACES_API_KEY` | Google Cloud console → enable "Places API (New)" → API key restricted to that API | discovery |
 | `APOLLO_API_KEY` (+ `APOLLO_COST_PER_CREDIT_MILLICENTS`) | Apollo → Settings → API | company search, contacts, email lookup |
 | `ANTHROPIC_API_KEY` | platform.claude.com | research, drafting, verification |
+| `ANTHROPIC_WORKSPACE_ID` (optional) | Claude Console → the workspace's ID. Only for an API key that isn't scoped to a workspace (Anthropic then rejects requests without it); a key created inside a workspace needs nothing extra | every AI call |
 | `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` (+ `*_COST_PER_CHECK_MILLICENTS`) | vendor dashboard | email verification before sending |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud → APIs & Services → enable Gmail API → OAuth client (Web), authorised redirect URI `https://<your domain>/api/oauth/google/callback`. `gmail.send` is a sensitive scope: unverified apps work for test users you add; Google's app verification is needed beyond that. The consent screen's home page is `/about` and its privacy policy is `/privacy` (both public) | sending from Gmail / Workspace mailboxes |
 | `PRIVACY_CONTACT_EMAIL` (optional) | the address people write to for access, correction or deletion requests | shown on the public privacy policy; without it the page says to reply to any email received |
@@ -735,3 +736,76 @@ Anthropic for the assistant) has been called live from this environment:
 their tests fake the provider. Each shows a clear not-configured state until
 its keys are set.
 
+
+### Relay as its own first client (2026-10-23)
+
+Brief: rename to Relay (Relay Intelligence, Relay Studio), configure Relay
+itself as the first, internal client, and run the first real discovery.
+
+**Naming.** The navigation groups the product as Relay Intelligence
+(Discovery, Research funnel, Accounts, Sales pipeline, Contacts, Duplicates,
+Campaigns, Review queue, Analytics) and Relay Studio (Opportunities,
+Applications, Projects, Billing). The about page and site metadata describe
+both. Unchanged on purpose: the `foundry_*` Stripe lookup keys, the
+organization slug `foundry-main-v2`, the Supabase project name, the
+repository's local folder name. The organization's display name comes from
+Clerk; rename it there and the webhook updates Relay's copy.
+
+**Relay as an internal client.** `Client.kind` can now be `INTERNAL`: listed
+and prospected for like a customer, labelled "internal", never billed
+(subscriptions refuse it), no client portal. The Relay client is switched to
+it once this branch is deployed (switching earlier would hide it from the
+current production build, which lists only `CUSTOMER`).
+
+**Configuration** (`scripts/setup/relay-internal.ts`, through the app's own
+services; production was configured with the same records):
+
+- Profile: what Relay does, its two services, GTA, Ontario and Canada as
+  service areas, the ten target industries. No website yet; none needed.
+- Offers: *AI Lead Generation & Customer Acquisition*; *Custom AI & Business
+  Process Automation*.
+- One ideal customer profile per industry: manufacturing and industrial;
+  construction and contracting; trucking, transportation and logistics;
+  medical and healthcare administration; pharmaceuticals; spas, salons and
+  beauty; retail and e-commerce; real estate; professional services;
+  startups and emerging companies. Each has its search categories, target
+  titles, the attributes research checks, and timely signals.
+- One discovery profile per industry: Google Places, 14 GTA cities and 8
+  more in Ontario, 25 new businesses per run, daily, US$3 a month at list
+  price (before Google's free monthly requests), large chains excluded.
+  First runs are staggered two hours apart, manufacturing first.
+- Research funnel: screening on; a business qualifies for website analysis
+  at 40 (a map listing in a target industry with a confirmed website scores
+  about 53 before research, under the default 55); up to 8 analyses and 2
+  deep researches a day; US$14 analysis + US$6 deep research = the US$20 a
+  month research budget. Ceilings for the rest: discovery US$30, contact
+  lookups US$10, drafting US$5, everything US$65.
+- Playbook "Relay: AI lead generation and automation" and one draft
+  campaign per offer: every email reviewed, research-based drafts only,
+  weekdays 9:00 to 16:00 Toronto time, 10 a day, one person per company.
+
+**Changes to make it work end to end:**
+
+- Discovery runs continue from where the previous run of the profile
+  stopped, and only businesses new to Relay count toward the 25; a run
+  makes at most 15 paid searches. Before this a daily profile repeated its
+  first searches and found the same businesses every day.
+- Qualified accounts that miss a day's analysis allowance are queued on
+  later days, best first.
+- Research weighs every active offer: each "why they might care" angle
+  names its offer; deep research gives a fit (strong, possible, weak, none)
+  and a proposed first engagement per offer, each strong or possible fit
+  citing verified facts. Deep research turns its evidence-backed automation
+  ideas into opportunity records (matched to a Studio template, classified
+  for reuse, estimated), and opportunity lists show the estimate priced at
+  the rate card (setup + monthly). The Studio template catalogue is
+  installed before deep research so matching has something to match.
+- CASL sender identification: every email's text and HTML parts end with
+  who sent it, on whose behalf, the mailing address and a contact address.
+  The send gate refuses a client without a mailing address
+  (`Client.mailingAddress`, migration `20261023080000_client_mailing_address`).
+- The worker refuses to start with incomplete configuration and lists every
+  missing variable.
+
+Tests: discovery rotation and new-only counting, the backlog queue, service
+fit validation, and the CASL footer and gate on Postgres; 252 tests passing.

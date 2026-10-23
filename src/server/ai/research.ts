@@ -31,6 +31,8 @@ export interface VerifiedFact {
 }
 
 export interface VerifiedRelevance {
+  /** Which of the client's offers the angle is about; null when the model named none we sell. */
+  offer: string | null;
   angle: string;
   reasoning: string;
   confidence: number;
@@ -65,7 +67,7 @@ export async function runResearch(organizationId: string, accountId: string, opt
     include: {
       client: {
         include: {
-          offers: { where: { isActive: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+          offers: { where: { isActive: true }, orderBy: { createdAt: 'asc' }, take: 4 },
           icps: { where: { isActive: true }, orderBy: { createdAt: 'asc' } },
         },
       },
@@ -77,7 +79,8 @@ export async function runResearch(organizationId: string, accountId: string, opt
   }
   await assertCategoryBudget(organizationId, 'analysis');
 
-  const offer = account.client.offers[0] ?? null;
+  const offers = account.client.offers;
+  const offer = offers[0] ?? null;
   const icp = account.client.icps.find((i) => i.id === account.icpId) ?? account.client.icps[0] ?? null;
 
   await db.research.upsert({
@@ -114,7 +117,7 @@ export async function runResearch(organizationId: string, accountId: string, opt
       user: buildResearchPrompt({
         account,
         client: account.client,
-        offer: offer ? { summary: offer.summary, valueProposition: offer.valueProposition } : null,
+        offers: offers.map((o) => ({ name: o.name, summary: o.summary, valueProposition: o.valueProposition })),
         icp: icp ? { name: icp.name, requiredAttributes: icp.requiredAttributes, signalKeywords: icp.signalKeywords } : null,
         detectedSoftware: crawl.detectedSoftware,
         pages: crawl.pages,
@@ -164,7 +167,9 @@ export async function runResearch(organizationId: string, accountId: string, opt
     const verifiedFacts: VerifiedFact[] = facts.grounded.map((f, i) => ({
       id: `r${i + 1}`, claimType: f.claimType, statement: f.statement, citations: f.citations,
     }));
+    const offerNames = new Map(offers.map((o) => [o.name.trim().toLowerCase(), o.name]));
     const verifiedRelevance: VerifiedRelevance[] = relevance.grounded.map((r) => ({
+      offer: offerNames.get(String(r.offer ?? '').trim().toLowerCase()) ?? (offers.length === 1 ? offers[0]!.name : null),
       angle: r.angle, reasoning: r.reasoning, confidence: clamp(r.confidence), citations: r.citations,
     }));
     const verifiedAttributes: VerifiedAttribute[] = [

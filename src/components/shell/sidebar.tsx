@@ -34,7 +34,8 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
     ],
   },
   {
-    label: 'Prospects',
+    // Discovery, research, qualification and outreach.
+    label: 'Relay Intelligence',
     items: [
       { href: '/discovery', label: 'Discovery', icon: Radar, permission: 'account:read' },
       { href: '/pipeline', label: 'Research funnel', icon: Filter, permission: 'account:read' },
@@ -42,21 +43,17 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
       { href: '/sales', label: 'Sales pipeline', icon: Columns3, permission: 'account:read' },
       { href: '/contacts', label: 'Contacts', icon: Users, permission: 'account:read' },
       { href: '/duplicates', label: 'Duplicates', icon: CopyCheck, permission: 'account:read', badge: 'duplicates' },
-    ],
-  },
-  {
-    label: 'Outreach',
-    items: [
       { href: '/campaigns', label: 'Campaigns', icon: Layers, permission: 'campaign:read' },
       { href: '/review', label: 'Review queue', icon: ShieldCheck, permission: 'message:read', badge: 'review' },
       { href: '/analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics:read' },
     ],
   },
   {
-    label: 'Delivery',
+    // Custom automation: reusable solutions, applications, delivery and recurring billing.
+    label: 'Relay Studio',
     items: [
       { href: '/opportunities', label: 'Opportunities', icon: Lightbulb, permission: 'account:read' },
-      { href: '/studio', label: 'Studio', icon: AppWindow, permission: 'studio:read' },
+      { href: '/studio', label: 'Applications', icon: AppWindow, permission: 'studio:read' },
       { href: '/projects', label: 'Projects', icon: ClipboardList, permission: 'proposal:read' },
       { href: '/billing', label: 'Billing', icon: Receipt, permission: 'billing:manage' },
     ],

@@ -135,7 +135,7 @@ export function ProfileDialog({ profile, sources, onClose }: { profile: Profile 
         <div className="grid sm:grid-cols-4 gap-3">
           <Field label="Min employees" hint="Applied when a source reports size.">{(id) => <input id={id} type="number" min={0} className="input" value={f.employeeMin} onChange={(e) => set('employeeMin')(e.target.value)} />}</Field>
           <Field label="Max employees">{(id) => <input id={id} type="number" min={1} className="input" value={f.employeeMax} onChange={(e) => set('employeeMax')(e.target.value)} />}</Field>
-          <Field label="Results per run">{(id) => <input id={id} type="number" min={1} max={500} className="input" value={f.maxResultsPerRun} onChange={(e) => set('maxResultsPerRun')(e.target.value)} />}</Field>
+          <Field label="New businesses per run" hint="Businesses already on file are refreshed and don't count.">{(id) => <input id={id} type="number" min={1} max={500} className="input" value={f.maxResultsPerRun} onChange={(e) => set('maxResultsPerRun')(e.target.value)} />}</Field>
           <Field label="Monthly budget (US$)" hint="Hard limit; runs stop before exceeding it.">{(id) => <input id={id} type="number" min={0} step="1" className="input" value={f.budgetDollars} onChange={(e) => set('budgetDollars')(e.target.value)} />}</Field>
         </div>
 
