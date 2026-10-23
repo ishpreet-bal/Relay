@@ -12,7 +12,7 @@ const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], variab
 
 export const metadata: Metadata = {
   title: { default: 'Relay', template: '%s · Relay' },
-  description: 'Outbound sales for B2B companies: the right accounts, verified outreach, and calls that book meetings.',
+  description: 'Relay Intelligence finds, researches and reaches the right B2B accounts. Relay Studio builds and runs the automation they need.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

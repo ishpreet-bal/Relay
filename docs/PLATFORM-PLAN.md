@@ -3,7 +3,7 @@
 Written 2026-10-21 from the code on branch `claude/busy-noether-wkwta7`, in
 response to two briefs: the lead-intelligence platform brief and its
 extension (scalable research, Studio, recurring revenue). The briefs call the
-product "Foundry"; the product is named **Relay** everywhere in code and UI.
+product "Foundry"; the product is named **Relay** everywhere in code and UI. Its two systems are **Relay Intelligence** (discovery, research, qualification, outreach) and **Relay Studio** (custom automation applications, reusable solutions, deployment, recurring client management). Internal identifiers that predate the rename (the `foundry_*` Stripe price lookup keys, the organization slug, the Supabase project name) are left as they are so nothing that depends on them breaks.
 
 This document is the running architecture review and checklist. Each phase
 section is updated when the phase lands; nothing is marked done without a

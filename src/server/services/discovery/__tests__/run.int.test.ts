@@ -32,6 +32,8 @@ const PLACES = [
   { id: 'place-closed', displayName: { text: 'Gone Machining' }, websiteUri: 'https://gone.test/', businessStatus: 'CLOSED_PERMANENTLY' },
 ];
 
+const OTTAWA_PLACE = { id: 'place-capital', displayName: { text: 'Capital CNC' }, websiteUri: 'https://capital-cnc.test/', businessStatus: 'OPERATIONAL' };
+
 const ACME_HOME = `<!doctype html><html><head><title>Acme Machining Inc. | CNC in Mississauga</title>
 <script type="application/ld+json">${JSON.stringify({
   '@type': 'LocalBusiness', name: 'Acme Machining Inc.', telephone: '(905) 555-0101',
@@ -47,6 +49,7 @@ const fetchStub = vi.fn(async (input: string | URL | Request, init?: RequestInit
   if (url.startsWith('https://places.googleapis.com/')) {
     placesCalls++;
     const body = JSON.parse(String(init?.body ?? '{}'));
+    if (String(body.textQuery ?? '').includes('Ottawa')) return Response.json({ places: [OTTAWA_PLACE] });
     // Two pages for the first query; one for the rest.
     if (!body.pageToken && placesCalls === 1) return Response.json({ places: PLACES.slice(0, 3), nextPageToken: 'page-2' });
     if (body.pageToken === 'page-2') return Response.json({ places: PLACES.slice(3) });
@@ -54,6 +57,7 @@ const fetchStub = vi.fn(async (input: string | URL | Request, init?: RequestInit
   }
   if (url.endsWith('/robots.txt')) return new Response('', { status: 404 });
   if (url.startsWith('https://acme-machining.test')) { siteCalls++; return html(ACME_HOME); }
+  if (url.startsWith('https://capital-cnc.test')) return html('<html><head><title>Capital CNC | Machine shop in Ottawa</title></head><body><h1>Capital CNC</h1></body></html>');
   if (url.startsWith('https://unrelated.test')) return html('<html><head><title>Northern Freight Logistics</title></head><body>Trucking</body></html>');
   return new Response('not found', { status: 404 });
 });
@@ -177,5 +181,32 @@ describe.skipIf(!reachable)('discovery run (database)', () => {
     expect(after).toMatchObject({ latitude: null, longitude: null, phone: '(905) 555-0101' });
     const cached = await db.dataProvenance.findMany({ where: { accountId: account.id, field: 'latitude' } });
     expect(cached.every((p) => p.value === null && !p.isCurrent)).toBe(true);
+  });
+
+  it('counts only new businesses and starts each run where the previous one stopped', async () => {
+    const profile = await db.discoveryProfile.create({
+      data: {
+        organizationId: orgId, clientId, name: 'Rotation', sources: ['google_places'], country: 'CA', regions: ['ON'],
+        cities: ['Toronto', 'Ottawa', 'Kingston'], industries: ['machine shop'], maxResultsPerRun: 1, monthlyBudgetCents: 100, frequency: 'MANUAL',
+      },
+    });
+    // Toronto returns only businesses already on file or excluded; Ottawa has one new business.
+    const first = await startDiscoveryRun(systemAccess(orgId), null, profile.id, 'MANUAL');
+    await executeDiscoveryStep(first.run.id, { deadline: Date.now() + 120_000 });
+    const a = await db.discoveryRun.findUniqueOrThrow({ where: { id: first.run.id } });
+    expect(a).toMatchObject({ status: 'COMPLETED', imported: 1 });
+    expect(a.found).toBeGreaterThan(1);
+    const detailsA = a.details as { stopReason: string; nextOffsets: Record<string, number> };
+    expect(detailsA.stopReason).toMatch(/1 new businesses/);
+    // Toronto and Ottawa are done; the next run begins with Kingston.
+    expect(detailsA.nextOffsets.google_places).toBe(2);
+
+    const second = await startDiscoveryRun(systemAccess(orgId), null, profile.id, 'MANUAL');
+    await executeDiscoveryStep(second.run.id, { deadline: Date.now() + 120_000 });
+    const firstSearch = await db.usageRecord.findFirstOrThrow({
+      where: { organizationId: orgId, type: 'DISCOVERY_REQUEST', metadata: { path: ['runId'], equals: second.run.id } },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect((firstSearch.metadata as { query: string }).query).toMatch(/Kingston/);
   });
 });

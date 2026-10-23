@@ -78,6 +78,16 @@ export function OpportunityBoard({ caps }: { caps: DeliveryCaps }) {
 
 type Item = RouterOutputs['delivery']['opportunities']['items'][number];
 
+/** The estimate priced at the rate card: setup plus the recurring fee. An estimate, not a quote. */
+function PriceLine({ price }: { price: NonNullable<Item['price']> }) {
+  return (
+    <p className="text-[11px] text-muted mt-1" title="From the effort estimate and your rate card. A proposal is priced the same way once a person has assessed it.">
+      Estimate at rate card: <span className="num">{formatMoney(price.setupCents, price.currency)}</span> setup
+      {price.monthlyCents > 0 && <> + <span className="num">{formatMoney(price.monthlyCents, price.currency)}</span>/mo</>}
+    </p>
+  );
+}
+
 function OpportunityCard({ o }: { o: Item }) {
   return (
     <li>
@@ -88,6 +98,7 @@ function OpportunityCard({ o }: { o: Item }) {
           {o.reusability && <Pill tone={REUSE_TONE[o.reusability] ?? 'neutral'}>{REUSE_LABEL[o.reusability]}</Pill>}
           {o.estimatedBuildHours !== null && <span className="text-[11px] text-muted num">~{o.estimatedBuildHours} h</span>}
         </div>
+        {o.price && <PriceLine price={o.price} />}
         {o.projection && (
           <p className="text-[11px] text-muted mt-1">
             Projected <span className="num">{formatMoney(o.projection.low.monthlyValueCents)}–{formatMoney(o.projection.high.monthlyValueCents)}</span>/mo
@@ -127,6 +138,7 @@ export function AccountOpportunities({ accountId, caps }: { accountId: string; c
                 <Pill tone={OPP_STATUS_TONE[o.status] ?? 'neutral'}>{OPP_STATUS_LABEL[o.status] ?? o.status}</Pill>
                 {o.reusability && <Pill tone={REUSE_TONE[o.reusability] ?? 'neutral'}>{REUSE_LABEL[o.reusability]}</Pill>}
               </div>
+              {o.price && <PriceLine price={o.price} />}
             </li>
           ))}
         </ul>

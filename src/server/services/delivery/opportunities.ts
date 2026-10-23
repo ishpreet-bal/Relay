@@ -191,17 +191,26 @@ export async function clearOverride(access: AccessContext, id: string) {
   return autoMatch(opp.id);
 }
 
+/** Setup and monthly price at the rate card: arithmetic on the estimate, never generated. */
+export function rateCardPrice(
+  org: { dayRateCents: number; discoveryFeeCents: number; supportMonthlyCents: number },
+  template: { recommendedMonthlyCents: number | null } | null,
+  estimatedBuildHours: number | null,
+) {
+  const hourly = Math.round(org.dayRateCents / 8);
+  return {
+    hourlyCents: hourly,
+    setupCents: (estimatedBuildHours ?? 0) * hourly + org.discoveryFeeCents,
+    monthlyCents: template?.recommendedMonthlyCents ?? org.supportMonthlyCents,
+  };
+}
+
 async function priceFor(organizationId: string, opp: { estimatedBuildHours: number | null; templateId: string | null }) {
   const [org, template] = await Promise.all([
     db.organization.findUniqueOrThrow({ where: { id: organizationId } }),
     opp.templateId ? db.appTemplate.findUnique({ where: { id: opp.templateId } }) : null,
   ]);
-  const hourly = Math.round(org.dayRateCents / 8);
-  return {
-    org, template, hourlyCents: hourly,
-    setupCents: (opp.estimatedBuildHours ?? 0) * hourly + org.discoveryFeeCents,
-    monthlyCents: template?.recommendedMonthlyCents ?? org.supportMonthlyCents,
-  };
+  return { org, template, ...rateCardPrice(org, template, opp.estimatedBuildHours) };
 }
 
 /** Records the assessment inputs and recomputes the projection against the current price. */
@@ -437,9 +446,19 @@ export async function listOpportunities(access: AccessContext, opts: { clientId?
     include: { account: { select: { id: true, name: true, industry: true, city: true } } },
   });
   const limit = opts.limit ?? 50;
-  const counts = await db.opportunity.groupBy({ by: ['status'], where: clientFilter(access, opts.clientId), _count: true });
+  const [counts, org, templates] = await Promise.all([
+    db.opportunity.groupBy({ by: ['status'], where: clientFilter(access, opts.clientId), _count: true }),
+    db.organization.findUniqueOrThrow({ where: { id: access.organizationId }, select: { dayRateCents: true, discoveryFeeCents: true, supportMonthlyCents: true, currency: true } }),
+    db.appTemplate.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.templateId).filter((t): t is string => !!t))] } }, select: { id: true, recommendedMonthlyCents: true } }),
+  ]);
+  const byTemplate = new Map(templates.map((t) => [t.id, t]));
   return {
-    items: rows.slice(0, limit).map((o) => ({ ...o, projection: o.projection as unknown as Projection | null })),
+    items: rows.slice(0, limit).map((o) => ({
+      ...o,
+      projection: o.projection as unknown as Projection | null,
+      // What we would charge at the current rate card, for the estimate as it stands.
+      price: o.estimatedBuildHours === null ? null : { ...rateCardPrice(org, o.templateId ? byTemplate.get(o.templateId) ?? null : null, o.estimatedBuildHours), currency: org.currency },
+    })),
     nextCursor: rows.length > limit ? rows[limit - 1]!.id : null,
     counts: Object.fromEntries(counts.map((c) => [c.status, c._count])) as Record<string, number>,
   };

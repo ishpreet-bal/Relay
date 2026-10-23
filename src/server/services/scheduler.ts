@@ -4,7 +4,7 @@ import { sweepRetention } from './discovery/retention';
 import { backfillCompanyKeys } from './companies/backfill';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { enqueuePendingScreening } from './pipeline/gates';
+import { enqueuePendingScreening, queueQualifiedBacklog } from './pipeline/gates';
 import { enqueueDueRefresh } from './pipeline/refresh';
 import { runDueSchedules } from '@/server/studio/applications';
 import { runBillingCycle } from './customer-billing/subscriptions';
@@ -25,10 +25,12 @@ export async function scheduledMaintenance(now = new Date()) {
   // Research funnel: screen what's new or changed, check what's due.
   let screeningJobs = 0;
   let refreshJobs = 0;
+  let backlogAnalyses = 0;
   for (const org of await db.organization.findMany({ where: { deletedAt: null }, select: { id: true } })) {
     try {
       screeningJobs += await enqueuePendingScreening(org.id);
       refreshJobs += await enqueueDueRefresh(org.id, 200, now);
+      backlogAnalyses += await queueQualifiedBacklog(org.id);
     } catch (err) {
       logger.error('scheduler.pipeline_failed', { organizationId: org.id, error: err });
     }
@@ -39,5 +41,5 @@ export async function scheduledMaintenance(now = new Date()) {
   const billing = await runBillingCycle(now).catch((err) => { logger.error('scheduler.billing_failed', { error: err }); return { subscriptions: 0, periods: 0 }; });
   // Health: raise or clear alerts for stuck queues, paused providers, dead letters, failed webhooks, failing apps.
   const health = await checkPlatformHealth(now).catch((err) => { logger.error('scheduler.health_failed', { error: err }); return { findings: [] as string[] }; });
-  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, workflowsStarted: schedules.started, billingPeriodsClosed: billing.periods, healthFindings: health.findings.length };
+  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, backlogAnalyses, workflowsStarted: schedules.started, billingPeriodsClosed: billing.periods, healthFindings: health.findings.length };
 }

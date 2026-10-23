@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { can } from '@/lib/rbac';
+import { PROSPECTING_CLIENT_KINDS } from '@/lib/domain';
 import { getActiveClientId } from '@/lib/page-auth';
 import { accessFrom, clientFilter } from '@/server/access/scope';
 import { Sidebar, MobileNav } from '@/components/shell/sidebar';
@@ -22,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const [clients, review, calls, duplicates] = await Promise.all([
     db.client.findMany({
-      where: { organizationId: session.organizationId, archivedAt: null, kind: 'CUSTOMER' },
+      where: { organizationId: session.organizationId, archivedAt: null, kind: { in: PROSPECTING_CLIENT_KINDS } },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, status: true },
     }),

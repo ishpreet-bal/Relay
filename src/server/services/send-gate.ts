@@ -27,7 +27,8 @@ export type GateBlockCode =
   | 'MAILBOX_CAP'
   | 'OUTSIDE_WINDOW'
   | 'DOMAIN_UNAUTHENTICATED'
-  | 'MISSING_UNSUBSCRIBE';
+  | 'MISSING_UNSUBSCRIBE'
+  | 'MISSING_SENDER_IDENTITY';
 
 const MIN_DAYS_BETWEEN_CONTACT = 25;
 
@@ -95,9 +96,18 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     return { allowed: false, code: 'MISSING_UNSUBSCRIBE', reason: 'No opt-out link in the body' };
   }
 
+  // 6. Sender identification (CASL): every email carries the sender's mailing address.
+  const client = await db.client.findUnique({ where: { id: message.clientId }, select: { name: true, mailingAddress: true } });
+  if (!client?.mailingAddress?.trim()) {
+    return {
+      allowed: false, code: 'MISSING_SENDER_IDENTITY',
+      reason: `No mailing address for ${client?.name ?? 'this client'}. Add one to the client's profile: Canada's anti-spam law requires it in every email.`,
+    };
+  }
+
   const org = await db.organization.findUniqueOrThrow({ where: { id: message.organizationId } });
 
-  // 6. Volume caps — workspace-wide per day and per hour.
+  // 7. Volume caps — workspace-wide per day and per hour.
   const sentToday = await db.message.count({
     where: { organizationId: org.id, direction: 'OUTBOUND', sentAt: { gte: startOfDay(now) } },
   });
@@ -111,7 +121,7 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     return { allowed: false, code: 'HOURLY_CAP', reason: `Hourly limit of ${org.hourlySendCap} reached` };
   }
 
-  // 7. Mailbox health — an unauthenticated domain torches deliverability.
+  // 8. Mailbox health — an unauthenticated domain torches deliverability.
   if (message.mailboxId) {
     const mailbox = await db.mailbox.findUniqueOrThrow({ where: { id: message.mailboxId } });
     if (!mailbox.spfVerified || !mailbox.dkimVerified) {
@@ -126,7 +136,7 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     }
   }
 
-  // 8. Jitter, so a batch never looks machine-timed.
+  // 9. Jitter, so a batch never looks machine-timed.
   const sendAt = addMinutes(now, Math.floor(Math.random() * org.minMinutesBetweenSends) + 1);
   return { allowed: true, sendAt };
 }

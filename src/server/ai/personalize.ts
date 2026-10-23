@@ -300,6 +300,7 @@ export function renderHtml(bodyText: string) {
   return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1a1a1a;max-width:520px;">
 ${paragraphs}
 <p style="margin:24px 0 0;font-size:12px;color:#8a8a8a;">
+{{sender_identification}}<br>
 <a href="{{unsubscribe_url}}" style="color:#8a8a8a;">Unsubscribe</a>
 </p>
 </div>`;

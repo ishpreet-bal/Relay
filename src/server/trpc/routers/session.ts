@@ -1,5 +1,6 @@
 import { router, protectedProcedure } from '../init';
 import { ROLE_PERMISSIONS } from '@/lib/rbac';
+import { PROSPECTING_CLIENT_KINDS } from '@/lib/domain';
 import { isCapabilityAvailable } from '@/server/connectors/registry';
 
 export const sessionRouter = router({
@@ -17,7 +18,7 @@ export const sessionRouter = router({
   clients: protectedProcedure.query(({ ctx }) => {
     const ids = ctx.access.clients.kind === 'clients' ? ctx.access.clients.ids : null;
     return ctx.db.client.findMany({
-      where: { organizationId: ctx.access.organizationId, archivedAt: null, kind: 'CUSTOMER', ...(ids ? { id: { in: [...ids] } } : {}) },
+      where: { organizationId: ctx.access.organizationId, archivedAt: null, kind: { in: PROSPECTING_CLIENT_KINDS }, ...(ids ? { id: { in: [...ids] } } : {}) },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, status: true },
     });

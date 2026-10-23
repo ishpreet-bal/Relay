@@ -30,6 +30,7 @@ export function ClientsList({ canManage }: { canManage: boolean }) {
                 <Link href={`/clients/${c.id}`} className="card p-4 block hover:border-accent/50 transition-colors h-full">
                   <div className="flex items-center gap-2 mb-1">
                     <h2 className="text-[15px] font-semibold flex-1 truncate">{c.name}</h2>
+                    {c.kind === 'INTERNAL' && <Pill title="Relay's own company: prospected for like a client, never billed">internal</Pill>}
                     <Pill tone={STATUS_TONE[c.status]}>{c.status.toLowerCase()}</Pill>
                   </div>
                   <p className="text-micro text-muted line-clamp-2 min-h-[2.5em]">{c.description ?? 'No description yet.'}</p>

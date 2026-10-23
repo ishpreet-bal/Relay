@@ -68,7 +68,7 @@ export function AccountFunnel({ account: a, canRun, canOverride }: Props) {
       {!!versions.data?.length && (
         <ul className="card divide-y divide-hairline mt-2">
           {(versions.data as Version[]).map((v) => {
-            const h = v.hypotheses as { opportunities?: Array<{ title: string; evidenceFactIds: string[]; howToValidate?: string }>; overallFit?: { score: number }; roi?: { low: { annualSavingsCents: number }; high: { annualSavingsCents: number } } | null } | Array<{ angle?: string }> | null;
+            const h = v.hypotheses as { opportunities?: Array<{ title: string; evidenceFactIds: string[]; howToValidate?: string }>; serviceFit?: Array<{ offer: string; fit: string; rationale: string; proposal: string }>; overallFit?: { score: number }; roi?: { low: { annualSavingsCents: number }; high: { annualSavingsCents: number } } | null } | Array<{ angle?: string }> | null;
             const opportunities = !Array.isArray(h) ? h?.opportunities ?? [] : [];
             const facts = Array.isArray(v.facts) ? v.facts.length : null;
             const unknowns = Array.isArray(v.unknowns) ? v.unknowns as Array<{ question: string }> : [];
@@ -82,6 +82,9 @@ export function AccountFunnel({ account: a, canRun, canOverride }: Props) {
                   <div className="mt-1.5 space-y-1 text-muted">
                     {facts !== null && <p>{facts} verified facts{v.changedFields.length ? ` · changed: ${v.changedFields.join(', ')}` : ''}</p>}
                     {!Array.isArray(h) && h?.overallFit && <p>Fit {h.overallFit.score}/100 (hypothesis)</p>}
+                    {!Array.isArray(h) && h?.serviceFit?.map((f) => (
+                      <p key={f.offer}><span className="text-ink">{f.offer}</span>: {f.fit} fit (hypothesis). {f.rationale}{f.proposal ? <> <span className="text-ink">Could propose:</span> {f.proposal}</> : null}</p>
+                    ))}
                     {opportunities.map((o) => <p key={o.title}>• <span className="text-ink">{o.title}</span> — hypothesis, cites {o.evidenceFactIds.join(', ')}{o.howToValidate ? `; validate: ${o.howToValidate}` : ''}</p>)}
                     {!Array.isArray(h) && h?.roi && <p>Scenario: ${Math.round(h.roi.low.annualSavingsCents / 100).toLocaleString()}–${Math.round(h.roi.high.annualSavingsCents / 100).toLocaleString()}/yr if the assumptions hold (not a measured result)</p>}
                     {unknowns.slice(0, 5).map((u, i) => <p key={i}>? {u.question}</p>)}

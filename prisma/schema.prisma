@@ -241,6 +241,10 @@ model Client {
   senderName  String?
   senderTitle String?
   bookingUrl  String?
+  /// The postal address printed in every email sent for this client. CASL
+  /// requires a valid mailing address in each commercial message; nothing is
+  /// sent without one.
+  mailingAddress String?
 
   primaryContactName  String?
   primaryContactEmail String?

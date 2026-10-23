@@ -5,7 +5,7 @@ import { canonicalDomain } from './companies/normalize';
 import { clientFilter, assertClientAccess, type AccessContext } from '@/server/access/scope';
 import { NotFoundError } from '@/server/errors';
 import { markScoresStale } from './scoring';
-import { SIGNAL_TYPES, SENIORITIES } from '@/lib/domain';
+import { PROSPECTING_CLIENT_KINDS, SIGNAL_TYPES, SENIORITIES } from '@/lib/domain';
 
 /**
  * Clients and what Relay needs to know to sell for them: the business, its
@@ -32,6 +32,7 @@ export const clientProfileSchema = z.object({
   senderName: text(120),
   senderTitle: text(120),
   bookingUrl: z.string().url().max(500).nullish().or(z.literal('').transform(() => null)),
+  mailingAddress: text(300),
   primaryContactName: text(120),
   primaryContactEmail: z.string().email().max(254).nullish().or(z.literal('').transform(() => null)),
   primaryContactPhone: text(40),
@@ -116,7 +117,7 @@ export async function listClients(access: AccessContext) {
   const scope = clientFilter(access);
   const clients = await db.client.findMany({
     // The demo sandbox holds synthetic data only and isn't a customer to manage or prospect for.
-    where: { organizationId: access.organizationId, archivedAt: null, kind: 'CUSTOMER', ...(scope.clientId ? { id: scope.clientId } : {}) },
+    where: { organizationId: access.organizationId, archivedAt: null, kind: { in: PROSPECTING_CLIENT_KINDS }, ...(scope.clientId ? { id: scope.clientId } : {}) },
     orderBy: [{ status: 'asc' }, { name: 'asc' }],
     include: {
       _count: {

@@ -56,8 +56,12 @@ export function ClientDetail({ id, canEdit, canManage, canPortal }: { id: string
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h2 className="text-xl font-semibold">{c.name}</h2>
+              {c.kind === 'INTERNAL' && <Pill>internal</Pill>}
               <Pill tone={c.status === 'ACTIVE' ? 'positive' : c.status === 'ONBOARDING' ? 'warning' : 'neutral'}>{c.status.toLowerCase()}</Pill>
             </div>
+            {c.kind === 'INTERNAL' && (
+              <p className="text-micro text-muted mb-1">Our own company, set up as the first client of our lead generation: Relay finds and contacts prospects for it like any client, but it is never billed and has no client portal.</p>
+            )}
             <p className="text-micro text-muted">
               {c.websiteUrl && <a href={c.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:text-accent inline-flex items-center gap-0.5">{c.websiteUrl.replace(/^https?:\/\//, '')}<ExternalLink className="size-3" /></a>}
               {c.serviceAreas.length > 0 && <> · {c.serviceAreas.join(', ')}</>}

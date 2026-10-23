@@ -8,6 +8,13 @@ import type {
  * client components. Type-only Prisma imports keep this safe for the browser.
  */
 
+/**
+ * Client kinds that are prospected for: paying customers, and INTERNAL for
+ * Relay's own company running outreach for itself (never billed, no client
+ * portal). DEMO, the synthetic demo sandbox, is neither.
+ */
+export const PROSPECTING_CLIENT_KINDS = ['CUSTOMER', 'INTERNAL'];
+
 export const ACCOUNT_STATUSES = [
   'DISCOVERED', 'ENRICHED', 'QUALIFIED', 'ACTIVE_OUTREACH', 'ENGAGED', 'CALLING', 'MEETING_BOOKED', 'WON', 'LOST', 'DISQUALIFIED',
 ] as const satisfies readonly AccountStatus[];

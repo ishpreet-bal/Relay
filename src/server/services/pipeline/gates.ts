@@ -54,7 +54,7 @@ const SCREENING_SELECT = {
 export async function screenAccounts(organizationId: string, accountIds: string[]) {
   const settings = await getPipelineSettings(organizationId);
   const summary = { screened: 0, qualified: 0, screenedOut: 0, analysesQueued: 0 };
-  const toAnalyze: string[] = [];
+  const toAnalyze: Array<{ id: string; score: number }> = [];
 
   // Accounts are normally scored when created; score any that weren't first.
   const unscored = await db.account.findMany({
@@ -85,7 +85,7 @@ export async function screenAccounts(organizationId: string, accountIds: string[
     summary.screened++;
     if (stage === 'QUALIFIED') summary.qualified++;
     if (stage === 'SCREENED_OUT') summary.screenedOut++;
-    if (stage === 'QUALIFIED' && account.websiteUrl) toAnalyze.push(account.id);
+    if (stage === 'QUALIFIED' && account.websiteUrl) toAnalyze.push({ id: account.id, score: result.score });
   }
   if (rows.length) {
     await db.$executeRaw`
@@ -98,7 +98,9 @@ export async function screenAccounts(organizationId: string, accountIds: string[
 
   if (settings.autoAnalyze && toAnalyze.length) {
     const room = Math.max(0, settings.maxAnalysesPerDay - await automaticToday(organizationId, 'RESEARCH'));
-    for (const id of toAnalyze.slice(0, room)) {
+    // Best first: when the daily allowance runs out, the strongest accounts got it.
+    toAnalyze.sort((x, y) => y.score - x.score);
+    for (const { id } of toAnalyze.slice(0, room)) {
       const job = await queueAnalysis(organizationId, id, 'AUTO').catch((err) => { logger.info('pipeline.analysis_skipped', { accountId: id, reason: String(err) }); return null; });
       if (job) summary.analysesQueued++;
     }
@@ -124,6 +126,41 @@ export async function enqueuePendingScreening(organizationId: string, limit = 5_
     // The same set of accounts in the same state is screened once.
     idempotencyKey: `screen:${b.ids[0]}:${b.ids.length}:${pending.find((p) => p.id === b.ids[0])!.updatedAt.getTime()}`,
   })));
+}
+
+/**
+ * Qualified accounts that missed a day's analysis allowance wait here. Each
+ * maintenance pass spends what is left of today's allowance on them, best
+ * first, so the daily cap is used every day and the month's budget is spread
+ * across the month instead of going to whichever day discovered the most.
+ * Accounts already tried once (any analysis job, even a failed or cancelled
+ * one) are left for a person or the refresh schedule.
+ */
+export async function queueQualifiedBacklog(organizationId: string) {
+  const settings = await getPipelineSettings(organizationId);
+  if (!settings.autoAnalyze) return 0;
+  let room = settings.maxAnalysesPerDay - await automaticToday(organizationId, 'RESEARCH');
+  if (room <= 0) return 0;
+  if (!(await isCapabilityAvailable(organizationId, 'AI')) || !(await budgetOpen(organizationId, 'analysis'))) return 0;
+  const candidates = await db.account.findMany({
+    where: { organizationId, deletedAt: null, doNotContact: false, pipelineStage: 'QUALIFIED', researchVersion: 0, websiteUrl: { not: null }, research: { is: null } },
+    orderBy: [{ screeningScore: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true },
+    take: room * 4,
+  });
+  if (!candidates.length) return 0;
+  const tried = new Set((await db.job.findMany({
+    where: { organizationId, type: 'RESEARCH', entityId: { in: candidates.map((c) => c.id) } },
+    select: { entityId: true },
+  })).map((j) => j.entityId));
+  let queued = 0;
+  for (const c of candidates) {
+    if (room <= 0) break;
+    if (tried.has(c.id)) continue;
+    const job = await queueAnalysis(organizationId, c.id, 'AUTO').catch((err) => { logger.info('pipeline.backlog_skipped', { accountId: c.id, reason: String(err) }); return null; });
+    if (job) { queued++; room--; }
+  }
+  return queued;
 }
 
 /** Marks an account for screening again (a new signal, a material change). */

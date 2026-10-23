@@ -47,7 +47,7 @@ async function loadSub(access: AccessContext, id: string) {
 async function assertBillableClient(organizationId: string, clientId: string) {
   const client = await db.client.findFirst({ where: { id: clientId, organizationId, archivedAt: null } });
   if (!client) throw new NotFoundError('Client');
-  if (client.kind !== 'CUSTOMER') throw new DomainError('The demo sandbox is never billed.');
+  if (client.kind !== 'CUSTOMER') throw new DomainError(client.kind === 'INTERNAL' ? `${client.name} is the internal account and is never billed.` : 'The demo sandbox is never billed.');
   return client;
 }
 

@@ -8,6 +8,7 @@ import { logActivity } from './activity';
 import { advanceAccountStatus } from './accounts';
 import { recordUsage } from './usage';
 import { sendViaGmail } from './gmail';
+import { senderIdentification, SENDER_IDENTIFICATION_PLACEHOLDER } from './sender-identity';
 import type { OutboundEmail } from '@/server/connectors/types';
 
 export interface SendOutcome {
@@ -45,8 +46,23 @@ export async function sendMessage(messageId: string): Promise<SendOutcome> {
   const url = unsubscribeUrl(token);
   const oneClickUrl = oneClickUnsubscribeUrl(token);
 
-  const html = (message.bodyHtml ?? '').replaceAll('{{unsubscribe_url}}', url);
-  const text = `${message.bodyText ?? ''}\n\n---\nUnsubscribe: ${url}`;
+  // Who is writing, on whose behalf, and where to reach them (CASL). The gate
+  // has already refused a client without a mailing address.
+  const [client, org] = await Promise.all([
+    db.client.findUniqueOrThrow({ where: { id: message.clientId }, select: { name: true, mailingAddress: true, websiteUrl: true } }),
+    db.organization.findUniqueOrThrow({ where: { id: message.organizationId }, select: { brandName: true, name: true } }),
+  ]);
+  const identity = senderIdentification({
+    clientName: client.name, mailingAddress: client.mailingAddress ?? '', senderBrand: org.brandName ?? org.name,
+    contactEmail: mailbox.replyToEmail ?? mailbox.fromEmail, website: client.websiteUrl,
+  });
+  const escapedIdentity = identity.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const body = message.bodyHtml ?? '';
+  const html = (body.includes(SENDER_IDENTIFICATION_PLACEHOLDER)
+    ? body.replaceAll(SENDER_IDENTIFICATION_PLACEHOLDER, escapedIdentity)
+    : `${body}\n<p style="margin:16px 0 0;font-size:12px;color:#8a8a8a;">${escapedIdentity}</p>`
+  ).replaceAll('{{unsubscribe_url}}', url);
+  const text = `${message.bodyText ?? ''}\n\n---\n${identity}\nUnsubscribe: ${url}`;
 
   await db.message.update({ where: { id: messageId }, data: { status: 'SENDING' } });
 
