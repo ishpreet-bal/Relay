@@ -9,6 +9,8 @@ import { pipelineRouter } from './pipeline';
 import { studioRouter } from './studio';
 import { deliveryRouter } from './delivery';
 import { callLeadsRouter } from './call-leads';
+import { inquiriesRouter } from './inquiries';
+import { servicePackagesRouter } from './service-packages';
 import { billingRouter } from './billing';
 import { assistantRouter } from './assistant';
 import { researchRouter } from './research';
@@ -37,6 +39,8 @@ export const appRouter = router({
   studio: studioRouter,
   delivery: deliveryRouter,
   callLeads: callLeadsRouter,
+  inquiries: inquiriesRouter,
+  servicePackages: servicePackagesRouter,
   billing: billingRouter,
   assistant: assistantRouter,
   research: researchRouter,

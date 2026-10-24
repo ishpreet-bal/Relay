@@ -96,6 +96,8 @@ model Organization {
   discoveryRuns     DiscoveryRun[]
   discoveryProfiles DiscoveryProfile[]
   callLeads         CallLead[]
+  servicePackages   ServicePackage[]
+  inquiries         Inquiry[]
   applications      ClientApplication[]
   duplicates        DuplicateCandidate[]
   savedViews        SavedView[]
@@ -239,9 +241,9 @@ model Client {
   timezone              String @default("America/Toronto")
 
   /// Who outreach is signed by and where meetings get booked.
-  senderName  String?
-  senderTitle String?
-  bookingUrl  String?
+  senderName     String?
+  senderTitle    String?
+  bookingUrl     String?
   /// The postal address printed in every email sent for this client. CASL
   /// requires a valid mailing address in each commercial message; nothing is
   /// sent without one.
@@ -280,6 +282,7 @@ model Client {
   activities        Activity[]
   discoveryProfiles DiscoveryProfile[]
   callLeads         CallLead[]
+  inquiries         Inquiry[]
   applications      ClientApplication[]
   subscriptions     CustomerSubscription[]
 
@@ -961,6 +964,97 @@ model CallLead {
 
   @@unique([organizationId, provider, externalId])
   @@index([organizationId, clientId, status])
+}
+
+/**
+ * An inquiry or consultation request sent from the public website. Stored
+ * exactly as sent before anything else happens, so a visitor's message is
+ * never lost even if linking it to an account fails. Responding to an
+ * inquiry is implied consent under CASL for six months; marketing beyond
+ * that needs the separate, recorded opt-in.
+ */
+model Inquiry {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  clientId         String   @db.Uuid
+  name             String
+  company          String
+  email            String
+  phone            String?
+  website          String?
+  industry         String?
+  /// What the visitor picked: AUTOMATION, ACQUISITION, WEBSITES or NOT_SURE.
+  service          String
+  /// AUTOMATION, ACQUISITION, WEBSITE or GENERAL.
+  category         String
+  /// visitor (their choice), inferred (from the message) or staff (changed by a person).
+  categorySource   String
+  message          String   @db.Text
+  /// Consultation times the visitor offered, as ISO instants.
+  preferredTimes   Json?
+  marketingConsent Boolean  @default(false)
+  /// The exact opt-in wording shown, recorded with the consent.
+  consentText      String?
+  sourcePath       String?
+  /// One-way hash of the sender's IP, used only for rate limiting.
+  ipHash           String?
+  /// NEW, CONTACTED, BOOKED, QUALIFIED, CLOSED or SPAM.
+  status           String   @default("NEW")
+  spamReason       String?
+  accountId        String?  @db.Uuid
+  contactId        String?  @db.Uuid
+  taskId           String?  @db.Uuid
+  meetingId        String?  @db.Uuid
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status, createdAt])
+  @@index([ipHash, createdAt])
+  @@index([email, createdAt])
+}
+
+/**
+ * Internal cost model for one service package: what it costs Relay to build
+ * and run, and the price that cost implies at the target margin. Used for
+ * quoting; never shown on the public website or to customers.
+ */
+model ServicePackage {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  /// AUTOMATION, ACQUISITION or WEBSITES.
+  service           String
+  name              String
+  description       String?  @db.Text
+  /// One-time: implementation hours, and third-party setup costs (licences, first-year fees).
+  buildHours        Float    @default(0)
+  setupCostCents    Int      @default(0)
+  /// Monthly running costs.
+  hostingCents      Int      @default(0)
+  databaseCents     Int      @default(0)
+  aiCents           Int      @default(0)
+  thirdPartyCents   Int      @default(0)
+  /// Domain, email and website upkeep, as a monthly amount.
+  domainCents       Int      @default(0)
+  monitoringCents   Int      @default(0)
+  supportHours      Float    @default(0)
+  maintenanceHours  Float    @default(0)
+  targetMarginPct   Int      @default(40)
+  /// What Relay quotes, when set, to compare against the cost.
+  priceSetupCents   Int?
+  priceMonthlyCents Int?
+  /// The usage the contract includes, in words ("up to 2,000 documents a month").
+  includedUsage     String?
+  notes             String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, service])
 }
 
 enum DiscoveryOutcome {

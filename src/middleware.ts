@@ -14,6 +14,7 @@ const isPublic = createRouteMatcher([
   '/api/inquiries', // the website's inquiry form: validated, rate-limited, write-only
   '/robots.txt',
   '/sitemap.xml',
+  '/opengraph-image(.*)', // the share preview image, generated without a file extension
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/onboarding(.*)',

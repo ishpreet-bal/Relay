@@ -41,6 +41,12 @@ const serverSchema = z.object({
   APOLLO_API_KEY: z.string().optional(),
   /** Shown on the public privacy policy as the address for access, correction and deletion requests. */
   PRIVACY_CONTACT_EMAIL: z.string().email().optional(),
+  /** The public website's canonical address, once it has its own domain (defaults to APP_URL). */
+  SITE_URL: z.string().url().optional(),
+  /** The company's own email domain; the website then shows hello@, sales@ and support@ addresses on it. */
+  SITE_EMAIL_DOMAIN: z.string().min(3).optional(),
+  /** The client that receives website inquiries; defaults to the one internal client. */
+  INQUIRY_CLIENT_ID: z.string().uuid().optional(),
 
   ENCRYPTION_KEY: z.string().length(44, 'must be a base64-encoded 32-byte key'),
   UNSUBSCRIBE_SIGNING_KEY: z.string().min(32),

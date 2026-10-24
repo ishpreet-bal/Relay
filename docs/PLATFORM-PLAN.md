@@ -299,6 +299,9 @@ Legend: ✅ done and tested · 🟡 built, needs credentials or a live run · �
 | `ZEROBOUNCE_API_KEY` or `HUNTER_API_KEY` (+ `*_COST_PER_CHECK_MILLICENTS`) | vendor dashboard | email verification before sending |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud → APIs & Services → enable Gmail API → OAuth client (Web), authorised redirect URI `https://<your domain>/api/oauth/google/callback`. `gmail.send` is a sensitive scope: unverified apps work for test users you add; Google's app verification is needed beyond that. The consent screen's home page is `/about` and its privacy policy is `/privacy` (both public) | sending from Gmail / Workspace mailboxes |
 | `PRIVACY_CONTACT_EMAIL` (optional) | the address people write to for access, correction or deletion requests | shown on the public privacy policy; without it the page says to reply to any email received |
+| `SITE_URL` (optional) | the public website's own address once it has a domain, e.g. `https://example.ca` | canonical links, the sitemap and share previews; defaults to `APP_URL` |
+| `SITE_EMAIL_DOMAIN` (optional) | the company's email domain once the Google Workspace mailboxes exist, e.g. `example.ca` | shows hello@, sales@ and support@ on the website; without it the site offers the inquiry form only |
+| `INQUIRY_CLIENT_ID` (optional) | a client's id | where website inquiries land; defaults to the workspace's one internal client (Relay) |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (test mode first) | Stripe dashboard → Developers; webhook endpoint `/api/webhooks/stripe` with customer.subscription.* and invoice.* events | customer subscriptions (and the workspace plan) |
 | `CUSTOMER_BILLING_LIVE=enabled` | only when you decide to charge real customers | allows a live Stripe key to create customer charges |
 | Worker host | Railway or Fly | a process running `npm run worker` with the same env |
@@ -809,3 +812,29 @@ services; production was configured with the same records):
 
 Tests: discovery rotation and new-only counting, the backlog queue, service
 fit validation, and the CASL footer and gate on Postgres; 252 tests passing.
+
+---
+
+## 5. Public website
+
+The public website lives in the same app, in its own root layout
+(`src/app/(site)`), separate from the workspace (`src/app/(platform)`). It
+has no sign-in scripts, app providers or database reads, so its pages are
+static; the only thing it writes is an inquiry, through `/api/inquiries`.
+
+- Pages: home, services (automation, customer acquisition, websites), how it
+  works (access and pricing), industries, seven demos, contact, about and
+  privacy. `/` is the homepage for everyone; signing in lands on `/workspace`,
+  which sends people to their home as `/` used to.
+- Demos run on fictional data in the browser. Their logic is in
+  `src/site/demos` with tests; the industry previews are computed by it.
+- Inquiries are stored as sent, then linked to an account, a contact with its
+  consent (implied by the inquiry, or express when the visitor opts in), a
+  note and a reply task. Spam (the hidden field, or a send within seconds) is
+  kept but held out of the CRM; sends are limited per IP and per email.
+  Suggested consultation times are confirmed from Website inquiries, which
+  creates the meeting. Nothing is emailed automatically.
+- The brand name is one setting, `BRAND.name` in `src/site/config.ts`.
+- Service packages (Relay Studio) hold the internal cost model behind each
+  offering; it is never shown on the site.
+
