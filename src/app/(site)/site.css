@@ -1,0 +1,154 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * The public website. Light, warm paper with midnight sections for rhythm;
+ * one electric blue accent, coral used sparingly. Motion is CSS only and
+ * switches off for people who ask for less of it.
+ */
+
+@layer base {
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+
+  body {
+    @apply bg-site-paper text-site-night font-sans antialiased;
+    font-feature-settings: 'cv05' 1, 'ss01' 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  * { border-color: theme('colors.site.rule'); }
+  .on-dark * { border-color: theme('colors.site.seam'); }
+
+  ::selection { background: theme('colors.site.signal'); color: white; }
+
+  :focus-visible {
+    outline: 2px solid theme('colors.site.signal');
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  .on-dark :focus-visible { outline-color: theme('colors.site.spark'); }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .s-container { @apply mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-10; }
+
+  .on-dark { @apply bg-site-night text-site-paper; }
+
+  /* Editorial type: a soft optical serif for display, Inter for reading, mono for data. */
+  .s-display {
+    @apply font-serif font-normal text-[clamp(2.6rem,6.4vw,5.6rem)] leading-[0.98];
+    letter-spacing: -0.035em;
+    font-variation-settings: 'opsz' 144, 'SOFT' 40;
+  }
+  .s-h2 {
+    @apply font-serif font-normal text-[clamp(2rem,4.2vw,3.4rem)] leading-[1.04];
+    letter-spacing: -0.03em;
+    font-variation-settings: 'opsz' 120, 'SOFT' 40;
+  }
+  .s-h3 {
+    @apply font-serif font-normal text-[1.6rem] leading-[1.15];
+    letter-spacing: -0.02em;
+    font-variation-settings: 'opsz' 48, 'SOFT' 40;
+  }
+  .s-em { @apply italic text-site-signal; font-variation-settings: 'opsz' 144, 'SOFT' 100; }
+  .on-dark .s-em { @apply text-site-spark; }
+
+  .s-lede { @apply text-[1.125rem] sm:text-[1.25rem] leading-[1.55] text-site-fog; }
+  .on-dark .s-lede { @apply text-site-haze; }
+
+  .s-eyebrow { @apply font-mono text-[0.7rem] uppercase tracking-[0.16em] text-site-fog; }
+  .on-dark .s-eyebrow { @apply text-site-haze; }
+
+  .s-num { @apply text-site-signal; }
+  .on-dark .s-num { @apply text-site-spark; }
+
+  .s-label { @apply font-mono text-[0.72rem] tracking-[0.04em] text-site-fog; }
+  .on-dark .s-label { @apply text-site-haze; }
+
+  .s-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full h-12 px-6 text-[0.95rem] font-medium
+           transition-[background-color,color,box-shadow,transform] duration-200 ease-out
+           active:translate-y-px disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap;
+  }
+  .s-btn-primary { @apply s-btn bg-site-signal text-white hover:bg-[#1B43D6] shadow-[0_8px_24px_-12px_rgba(36,80,240,0.8)]; }
+  .s-btn-quiet { @apply s-btn border border-site-night/15 text-site-night hover:bg-site-night/[0.04]; }
+  .on-dark .s-btn-quiet { @apply border-white/20 text-site-paper hover:bg-white/[0.06]; }
+  .s-btn-light { @apply s-btn bg-site-paper text-site-night hover:bg-white; }
+
+  .s-link { @apply underline decoration-site-signal/40 underline-offset-4 hover:decoration-site-signal transition-colors; }
+  .on-dark .s-link { @apply decoration-site-spark/50 hover:decoration-site-spark; }
+
+  .s-card { @apply rounded-[22px] bg-site-chalk border border-site-rule; }
+  .on-dark .s-card { @apply bg-site-deep border-site-seam; }
+
+  .s-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-site-rule bg-site-chalk px-3 h-8 text-[0.8rem] text-site-night;
+  }
+  .on-dark .s-chip { @apply border-site-seam bg-site-deep text-site-paper; }
+
+  .s-field {
+    @apply w-full rounded-xl border border-site-rule bg-white px-4 h-12 text-[0.95rem] text-site-night
+           placeholder:text-site-fog/70 transition-colors focus:border-site-signal focus:outline-none
+           focus:ring-4 focus:ring-site-signal/10;
+  }
+
+  .s-prose { @apply text-[1.0625rem] leading-[1.7] text-site-night/90; }
+  .s-prose h2 { @apply s-h3 mt-12 mb-4 text-site-night; }
+  .s-prose p { @apply mb-4; }
+  .s-prose ul { @apply mb-5 list-disc pl-5 space-y-2; }
+  .s-prose a { @apply s-link; }
+  .s-prose code { @apply font-mono text-[0.9em] bg-site-sand rounded px-1; }
+
+  /* The fine grid behind dark sections: precise, not decorative noise. */
+  .s-grid-bg {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  .s-grid-bg-light {
+    background-image:
+      linear-gradient(to right, rgb(11 18 32 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(11 18 32 / 0.05) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+}
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; }
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+}
+
+/* Workflow motion: a signal travelling along a connector, and a running dot. */
+@keyframes s-travel { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+@keyframes s-dash { to { stroke-dashoffset: -24; } }
+@keyframes s-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.82); } }
+@keyframes s-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes s-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.s-dash { stroke-dasharray: 4 8; animation: s-dash 1.4s linear infinite; }
+.s-pulse { animation: s-pulse 1.8s ease-in-out infinite; }
+.s-rise { animation: s-rise 520ms cubic-bezier(0.2, 0.7, 0.1, 1) both; }
+.s-fill { transform-origin: left; animation: s-fill 700ms cubic-bezier(0.2, 0.7, 0.1, 1) both; }
+
+/* Sections ease in as they scroll into view, where the browser supports it. No JavaScript. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .s-reveal {
+      animation: s-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
+}
