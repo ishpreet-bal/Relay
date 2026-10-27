@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { Database, FileSpreadsheet, Inbox, LayoutDashboard, Plug, Receipt, ShoppingCart, Users, CalendarDays } from 'lucide-react';
 import { ConsultCta, Faq, ManagedAndPricing, RelatedDemos, ServiceHero, WhatWeBuild } from '@/components/site/service-page';
-import { BuiltAroundYou, SectionHead } from '@/components/site/sections';
+import { SectionHead } from '@/components/site/sections';
+import { BuiltAround } from '@/components/site/built-around';
 import { serviceByKey } from '@/site/content/services';
 
 const service = serviceByKey('automation');
@@ -13,10 +14,10 @@ export const metadata: Metadata = {
 };
 
 const PHASES = [
-  { title: 'Discovery', body: 'We sit with the people who do the work and map the process as it really runs: the files, the inboxes, the exceptions.' },
-  { title: 'Design and proposal', body: 'A written plan: what will be automated, what stays with people, which systems connect, the timeline and one price.' },
-  { title: 'Build and connect', body: 'We build in short iterations, connect the systems you authorize and test with real examples from your business.' },
-  { title: 'Run and improve', body: 'We host and monitor it, handle errors and changes, and improve it as your business grows.' },
+  { title: 'Discovery', body: 'We map how the work really runs, exceptions included.' },
+  { title: 'Proposal', body: 'What gets automated, what connects, the timeline and one price.' },
+  { title: 'Build', body: 'Short iterations, tested on real examples from your business.' },
+  { title: 'Run', body: 'Hosted, monitored and improved as you grow.' },
 ];
 
 const SYSTEMS = [
@@ -35,16 +36,15 @@ export default function AutomationPage() {
   return (
     <>
       <ServiceHero service={service} index={1} />
-      <WhatWeBuild service={service} title={<>If your team does it <span className="s-em">over and over,</span> we can probably automate it.</>} />
+      <WhatWeBuild service={service} title={<>If your team does it <span className="s-em">over and over,</span> we can automate it.</>} />
 
       <section className="on-dark relative overflow-hidden">
         <div className="absolute inset-0 s-grid-bg pointer-events-none" aria-hidden="true" />
         <div className="s-container relative py-20 sm:py-24">
-          <SectionHead eyebrow="How a project runs" title={<>No generic chatbot. <span className="s-em">A solution for your process.</span></>}
-            lede="Every business has different workflows, so we do not install the same product for everyone. We work out what should be automated, then build around it." />
+          <SectionHead eyebrow="How a project runs" title={<>No generic chatbot. <span className="s-em">Built for your process.</span></>} />
           <ol className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {PHASES.map((p, i) => (
-              <li key={p.title} className="s-card p-6 sm:p-7">
+              <li key={p.title} data-reveal style={{ '--d': `${i * 120}ms` } as React.CSSProperties} data-spot data-tilt="5" className="s-card p-6 sm:p-7">
                 <span className="font-mono text-[0.72rem] text-site-spark">Phase {i + 1}</span>
                 <h3 className="s-h3 mt-4 text-[1.35rem]">{p.title}</h3>
                 <p className="mt-3 text-[0.95rem] leading-relaxed text-site-haze">{p.body}</p>
@@ -55,20 +55,19 @@ export default function AutomationPage() {
       </section>
 
       <section className="s-container py-20 sm:py-24">
-        <SectionHead eyebrow="Customization" title={<>Same industry, <span className="s-em">different solution.</span></>}
-          lede="We reuse proven technical components so what we build is reliable, and shape the actual solution around each company." />
-        <div className="mt-12"><BuiltAroundYou /></div>
+        <SectionHead eyebrow="Customization" title={<>Same industry, <span className="s-em">different solution.</span></>} />
+        <div className="mt-12"><BuiltAround /></div>
       </section>
 
       <section className="bg-site-sand/50 border-y border-site-rule">
         <div className="s-container py-20 sm:py-24 grid gap-10 lg:grid-cols-12 lg:items-center">
           <div className="lg:col-span-5">
             <SectionHead eyebrow="Integration" title={<>We work with <span className="s-em">what you already use.</span></>}
-              lede="If it has an API, an export or an inbox, we can usually work with it. We confirm what is possible with your specific systems during design, before you commit." />
+              lede="If it has an API, an export or an inbox, we can usually connect it. We confirm it before you commit." />
           </div>
           <ul className="lg:col-span-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {SYSTEMS.map(({ icon: Icon, label }) => (
-              <li key={label} className="s-card p-4 flex items-center gap-3">
+            {SYSTEMS.map(({ icon: Icon, label }, i) => (
+              <li key={label} data-reveal style={{ '--d': `${i * 60}ms` } as React.CSSProperties} className="s-card s-lift p-4 flex items-center gap-3">
                 <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-site-signal/[0.08] text-site-signal"><Icon className="size-4" /></span>
                 <span className="text-[0.92rem] leading-snug">{label}</span>
               </li>
@@ -78,19 +77,17 @@ export default function AutomationPage() {
       </section>
 
       <ManagedAndPricing service={service}
-        included={['Design, development and testing', 'Hosting, databases and monitoring', 'The AI and third-party services the solution uses, within agreed volumes', 'Fixes, maintenance and agreed support']}
-        upfront={['Any licence you must hold yourself (for example, software you already subscribe to)', 'What usage is included, and what happens if you need more', 'What is in scope, and what would be a separate change']} />
+        included={['Design, build and testing', 'Hosting and monitoring', 'The services it runs on, within agreed volumes', 'Fixes and support']}
+        upfront={['Any licence you hold yourself', 'Included usage', 'What is in scope']} />
 
       <RelatedDemos slugs={['quality-report', 'estimate', 'shipments', 'clinic-admin', 'inventory']} />
 
       <Faq items={[
-        { q: 'Do we need to change the software we already use?', a: 'Usually not. We connect to the tools you already run. If something genuinely cannot be connected, we will tell you during design and suggest options.' },
-        { q: 'Do we have to learn a new platform?', a: 'No. Most of what we build works in the background or shows up in the places you already look: your inbox, your spreadsheet, a simple dashboard.' },
-        { q: 'What happens when something breaks?', a: 'We monitor what we build and fix problems as part of your service agreement. Your agreement sets out the support you get and how to reach us.' },
-        { q: 'Who owns our data?', a: 'You do. We access your systems only with your authorization, only for the work agreed, and you can withdraw access at any time.' },
-        { q: 'Can we start small?', a: 'Yes. Many projects start with one workflow that is costing the most time, and grow once it is working.' },
+        { q: 'Do we need to change the software we use?', a: 'Usually not. We connect to the tools you already run, and tell you during design if something can’t be.' },
+        { q: 'What happens when something breaks?', a: 'We monitor what we build and fix it as part of your service agreement.' },
+        { q: 'Can we start small?', a: 'Yes. Most projects start with the one workflow costing the most time.' },
       ]} />
-      <ConsultCta title="Tell us which work keeps repeating. We will show you what we would automate." service="automation" />
+      <ConsultCta title="Which work keeps repeating? Let’s automate it." service="automation" />
     </>
   );
 }

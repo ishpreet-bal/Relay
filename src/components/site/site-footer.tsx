@@ -31,7 +31,8 @@ export function SiteFooter() {
             ]} />
           </div>
         </div>
-        <div className="mt-16 pt-6 border-t border-site-seam flex flex-col sm:flex-row gap-3 sm:items-center justify-between text-[0.82rem] text-site-haze">
+        <p aria-hidden="true" className="mt-16 select-none font-serif leading-[0.8] tracking-[-0.06em] text-[clamp(6rem,24vw,22rem)] bg-gradient-to-b from-white/[0.09] to-white/0 bg-clip-text text-transparent">{BRAND.name}</p>
+        <div className="pt-6 border-t border-site-seam flex flex-col sm:flex-row gap-3 sm:items-center justify-between text-[0.82rem] text-site-haze">
           <p>© {year} {BRAND.name}. Serving businesses across {BRAND.region}.</p>
           {emails && (
             <p className="flex flex-wrap gap-x-5 gap-y-1">

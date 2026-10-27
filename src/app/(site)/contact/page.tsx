@@ -10,9 +10,9 @@ export const metadata: Metadata = {
 };
 
 const NEXT = [
-  { title: 'We read it properly', body: 'A person reads every inquiry. No account, no obligation, and no sales sequence.' },
-  { title: 'We reply to arrange a call', body: 'We confirm one of the times you suggested, or offer a few.' },
-  { title: 'We talk about your business', body: 'About 30 minutes on how things work today and what you want to change. If we are not the right fit, we will say so.' },
+  { title: 'A person reads it', body: 'No account, no obligation, no automated sales emails.' },
+  { title: 'We confirm a time', body: 'One of the times you suggested, or a few new ones.' },
+  { title: 'We talk for 30 minutes', body: 'About how you work and what you want to change.' },
 ];
 
 export default function ContactPage() {
@@ -24,7 +24,7 @@ export default function ContactPage() {
         <div className="lg:col-span-5">
           <p className="s-eyebrow">Free consultation</p>
           <h1 className="s-display mt-5 text-balance !text-[clamp(2.4rem,4.8vw,4rem)]">Tell us about <span className="s-em">your business.</span></h1>
-          <p className="s-lede mt-6">The more you tell us about how things work today, the more useful the first conversation will be.</p>
+          <p className="s-lede mt-6">The more you tell us, the more useful the first call.</p>
           <ol className="mt-10 space-y-6">
             {NEXT.map((n, i) => (
               <li key={n.title} className="flex gap-4">

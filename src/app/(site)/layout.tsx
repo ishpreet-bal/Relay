@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, Inter, JetBrains_Mono } from 'next/font/google';
+import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
 import { SiteNav } from '@/components/site/site-nav';
 import { SiteFooter } from '@/components/site/site-footer';
+import { MotionRoot } from '@/components/site/motion';
 import { BRAND, siteUrl } from '@/site/config';
 import './site.css';
 
@@ -11,9 +12,10 @@ import './site.css';
  * the pages are static and fast, and nothing here can reach a workspace.
  */
 
+// Geist for everything you read; the serif is kept for the logo and the italic accent words.
 const serif = Fraunces({ subsets: ['latin'], axes: ['opsz', 'SOFT'], style: ['normal', 'italic'], variable: '--font-serif', display: 'swap' });
-const sans = Inter({ subsets: ['latin'], variable: '--font-body', display: 'swap' });
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-mono', display: 'swap' });
+const sans = Geist({ subsets: ['latin'], variable: '--font-body', display: 'swap' });
+const mono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' });
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
@@ -38,8 +40,13 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     serviceType: ['Business process automation', 'Custom software development', 'Lead generation', 'Website development'],
   };
   return (
-    <html lang="en-CA" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
+    <html lang="en-CA" suppressHydrationWarning className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
+      <head>
+        {/* Marks that scripts run, so content hidden for its entrance is never hidden without them. */}
+        <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
+      </head>
       <body>
+        <MotionRoot />
         <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 s-btn-primary">Skip to content</a>
         <SiteNav />
         <main id="main">{children}</main>

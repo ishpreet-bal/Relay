@@ -1,163 +1,152 @@
 import Link from 'next/link';
-import { ArrowRight, ArrowUpRight, Cable, ClipboardCheck, Hammer, LifeBuoy, MessagesSquare, PenTool, Puzzle, ShieldCheck, Wrench } from 'lucide-react';
-import { SERVICES } from '@/site/content/services';
+import { ArrowRight, ArrowUpRight, Cable, Inbox, LifeBuoy, Link2, MessagesSquare, PenTool, Radar, Users } from 'lucide-react';
 import { DEMOS } from '@/site/demos/catalog';
 
-/** A numbered, editorial section heading. */
+/** A short, numbered section heading that rises into view. */
 export function SectionHead({ number, eyebrow, title, lede, align = 'left', className = '' }: {
   number?: string; eyebrow: string; title: React.ReactNode; lede?: React.ReactNode; align?: 'left' | 'center'; className?: string;
 }) {
+  const center = align === 'center';
   return (
-    <div className={`${align === 'center' ? 'mx-auto text-center max-w-3xl' : 'max-w-3xl'} ${className}`}>
-      <p className="s-eyebrow flex items-center gap-3 justify-start" style={align === 'center' ? { justifyContent: 'center' } : undefined}>
+    <div className={`${center ? 'mx-auto text-center max-w-3xl' : 'max-w-3xl'} ${className}`}>
+      <p data-reveal className={`s-eyebrow flex items-center gap-3 ${center ? 'justify-center' : ''}`}>
         {number && <span className="s-num">{number}</span>}
         {number && <span className="h-px w-8 bg-current opacity-30" aria-hidden="true" />}
         {eyebrow}
       </p>
-      <h2 className="s-h2 mt-5 text-balance">{title}</h2>
-      {lede && <p className="s-lede mt-5 text-pretty">{lede}</p>}
+      <h2 data-reveal style={{ '--d': '80ms' } as React.CSSProperties} className="s-h2 mt-5 text-balance">{title}</h2>
+      {lede && <p data-reveal style={{ '--d': '160ms' } as React.CSSProperties} className="s-lede mt-5 text-pretty">{lede}</p>}
     </div>
   );
 }
 
-/** The three ways in, in the visitor's own words. */
-export function StartingPoints() {
+const TICKER = ['Invoice processing', 'Quality reports', 'Inventory alerts', 'Online booking', 'Lead research', 'Quotes and estimates', 'Customer updates',
+  'Data sync', 'Live dashboards', 'Employee onboarding', 'Business websites', 'Appointment reminders', 'CRM setup', 'Supplier follow-ups'];
+
+/** A slow ticker of the work we take on: a lot said in very few words. */
+export function Ticker() {
+  const row = TICKER.map((t) => (
+    <span key={t} className="flex items-center gap-8 pr-8 shrink-0">
+      <span className="font-serif italic text-[1.6rem] sm:text-[2rem] tracking-[-0.02em] whitespace-nowrap">{t}</span>
+      <span className="size-2 rotate-45 bg-site-spark/70" aria-hidden="true" />
+    </span>
+  ));
   return (
-    <div className="grid gap-px overflow-hidden rounded-[22px] border border-site-rule bg-site-rule sm:grid-cols-3">
-      {SERVICES.map((s, i) => (
-        <Link key={s.key} href={s.href} className="group bg-site-chalk p-5 sm:p-6 transition-colors hover:bg-white">
-          <span className="flex items-center justify-between">
-            <span className="font-mono text-[0.7rem] text-site-signal">0{i + 1}</span>
-            <ArrowUpRight className="size-4 text-site-fog transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-site-signal" />
-          </span>
-          <span className="mt-4 block font-serif text-[1.35rem] leading-tight tracking-[-0.02em]">{s.choice}</span>
-          <span className="mt-2 block text-[0.9rem] text-site-fog leading-snug">{s.choiceDetail}</span>
-        </Link>
-      ))}
+    <div className="on-dark border-y border-site-seam py-6 sm:py-7 overflow-hidden" aria-label={`What we automate: ${TICKER.join(', ')}`}>
+      <div className="s-marquee" aria-hidden="true">
+        <div className="s-marquee-track">{row}{row}</div>
+      </div>
     </div>
   );
 }
 
-export function ServiceCards() {
-  const [automation, acquisition, websites] = SERVICES as [typeof SERVICES[0], typeof SERVICES[0], typeof SERVICES[0]];
-  return (
-    <div className="grid gap-5 lg:grid-cols-12">
-      <Link href={automation.href} className="on-dark group relative overflow-hidden rounded-[28px] p-7 sm:p-10 lg:col-span-7 lg:row-span-2 flex flex-col">
-        <div className="absolute inset-0 s-grid-bg pointer-events-none" aria-hidden="true" />
-        <div className="absolute -right-24 -top-24 size-[420px] rounded-full bg-site-signal/25 blur-[90px] pointer-events-none" aria-hidden="true" />
-        <div className="relative flex items-center justify-between">
-          <span className="s-chip"><span className="size-1.5 rounded-full bg-site-tide" />Our primary service</span>
-          <ArrowUpRight className="size-5 text-site-haze transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-site-paper" />
-        </div>
-        <p className="relative s-eyebrow mt-10">01 · {automation.name}</p>
-        <h3 className="relative s-h2 mt-4 max-w-xl text-balance">{automation.headline}</h3>
-        <p className="relative s-lede mt-5 max-w-xl">{automation.summary}</p>
-        <ul className="relative mt-8 flex flex-wrap gap-2">
-          {automation.examples.slice(0, 8).map((e) => <li key={e} className="s-chip text-[0.78rem]">{e}</li>)}
-        </ul>
-        <span className="relative mt-auto pt-10 inline-flex items-center gap-2 text-[0.95rem] text-site-spark">
-          Explore business automation <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-        </span>
-      </Link>
-      {[acquisition, websites].map((s, i) => (
-        <Link key={s.key} href={s.href} className="group s-card p-7 sm:p-8 lg:col-span-5 flex flex-col transition-shadow hover:shadow-[0_30px_60px_-40px_rgba(11,18,32,0.45)]">
-          <div className="flex items-center justify-between">
-            <p className="s-eyebrow">0{i + 2} · {s.name}</p>
-            <ArrowUpRight className="size-5 text-site-fog transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-site-signal" />
-          </div>
-          <h3 className="s-h3 mt-5 text-balance">{s.headline}</h3>
-          <p className="mt-3 text-[0.98rem] leading-relaxed text-site-fog">{s.summary}</p>
-          <span className="mt-auto pt-6 inline-flex items-center gap-2 text-[0.92rem] text-site-signal">
-            {s.choice} <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-          </span>
-        </Link>
-      ))}
-    </div>
-  );
-}
+export { ServiceFlips } from './service-flips';
 
 export const STEPS = [
-  { icon: MessagesSquare, title: 'Tell us about your business', body: 'Book a consultation or send a short inquiry: your industry, how things work today, and what is getting in the way.', you: 'A conversation, about 30 minutes' },
-  { icon: PenTool, title: 'We design your solution', body: 'We recommend an approach and explain what it will do, how we will build it, the benefits we expect and the price, before you commit to anything.', you: 'Review the proposal and decide' },
-  { icon: Cable, title: 'We build and connect everything', body: 'We develop the software, configure the automations and connect the systems you authorize. You approve access and help us test with real cases.', you: 'Grant access, join testing' },
-  { icon: LifeBuoy, title: 'We run and maintain it', body: 'We monitor it, keep integrations working, fix problems and make the improvements we agree on. You have one provider for all of it: us.', you: 'Run your business' },
+  { icon: MessagesSquare, title: 'Tell us how you work', body: 'A 30-minute call about your business and what slows it down.', you: 'A conversation' },
+  { icon: PenTool, title: 'We design it', body: 'A clear plan and one price, before you commit to anything.', you: 'A decision' },
+  { icon: Cable, title: 'We build and connect it', body: 'We build the software and connect the tools you already use.', you: 'Access approvals' },
+  { icon: LifeBuoy, title: 'We run it', body: 'We host it, watch it and fix it. One provider for all of it.', you: 'Nothing' },
 ];
 
-export function ProcessSteps({ compact = false }: { compact?: boolean }) {
+/** The four steps, with a line that draws across them as they come into view. On dark sections. */
+export function ProcessSteps() {
   return (
-    <ol className="relative grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <span className="hidden xl:block absolute left-[12%] right-[12%] top-[38px] h-px bg-gradient-to-r from-site-spark/0 via-site-spark/50 to-site-spark/0" aria-hidden="true" />
-      {STEPS.map((s, i) => {
-        const Icon = s.icon;
-        return (
-          <li key={s.title} className="s-reveal relative s-card p-6 sm:p-7 flex flex-col">
-            <div className="flex items-center justify-between">
-              <span className="relative grid size-12 place-items-center rounded-2xl bg-site-spark/10 text-site-spark border border-site-spark/25">
-                <Icon className="size-5" />
-              </span>
-              <span className="font-mono text-[0.72rem] text-site-haze">Step {i + 1}</span>
-            </div>
-            <h3 className="s-h3 mt-6 text-[1.4rem] text-balance">{s.title}</h3>
-            {!compact && <p className="mt-3 text-[0.95rem] leading-relaxed text-site-haze">{s.body}</p>}
-            <p className="mt-auto pt-6 s-label">Your part · <span className="text-site-paper">{s.you}</span></p>
-          </li>
-        );
-      })}
-    </ol>
+    <div className="relative">
+      <span data-reveal className="s-draw hidden xl:block absolute left-[6%] right-[6%] top-[44px] h-px bg-gradient-to-r from-site-spark/0 via-site-spark/70 to-site-spark/0" aria-hidden="true" />
+      <ol className="relative grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {STEPS.map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <li key={s.title} data-reveal style={{ '--d': `${150 + i * 140}ms` } as React.CSSProperties}>
+              <div data-spot data-tilt="5" className="s-card h-full p-6 sm:p-7 flex flex-col">
+                <div className="relative z-[2] flex items-center justify-between">
+                  <span className="grid size-[52px] place-items-center rounded-2xl bg-site-night border border-site-spark/30 text-site-spark shadow-[0_0_0_6px_rgb(11_18_32)]"><Icon className="size-5" /></span>
+                  <span className="font-serif italic text-[2.6rem] leading-none text-white/10">{i + 1}</span>
+                </div>
+                <h3 className="relative z-[2] s-h3 mt-6 text-[1.45rem] text-balance">{s.title}</h3>
+                <p className="relative z-[2] mt-2.5 text-[0.95rem] leading-relaxed text-site-haze">{s.body}</p>
+                <p className="relative z-[2] mt-auto pt-6 s-label">Your part · <span className="text-site-paper">{s.you}</span></p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
-type Module = { label: string; shared?: boolean };
-const COMPANIES: { name: string; need: string; uses: string; requires: string; solution: string; modules: Module[] }[] = [
-  {
-    name: 'Manufacturer A', need: 'Automated supplier reporting', uses: 'Spreadsheets and email', requires: 'Scheduled reports and notifications',
-    solution: 'A supplier scorecard, built from the purchasing spreadsheet and emailed to each supplier every Monday.',
-    modules: [{ label: 'Spreadsheet import' }, { label: 'Data validation', shared: true }, { label: 'Scheduler', shared: true }, { label: 'Supplier scorecard' }, { label: 'Email notifications', shared: true }],
-  },
-  {
-    name: 'Manufacturer B', need: 'Quality claims automation', uses: 'A database and a document system', requires: 'Approvals, validation and dashboards',
-    solution: 'A claims workflow: documents filed automatically, claims validated, routed for approval and tracked on a dashboard.',
-    modules: [{ label: 'Database connector' }, { label: 'Document intake' }, { label: 'Data validation', shared: true }, { label: 'Approval flow' }, { label: 'Claims dashboard' }, { label: 'Email notifications', shared: true }],
-  },
-];
+const PLATFORM = [
+  { icon: Radar, title: 'Discovery engine', body: 'Searches ten industries across Ontario every day.', anim: 'radar' },
+  { icon: Link2, title: 'Research with sources', body: 'Every fact about a business links back to where it was found.', anim: 'lines' },
+  { icon: Users, title: 'CRM and call lists', body: 'Accounts, contacts, consent and follow-ups in one place.', anim: 'rows' },
+  { icon: Inbox, title: 'Inquiry pipeline', body: 'Every message sent from this website lands in it, with a task to reply.', anim: 'inbox' },
+] as const;
 
-export function BuiltAroundYou() {
+/** Proof that is true today: the platform Relay runs its own business on. */
+export function PlatformProof() {
   return (
-    <div>
-      <div className="grid gap-5 lg:grid-cols-2">
-        {COMPANIES.map((c) => (
-          <article key={c.name} className="s-card p-6 sm:p-8 flex flex-col">
-            <div className="flex items-center justify-between">
-              <p className="s-eyebrow">Same industry</p>
-              <span className="s-chip">{c.name}</span>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {PLATFORM.map((p, i) => {
+        const Icon = p.icon;
+        return (
+          <div key={p.title} data-reveal style={{ '--d': `${i * 110}ms` } as React.CSSProperties}>
+            <div data-spot data-tilt="5" className="s-card h-full p-6 flex flex-col overflow-hidden">
+              <PlatformGlyph kind={p.anim} />
+              <div className="relative z-[2] mt-6 flex items-center gap-2.5">
+                <Icon className="size-4 text-site-spark" />
+                <h3 className="text-[1.05rem] font-medium">{p.title}</h3>
+              </div>
+              <p className="relative z-[2] mt-2 text-[0.93rem] leading-relaxed text-site-haze">{p.body}</p>
             </div>
-            <dl className="mt-6 grid gap-4 sm:grid-cols-3">
-              {[['Needs', c.need], ['Uses today', c.uses], ['Requires', c.requires]].map(([k, v]) => (
-                <div key={k}>
-                  <dt className="s-label">{k}</dt>
-                  <dd className="mt-1.5 text-[0.95rem] leading-snug">{v}</dd>
-                </div>
-              ))}
-            </dl>
-            <div className="mt-7 rounded-2xl bg-site-sand/60 p-5 flex-1">
-              <p className="s-label">What we would build</p>
-              <p className="mt-2 font-serif text-[1.2rem] leading-snug tracking-[-0.01em]">{c.solution}</p>
-              <ul className="mt-5 flex flex-wrap gap-2">
-                {c.modules.map((m) => (
-                  <li key={m.label} className={`inline-flex items-center gap-1.5 rounded-full px-3 h-8 text-[0.8rem] border ${m.shared ? 'border-site-signal/30 bg-site-signal/[0.07] text-site-signal' : 'border-site-rule bg-site-chalk text-site-night'}`}>
-                    {m.shared ? <Puzzle className="size-3.5" /> : <Wrench className="size-3.5 text-site-fog" />}{m.label}
-                  </li>
-                ))}
-              </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Small looping pictures of each part of the platform at work. Decorative. */
+function PlatformGlyph({ kind }: { kind: (typeof PLATFORM)[number]['anim'] }) {
+  return (
+    <div aria-hidden="true" className="relative z-[2] h-28 rounded-2xl border border-site-seam bg-site-night/80 overflow-hidden">
+      {kind === 'radar' && (
+        <div className="absolute inset-0 grid place-items-center">
+          {[0, 1, 2].map((r) => <span key={r} className="absolute rounded-full border border-site-spark/20" style={{ width: 40 + r * 34, height: 40 + r * 34 }} />)}
+          <span className="absolute size-[108px] rounded-full animate-[spin_3.5s_linear_infinite]" style={{ background: 'conic-gradient(from 0deg, rgb(124 152 255 / 0.45), transparent 22%)' }} />
+          {[[30, 40], [64, 28], [72, 70], [40, 72]].map(([x, y], k) => <span key={k} className="absolute size-1.5 rounded-full bg-site-tide s-pulse" style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${k * 400}ms` }} />)}
+        </div>
+      )}
+      {kind === 'lines' && (
+        <div className="absolute inset-0 p-4 space-y-2.5">
+          {[88, 70, 80, 56].map((w, k) => (
+            <div key={k} className="flex items-center gap-2">
+              <div className="h-1.5 rounded-full bg-white/15 s-fill" style={{ width: `${w}%`, animationDelay: `${k * 250}ms` }} />
+              <span className="size-3 shrink-0 rounded-[4px] border border-site-spark/60 s-pulse" style={{ animationDelay: `${k * 300}ms` }} />
             </div>
-          </article>
-        ))}
-      </div>
-      <p className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-[0.88rem] text-site-fog">
-        <span className="inline-flex items-center gap-2"><Puzzle className="size-4 text-site-signal" />Proven component, reused</span>
-        <span className="inline-flex items-center gap-2"><Wrench className="size-4" />Built for this company</span>
-        <span>Reuse keeps it reliable and the price fair. The solution itself is always yours alone.</span>
-      </p>
+          ))}
+        </div>
+      )}
+      {kind === 'rows' && (
+        <div className="absolute inset-0 p-3 space-y-1.5">
+          {['Account', 'Contact', 'Consent', 'Follow-up'].map((r, k) => (
+            <div key={r} className="flex items-center justify-between rounded-md bg-white/[0.05] px-2.5 py-1 s-rise" style={{ animationDelay: `${k * 180}ms` }}>
+              <span className="font-mono text-[0.62rem] text-site-haze">{r}</span>
+              <span className={`size-1.5 rounded-full ${k === 3 ? 'bg-site-coral s-pulse' : 'bg-site-tide'}`} />
+            </div>
+          ))}
+        </div>
+      )}
+      {kind === 'inbox' && (
+        <div className="absolute inset-0 p-3">
+          <div className="rounded-lg border border-site-spark/40 bg-site-spark/10 px-3 py-2 animate-[s-inbox_4s_cubic-bezier(.2,.7,.1,1)_infinite]">
+            <div className="h-1.5 w-1/2 rounded-full bg-site-spark/70" />
+            <div className="mt-1.5 h-1.5 w-4/5 rounded-full bg-white/20" />
+          </div>
+          <div className="mt-2 rounded-lg bg-white/[0.05] px-3 py-2"><div className="h-1.5 w-2/3 rounded-full bg-white/15" /></div>
+          <div className="mt-2 rounded-lg bg-white/[0.05] px-3 py-2"><div className="h-1.5 w-1/2 rounded-full bg-white/15" /></div>
+        </div>
+      )}
     </div>
   );
 }
@@ -169,43 +158,48 @@ export function DemoTeaser() {
   return (
     <div className="grid gap-5 md:grid-cols-3">
       {demos.map((d, i) => (
-        <Link key={d.slug} href={`/demos/${d.slug}`} className="group s-card p-6 sm:p-7 flex flex-col transition-colors hover:border-site-spark/40">
-          <DemoGlyph index={i} />
-          <p className="s-eyebrow mt-7">{d.industry}</p>
-          <h3 className="s-h3 mt-3 text-[1.35rem]">{d.title}</h3>
-          <p className="mt-3 text-[0.93rem] leading-relaxed text-site-haze">{d.tagline}</p>
-          <span className="mt-auto pt-6 inline-flex items-center gap-2 text-[0.9rem] text-site-spark">
-            Try it <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-          </span>
-        </Link>
+        <div key={d.slug} data-reveal style={{ '--d': `${i * 120}ms` } as React.CSSProperties}>
+          <Link href={`/demos/${d.slug}`} data-spot data-tilt="6" className="group s-card h-full p-6 sm:p-7 flex flex-col">
+            <DemoGlyph index={i} />
+            <p className="relative z-[2] s-eyebrow mt-7">{d.industry}</p>
+            <h3 className="relative z-[2] s-h3 mt-3 text-[1.35rem]">{d.title}</h3>
+            <span className="relative z-[2] mt-auto pt-6 inline-flex items-center gap-2 text-[0.9rem] text-site-spark">
+              Try it <ArrowUpRight className="size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </span>
+          </Link>
+        </div>
       ))}
     </div>
   );
 }
 
-/** Small schematic pictures for the demo cards: rows becoming a chart, text becoming a quote, a list becoming a ranking. */
+/** Schematic pictures that come alive on hover: rows into a chart, text into a quote, a list into a ranking. */
 function DemoGlyph({ index }: { index: number }) {
+  const t = 'transition-all duration-700 ease-[cubic-bezier(.2,.7,.1,1)]';
   return (
-    <div aria-hidden="true" className="h-28 rounded-2xl border border-site-seam bg-site-night/70 p-4 flex items-end gap-3 overflow-hidden">
+    <div aria-hidden="true" className="relative z-[2] h-32 rounded-2xl border border-site-seam bg-site-night/70 p-4 flex items-end gap-3 overflow-hidden">
       {index === 0 && (
         <>
-          <div className="flex-1 space-y-1.5">{[0, 1, 2, 3, 4].map((r) => <div key={r} className={`h-2 rounded-full ${r === 2 ? 'bg-site-coral/70' : 'bg-white/15'}`} style={{ width: `${60 + ((r * 17) % 35)}%` }} />)}</div>
-          <ArrowRight className="size-4 text-site-haze mb-6" />
-          <div className="flex-1 flex items-end gap-1.5 h-full">{[78, 94, 86].map((h, k) => <div key={k} className="flex-1 rounded-t-md bg-site-spark/70" style={{ height: `${h}%` }} />)}</div>
+          <div className="flex-1 space-y-1.5 self-center">{[0, 1, 2, 3, 4].map((r) => <div key={r} className={`h-2 rounded-full ${r === 2 ? 'bg-site-coral/70' : 'bg-white/15'} ${t} group-hover:opacity-40`} style={{ width: `${60 + ((r * 17) % 35)}%`, transitionDelay: `${r * 40}ms` }} />)}</div>
+          <ArrowRight className={`size-4 text-site-haze self-center ${t} group-hover:translate-x-1 group-hover:text-site-spark`} />
+          <div className="flex-1 flex items-end gap-1.5 h-full">{[78, 94, 86].map((h, k) => <div key={k} className={`flex-1 rounded-t-md bg-site-spark/70 origin-bottom scale-y-[0.35] ${t} group-hover:scale-y-100`} style={{ height: `${h}%`, transitionDelay: `${120 + k * 90}ms` }} />)}</div>
         </>
       )}
       {index === 1 && (
         <>
-          <div className="flex-1 space-y-1.5 self-start pt-1">{[90, 70, 85, 50].map((w, k) => <div key={k} className="h-1.5 rounded-full bg-white/15" style={{ width: `${w}%` }} />)}</div>
-          <ArrowRight className="size-4 text-site-haze mb-6" />
-          <div className="flex-1 space-y-1.5 rounded-lg border border-site-seam p-2">{[0, 1, 2].map((k) => <div key={k} className="flex justify-between gap-2"><div className="h-1.5 w-2/3 rounded-full bg-white/15" /><div className="h-1.5 w-1/5 rounded-full bg-site-spark/70" /></div>)}<div className="h-1.5 w-1/2 ml-auto rounded-full bg-site-tide/80" /></div>
+          <div className="flex-1 space-y-1.5 self-center">{[90, 70, 85, 50].map((w, k) => <div key={k} className="h-1.5 rounded-full bg-white/15" style={{ width: `${w}%` }} />)}</div>
+          <ArrowRight className={`size-4 text-site-haze self-center ${t} group-hover:translate-x-1 group-hover:text-site-spark`} />
+          <div className="flex-1 space-y-1.5 rounded-lg border border-site-seam p-2 self-center">
+            {[0, 1, 2].map((k) => <div key={k} className={`flex justify-between gap-2 opacity-30 ${t} group-hover:opacity-100`} style={{ transitionDelay: `${k * 110}ms` }}><div className="h-1.5 w-2/3 rounded-full bg-white/15" /><div className="h-1.5 w-1/5 rounded-full bg-site-spark/70" /></div>)}
+            <div className={`h-1.5 w-1/2 ml-auto rounded-full bg-site-tide/80 scale-x-0 origin-right ${t} group-hover:scale-x-100`} style={{ transitionDelay: '380ms' }} />
+          </div>
         </>
       )}
       {index === 2 && (
-        <div className="w-full space-y-1.5">{[100, 85, 70, 40, 25].map((s, k) => (
+        <div className="w-full space-y-1.5 self-center">{[100, 85, 70, 40, 25].map((s, k) => (
           <div key={k} className="flex items-center gap-2">
-            <div className="h-1.5 w-16 rounded-full bg-white/15" />
-            <div className={`h-1.5 rounded-full ${s >= 70 ? 'bg-site-tide/80' : 'bg-white/20'}`} style={{ width: `${s * 0.6}%` }} />
+            <div className="h-1.5 w-14 rounded-full bg-white/15" />
+            <div className={`h-1.5 rounded-full origin-left scale-x-[0.25] ${s >= 70 ? 'bg-site-tide/80' : 'bg-white/20'} ${t} group-hover:scale-x-100`} style={{ width: `${s * 0.6}%`, transitionDelay: `${k * 70}ms` }} />
           </div>
         ))}</div>
       )}
@@ -213,60 +207,21 @@ function DemoGlyph({ index }: { index: number }) {
   );
 }
 
-const PILLARS = [
-  { icon: Puzzle, title: 'Built around your business', body: 'We start from how you work, not from a product we need to sell. Two companies in the same industry can get very different solutions.' },
-  { icon: Hammer, title: 'Managed from start to finish', body: 'Design, development, integration, hosting and support. You do not buy separate tools or hire someone to configure them.' },
-  { icon: Cable, title: 'Connected to what you already use', body: 'Spreadsheets, inboxes, accounting, CRMs, calendars and databases. With your authorization, we do the connecting.' },
-  { icon: ShieldCheck, title: 'Looked after for the long run', body: 'We monitor what we build, fix what breaks and keep improving it under a clear support agreement.' },
-];
-
-export function WhyRelay() {
-  return (
-    <div className="grid gap-x-10 gap-y-10 sm:grid-cols-2">
-      {PILLARS.map((p) => {
-        const Icon = p.icon;
-        return (
-          <div key={p.title} className="s-reveal flex gap-5">
-            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-site-signal/[0.08] text-site-signal"><Icon className="size-5" /></span>
-            <div>
-              <h3 className="text-[1.1rem] font-medium tracking-[-0.01em]">{p.title}</h3>
-              <p className="mt-2 text-[0.98rem] leading-relaxed text-site-fog">{p.body}</p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-export function HonestyNote() {
-  return (
-    <div className="flex gap-4 rounded-[22px] border border-dashed border-site-rule p-6">
-      <ClipboardCheck className="size-5 shrink-0 text-site-signal mt-0.5" />
-      <p className="text-[0.98rem] leading-relaxed text-site-fog">
-        <span className="text-site-night font-medium">We are a young company, and we will not pretend otherwise.</span> You will not find invented
-        testimonials or case studies here. Instead, every demo on this site is a working example you can try, and in a consultation we will walk
-        through what we would build for you.
-      </p>
-    </div>
-  );
-}
-
-export function ConsultCta({ title = 'Tell us how your business runs. We’ll show you what we would build.', service }: { title?: string; service?: string }) {
+export function ConsultCta({ title = 'Let’s look at how your business runs.', service }: { title?: string; service?: string }) {
   return (
     <section className="s-container py-20 sm:py-28">
-      <div className="relative overflow-hidden rounded-[32px] bg-site-sand px-6 py-14 sm:px-14 sm:py-20">
+      <div data-reveal data-spot className="relative overflow-hidden rounded-[32px] bg-site-sand px-6 py-14 sm:px-14 sm:py-20">
         <div className="absolute inset-0 s-grid-bg-light pointer-events-none" aria-hidden="true" />
-        <div className="absolute -left-20 -bottom-32 size-[380px] rounded-full bg-site-coral/20 blur-[90px] pointer-events-none" aria-hidden="true" />
-        <div className="relative grid gap-10 lg:grid-cols-12 lg:items-end">
+        <div className="absolute -left-20 -bottom-32 size-[380px] rounded-full bg-site-coral/25 blur-[90px] pointer-events-none animate-[s-drift_14s_ease-in-out_infinite]" aria-hidden="true" />
+        <div className="absolute -right-24 -top-32 size-[380px] rounded-full bg-site-signal/15 blur-[90px] pointer-events-none animate-[s-drift_18s_ease-in-out_infinite_reverse]" aria-hidden="true" />
+        <div className="relative z-[2] grid gap-10 lg:grid-cols-12 lg:items-end">
           <div className="lg:col-span-8">
-            <p className="s-eyebrow">Free consultation</p>
-            <h2 className="s-h2 mt-5 text-balance">{title}</h2>
-            <p className="s-lede mt-5 max-w-2xl">No account, no obligation. Tell us about your process and goals; we will recommend an approach and explain what it would cost.</p>
+            <h2 className="s-h2 text-balance">{title}</h2>
+            <p className="s-lede mt-5">Free 30-minute consultation. No account, no obligation.</p>
           </div>
           <div className="lg:col-span-4 flex flex-col gap-3 lg:items-end">
             <Link href={service ? `/contact?service=${service}` : '/contact'} className="s-btn-primary w-full sm:w-auto">Book a free consultation <ArrowRight className="size-4" /></Link>
-            <Link href="/demos" className="s-btn-quiet w-full sm:w-auto">See working demos</Link>
+            <Link href="/demos" className="s-btn-quiet w-full sm:w-auto">Try a demo first</Link>
           </div>
         </div>
       </div>

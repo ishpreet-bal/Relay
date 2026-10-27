@@ -31,7 +31,7 @@ export function Stat({ label, value, tone }: { label: string; value: React.React
   return (
     <div className="rounded-xl border border-site-rule bg-site-paper/60 px-3.5 py-3">
       <p className="s-label">{label}</p>
-      <p className={`mt-1 font-serif text-[1.55rem] leading-none tracking-[-0.02em] tabular ${color}`}>{value}</p>
+      <p className={`mt-1 text-[1.5rem] font-semibold leading-none tracking-[-0.03em] tabular ${color}`}>{value}</p>
     </div>
   );
 }

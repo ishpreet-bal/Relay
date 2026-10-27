@@ -48,7 +48,7 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
           <h1 className="s-display mt-5 max-w-4xl text-balance !text-[clamp(2.3rem,5vw,4.2rem)]">{demo.title}</h1>
           <p className="s-lede mt-5 max-w-2xl">{demo.tagline}</p>
           <p className="mt-6 inline-flex items-center gap-2 rounded-full border border-site-rule bg-site-chalk px-3.5 h-9 text-[0.84rem] text-site-fog">
-            <FlaskConical className="size-4 text-site-coral" />A working sample on fictional data, running in your browser. Not a client project, and not connected to any real system.
+            <FlaskConical className="size-4 text-site-coral" />Sample data · runs in your browser
           </p>
           <nav aria-label="Other demos" className="mt-8 -mx-4 px-4 flex gap-2 overflow-x-auto pb-1">
             {DEMOS.map((d) => (
@@ -63,17 +63,17 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
 
       <section className="s-container py-12 sm:py-16">
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="s-card p-6">
+          <div data-reveal data-spot className="s-card s-lift p-6">
             <p className="s-eyebrow">The problem</p>
             <p className="mt-3 text-[1rem] leading-relaxed">{demo.problem}</p>
           </div>
-          <div className="s-card p-6">
+          <div data-reveal style={{ '--d': '120ms' } as React.CSSProperties} data-spot className="s-card s-lift p-6">
             <p className="s-eyebrow">Before {BRAND.name}</p>
             <ol className="mt-3 space-y-2.5">
               {demo.manual.map((m, i) => <li key={m} className="flex gap-3 text-[0.95rem] leading-snug"><span className="mt-1 grid size-5 shrink-0 place-items-center rounded-full bg-site-coral/15 font-mono text-[0.62rem] text-[#9C3220]">{i + 1}</span>{m}</li>)}
             </ol>
           </div>
-          <div className="on-dark rounded-[22px] p-6 relative overflow-hidden">
+          <div data-reveal style={{ '--d': '240ms' } as React.CSSProperties} data-spot className="on-dark s-lift rounded-[22px] p-6 relative overflow-hidden">
             <div className="absolute inset-0 s-grid-bg pointer-events-none" aria-hidden="true" />
             <p className="relative s-eyebrow">With {BRAND.name}</p>
             <ol className="relative mt-3 space-y-2.5">
@@ -92,14 +92,14 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
       </section>
 
       <section className="s-container pb-4">
-        <div className="grid gap-6 rounded-[28px] border border-site-rule bg-site-sand/50 p-6 sm:p-10 lg:grid-cols-12 lg:items-center">
+        <div data-reveal className="grid gap-6 rounded-[28px] border border-site-rule bg-site-sand/50 p-6 sm:p-10 lg:grid-cols-12 lg:items-center">
           <div className="lg:col-span-5">
             <p className="s-eyebrow">For a real business</p>
             <h2 className="s-h3 mt-3">What we would customize for you</h2>
-            <p className="mt-3 text-[0.98rem] leading-relaxed text-site-fog">This demo shows the shape of the solution. A real one is designed around your process and connected to your systems.</p>
+            <p className="mt-3 text-[0.98rem] leading-relaxed text-site-fog">Yours is designed around your process and connected to your systems.</p>
           </div>
           <ul className="lg:col-span-7 grid gap-2 sm:grid-cols-2">
-            {demo.customize.map((c) => <li key={c} className="s-card px-4 py-3 text-[0.94rem] leading-snug">{c}</li>)}
+            {demo.customize.map((c) => <li key={c} className="s-card s-lift px-4 py-3 text-[0.94rem] leading-snug">{c}</li>)}
           </ul>
         </div>
         <div className="mt-6 flex justify-end">
