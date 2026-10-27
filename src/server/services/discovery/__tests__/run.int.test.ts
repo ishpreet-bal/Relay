@@ -130,6 +130,13 @@ describe.skipIf(!reachable)('discovery run (database)', () => {
     // No Places name is stored for businesses that weren't confirmed.
     expect(results.filter((r) => r.outcome === 'EXCLUDED').every((r) => r.name === '')).toBe(true);
 
+    // Businesses without a website of their own wait on the call list, with only
+    // the place id and the search that found them; a closed one does not.
+    const leads = await db.callLead.findMany({ where: { organizationId: orgId }, orderBy: { externalId: 'asc' } });
+    expect(leads.map((l) => [l.externalId, l.reason])).toEqual([['place-fb', 'SOCIAL_ONLY'], ['place-nosite', 'NO_WEBSITE']]);
+    expect(leads[0]).toMatchObject({ clientId, profileId, runId: run.id, searchTerm: 'machine shop', status: 'NEW' });
+    expect(JSON.stringify(leads)).not.toMatch(/Mystery Fabrication|Shop On Facebook/);
+
     const usage = await db.usageRecord.findMany({ where: { organizationId: orgId, type: 'DISCOVERY_REQUEST' } });
     expect(usage).toHaveLength(3);
     expect(usage.every((u) => u.isEstimate && u.costMillicents === 3500)).toBe(true);
@@ -145,6 +152,13 @@ describe.skipIf(!reachable)('discovery run (database)', () => {
     const acme = await db.discoveryResult.findFirstOrThrow({ where: { runId: run.id, externalId: 'place-acme' } });
     expect(acme.outcome).toBe('DUPLICATE');
     expect(siteCalls).toBe(0);
+    // A lead someone already worked keeps its status when discovery sees it again.
+    await db.callLead.updateMany({ where: { organizationId: orgId, externalId: 'place-nosite' }, data: { status: 'DO_NOT_CALL' } });
+    placesCalls = 0; // the stub returns the no-website businesses again
+    const again = await startDiscoveryRun(systemAccess(orgId), null, profileId, 'MANUAL');
+    await executeDiscoveryStep(again.run.id, { deadline: Date.now() + 120_000 });
+    expect(await db.callLead.count({ where: { organizationId: orgId } })).toBe(2);
+    expect((await db.callLead.findFirstOrThrow({ where: { organizationId: orgId, externalId: 'place-nosite' } })).status).toBe('DO_NOT_CALL');
   });
 
   it('pauses at the deadline and resumes from its cursor without repeating paid searches', async () => {
@@ -160,9 +174,9 @@ describe.skipIf(!reachable)('discovery run (database)', () => {
   });
 
   it('stops before a search would exceed the monthly budget', async () => {
-    // Three runs at 10.5 cents each have used 31.5 cents; one more 3.5-cent
-    // search would make 35, over a 34-cent budget.
-    await db.discoveryProfile.update({ where: { id: profileId }, data: { monthlyBudgetCents: 34 } });
+    // Four runs at 10.5 cents each have used 42 cents; one more 3.5-cent
+    // search would make 45.5, over a 45-cent budget.
+    await db.discoveryProfile.update({ where: { id: profileId }, data: { monthlyBudgetCents: 45 } });
     const { run, started } = await startDiscoveryRun(systemAccess(orgId), null, profileId, 'MANUAL');
     expect(started).toBe(true);
     await executeDiscoveryStep(run.id, { deadline: Date.now() + 120_000 });
@@ -170,7 +184,7 @@ describe.skipIf(!reachable)('discovery run (database)', () => {
     expect(done.queriesRun).toBe(0);
     expect((done.details as { stopReason?: string }).stopReason).toMatch(/budget/);
     // Once used up, new runs are refused up front and the refusal is recorded.
-    await db.discoveryProfile.update({ where: { id: profileId }, data: { monthlyBudgetCents: 30 } });
+    await db.discoveryProfile.update({ where: { id: profileId }, data: { monthlyBudgetCents: 40 } });
     const refused = await startDiscoveryRun(systemAccess(orgId), null, profileId, 'MANUAL');
     expect(refused).toMatchObject({ started: false, run: { status: 'CANCELLED' } });
   });

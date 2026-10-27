@@ -382,7 +382,7 @@ async function ingestPage(ctx: IngestContext, def: ConnectorDefinition, companie
   const locateOnly = def.discovery!.storage === 'locate-only';
   // Cheap checks first, so known and excluded businesses never cost a site visit.
   const pending: Array<{ company: DiscoveredCompany; early: IngestOutcome | null }> = [];
-  for (const company of companies) pending.push({ company, early: await precheck(ctx, def, company, plan, locateOnly) });
+  for (const company of companies) pending.push({ company, early: await precheck(ctx, def, company, plan, locateOnly, query) });
 
   const sites = new Map<string, Awaited<ReturnType<typeof readSite>>>();
   if (locateOnly) {
@@ -417,7 +417,7 @@ const excluded = (company: DiscoveredCompany, reason: string, locateOnly: boolea
   ({ outcome: 'EXCLUDED', accountId, name: locateOnly ? '' : company.name, domain: null, matchScore: null, reason });
 
 /** Exclusion rules and businesses this client already has under the source's id. */
-async function precheck(ctx: IngestContext, def: ConnectorDefinition, company: DiscoveredCompany, plan: PlanningProfile, locateOnly: boolean): Promise<IngestOutcome | null> {
+async function precheck(ctx: IngestContext, def: ConnectorDefinition, company: DiscoveredCompany, plan: PlanningProfile, locateOnly: boolean, query: DiscoveryQuery): Promise<IngestOutcome | null> {
   const rule = exclusionReason(company, plan);
   if (rule) return excluded(company, rule, locateOnly);
 
@@ -438,10 +438,35 @@ async function precheck(ctx: IngestContext, def: ConnectorDefinition, company: D
   }
 
   if (locateOnly) {
-    if (!company.websiteUrl) return excluded(company, 'No website listed, so there is no first-party record to build from', true);
-    if (!canonicalDomain(company.websiteUrl)) return excluded(company, 'Only a social media or directory page is listed', true);
+    if (!company.websiteUrl) {
+      await keepCallLead(ctx, def, company, query, 'NO_WEBSITE');
+      return excluded(company, 'No website listed: added to the no-website call list', true);
+    }
+    if (!canonicalDomain(company.websiteUrl)) {
+      await keepCallLead(ctx, def, company, query, 'SOCIAL_ONLY');
+      return excluded(company, 'Only a social media or directory page is listed: added to the no-website call list', true);
+    }
   }
   return null;
+}
+
+/**
+ * A business without a website of its own can't become an account (nothing
+ * first-party to build it from), but it may well need what Relay sells. It
+ * goes on the call list with only its place id and the search that found it;
+ * a lead someone already worked keeps its status, so "do not call" sticks.
+ */
+async function keepCallLead(ctx: IngestContext, def: ConnectorDefinition, company: DiscoveredCompany, query: DiscoveryQuery, reason: 'NO_WEBSITE' | 'SOCIAL_ONLY' | 'SITE_UNREACHABLE') {
+  if (company.businessStatus && company.businessStatus !== 'OPERATIONAL') return;
+  await db.callLead.upsert({
+    where: { organizationId_provider_externalId: { organizationId: ctx.run.organizationId, provider: def.id, externalId: company.externalId } },
+    create: {
+      organizationId: ctx.run.organizationId, clientId: ctx.clientId, profileId: ctx.profile.id, runId: ctx.run.id,
+      provider: def.id, externalId: company.externalId, reason,
+      searchTerm: query.industry?.slice(0, 120) ?? null, searchCity: query.city ?? null, searchRegion: query.region ?? null,
+    },
+    update: {},
+  }).catch((err) => logger.warn('discovery.call_lead_failed', { runId: ctx.run.id, error: err }));
 }
 
 async function readSite(url: string) {
@@ -459,7 +484,14 @@ async function ingestOne(
 ): Promise<IngestOutcome> {
   const locateOnly = def.discovery!.storage === 'locate-only';
   const built = locateOnly ? fromSite(company, site) : fromLicensed(company);
-  if ('reason' in built) return excluded(company, built.reason, locateOnly);
+  if ('reason' in built) {
+    // A listed site that doesn't load is, for the business, as good as none.
+    if (locateOnly && !site?.identity && /could not be reached|took too long/i.test(built.reason)) {
+      await keepCallLead(ctx, def, company, query, 'SITE_UNREACHABLE');
+      return excluded(company, `${built.reason}: added to the no-website call list`, locateOnly);
+    }
+    return excluded(company, built.reason, locateOnly);
+  }
   const { input, sourceInfo } = built;
   const domain = canonicalDomain(input.websiteUrl);
 

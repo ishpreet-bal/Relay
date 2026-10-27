@@ -60,8 +60,12 @@ export function costMillicents(model: string, tokensIn: number, tokensOut: numbe
  * model name. Swapping the research model is a one-line change here.
  */
 export const MODELS = {
-  /** Long-context reasoning over a whole website. */
-  research: 'claude-sonnet-5',
+  /**
+   * Reading a company's own website and pulling out what it says, every
+   * quote checked against the page afterwards. Extraction at volume: the
+   * low-cost tier, about a twentieth of Sonnet's price per company.
+   */
+  research: 'claude-haiku-5-5',
   /** Stage 4: multi-source assessment of high-priority prospects. */
   deepResearch: 'claude-opus-5-5',
   /** Voice-sensitive drafting. */

@@ -2,9 +2,19 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse, type NextRequest } from 'next/server';
 
 const isPublic = createRouteMatcher([
+  // The public website. Nothing under these paths reads private data.
   '/',
   '/about',
   '/privacy',
+  '/services(.*)',
+  '/industries',
+  '/demos(.*)',
+  '/how-it-works',
+  '/contact',
+  '/api/inquiries', // the website's inquiry form: validated, rate-limited, write-only
+  '/robots.txt',
+  '/sitemap.xml',
+  '/opengraph-image(.*)', // the share preview image, generated without a file extension
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/onboarding(.*)',

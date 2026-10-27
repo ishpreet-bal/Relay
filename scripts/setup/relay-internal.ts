@@ -329,11 +329,13 @@ async function main() {
     // Map listings carry no headcount or signals until research finds them, so the bar to be analysed is lower than the default.
     screeningThreshold: 40,
     deepThreshold: 65,
-    maxAnalysesPerDay: 8,
+    // Website analysis runs on the low-cost model (a few tenths of a cent to
+    // a cent per company); deep research, on the strongest, is the larger share.
+    maxAnalysesPerDay: 50,
     maxDeepPerDay: 2,
     // The $20 a month for research: website analysis and deep research.
-    analysisBudgetCents: 1400,
-    deepBudgetCents: 600,
+    analysisBudgetCents: 900,
+    deepBudgetCents: 1100,
     // Ceilings, not expected spend: Places list price before free requests, contact lookups, drafting.
     discoveryBudgetCents: 3000,
     enrichmentBudgetCents: 1000,

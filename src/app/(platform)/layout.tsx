@@ -1,0 +1,31 @@
+import type { Metadata } from 'next';
+import { ClerkProvider } from '@clerk/nextjs';
+import { Archivo, Inter, JetBrains_Mono } from 'next/font/google';
+import { ThemeProvider } from '@/components/shell/theme-provider';
+import { OrgAutoActivate } from '@/components/shell/org-auto-activate';
+import { TRPCProvider } from '@/lib/trpc/client';
+import '../globals.css';
+
+const display = Archivo({ subsets: ['latin'], weight: ['500', '600', '700'], variable: '--font-display' });
+const body = Inter({ subsets: ['latin'], variable: '--font-body' });
+const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-mono' });
+
+export const metadata: Metadata = {
+  title: { default: 'Relay', template: '%s · Relay' },
+  description: 'Relay Intelligence finds, researches and reaches the right B2B accounts. Relay Studio builds and runs the automation they need.',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ClerkProvider>
+      <html lang="en" suppressHydrationWarning className={`${display.variable} ${body.variable} ${mono.variable}`}>
+        <body>
+          <ThemeProvider>
+            <OrgAutoActivate />
+            <TRPCProvider>{children}</TRPCProvider>
+          </ThemeProvider>
+        </body>
+      </html>
+    </ClerkProvider>
+  );
+}
