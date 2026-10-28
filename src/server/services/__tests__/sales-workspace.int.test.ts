@@ -33,6 +33,9 @@ describe.skipIf(!reachable)('sales workspace boundaries (Postgres)', () => {
     expect(queue.items[0]?.contactId).toBe(contactId);
   });
   it('finds an available company line without inventing a direct contact number', async () => {
+    const unlinked = await db.account.create({ data: { organizationId: orgId, clientId, name: 'No person found yet', phone: '+19055550199' } });
+    const business = await caller().contacts.businessLines({ clientId });
+    expect(business.items.find(a => a.id === unlinked.id)?.phone).toBe('+19055550199');
     const rows = await listContacts(access, contactFilterSchema.parse({ clientId, hasPhone: true }));
     const buyer = rows.items.find(c => c.id === contactId);
     expect(buyer?.phone).toBeNull();

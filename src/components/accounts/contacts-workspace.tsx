@@ -15,6 +15,7 @@ import { ScoreBadge } from '@/components/scoring/score';
 import { EnrollDialog } from '@/components/campaigns/enroll-dialog';
 import { SENIORITIES, SENIORITY_LABELS, personName } from '@/lib/domain';
 import { cn, formatCompact } from '@/lib/utils';
+import { BusinessPhoneList } from './business-phone-list';
 
 type Sort = 'score' | 'createdAt' | 'lastName' | 'lastContactedAt';
 
@@ -61,6 +62,7 @@ export function ContactsWorkspace({ canEnroll, canExport }: { canEnroll: boolean
               )} />
       <PageBody width="full">
         <p className="text-sm text-muted leading-relaxed mb-5 max-w-3xl">Email addresses and phone numbers for your prospects. Select a client to focus the list. Missing details? Open the company account and use Resolve contacts; published website details and configured data providers are checked separately from company discovery.</p>
+        <BusinessPhoneList />
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <label className="relative w-full sm:w-64">
             <span className="sr-only">Search contacts</span>

@@ -8,9 +8,12 @@ Built on `main` at `5cac70a3a64966a9c6e8714c07d3eb30bf0e68b5` (the owner merged 
 - `/guide` explains every internal tool available to the current role; `/portal/guide` explains client tools. Searchable explanations, concrete next steps, and a complete first-call path replace unexplained navigation labels. Route-level permissions remain authoritative; hiding links is not an access control.
 - Each internal page has an expandable explanation under its toolbar. This uses the server-resolved role, without an extra session request.
 - `/call-history` shows the latest 50 logged calls, caller, outcome, notes and callback. `/email-history` shows paginated recorded incoming/outgoing messages and their actual state. Neither fabricates activity or imports an external inbox/phone history.
+- Contacts also exposes a separate, paginated Company phone numbers list for discovered accounts that have a main line but no named contact yet. It reads actual account records and does not fabricate a person. The list loads only when opened.
 - Contacts displays addresses and numbers directly, with suppression and verification labels. The phone filter includes a company's available main line without pretending it is a person's direct number. Call prep also shows the contact email.
 - Callback retrieval happens before the queue page limit. A promised low-score callback cannot be crowded out by high-score leads. Future requested callbacks remain scheduled until their requested time.
 - Private tRPC requests keep Clerk middleware context but let tRPC enforce its own session and permissions, returning structured errors instead of redirecting an API request to HTML. Other private APIs return JSON 401/403 responses for missing sessions/workspaces. An additional client transport check reports HTML/deployment failures without exposing their response bodies. Private page redirects and deny-by-default procedure authorization remain.
+- Call-queue Refresh queues the existing durable CALL_QUEUE_REFRESH job and returns promptly; it no longer tries to refresh up to 1,500 contacts inside a single web request.
+- Removed the shared dialog animation that overwrote horizontal centering, making dialogs inaccessible on narrow screens.
 - Large sidebar menus and guide links do not prefetch every private destination in the background. No claim of measured production latency improvement is made.
 
 ## Live inspection, October 28, 2026

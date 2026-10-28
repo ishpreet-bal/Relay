@@ -68,7 +68,7 @@ const mapErrors = t.middleware(async ({ next, path }) => {
 export const publicProcedure = t.procedure.use(mapErrors);
 
 const enforceSession = t.middleware(({ ctx, next }) => {
-  if (!ctx.session) throw new TRPCError({ code: 'UNAUTHORIZED' });
+  if (!ctx.session) throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sign in and select your workspace to continue.' });
   const session = ctx.session as Session;
   return next({ ctx: { ...ctx, session, access: accessFrom(session) as AccessContext } });
 });
