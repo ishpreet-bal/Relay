@@ -88,7 +88,7 @@ export function EstimateDemo() {
                 </div>
                 <div className="mt-5 rounded-xl bg-site-night text-site-paper px-4 py-3.5 flex flex-wrap items-center justify-between gap-2">
                   <span className="s-label !text-site-haze">Range to quote</span>
-                  <span className="font-serif text-[1.4rem] tracking-[-0.02em] tabular">{money(e.range[0])} – {money(e.range[1])}</span>
+                  <span className="text-[1.4rem] font-semibold tracking-[-0.03em] tabular">{money(e.range[0])} – {money(e.range[1])}</span>
                 </div>
                 <DraftNote>A person checks every estimate before it is sent. A real system uses your own rate sheet.</DraftNote>
               </>

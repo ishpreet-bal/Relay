@@ -23,7 +23,7 @@ export const INDUSTRIES: Industry[] = [
     name: 'Manufacturing & Industrial',
     short: 'Quality, suppliers, inventory, production data',
     intro:
-      'Plants run on spreadsheets, inspection sheets and email. We connect them so quality and production data arrives validated, consolidated and ready to act on.',
+      'Inspection sheets, spreadsheets and email, turned into one validated report your team can act on.',
     solutions: ['Quality reporting automation', 'Supplier follow-up systems', 'Inventory dashboards', 'Warranty claims processing', 'Production data consolidation'],
     workflow: [
       { step: 'Collect', detail: 'Inspection records from each line, in whatever format they arrive' },
@@ -38,7 +38,7 @@ export const INDUSTRIES: Industry[] = [
     name: 'Construction',
     short: 'Quotes, scheduling, invoices, documents',
     intro:
-      'Inquiries arrive by phone, email and web form, and every one needs an estimate. We turn the details a customer gives into a draft quote and a task list your team can check and send.',
+      'Every inquiry becomes a draft estimate and a task list, ready for your estimator to check.',
     solutions: ['Automated quotations', 'Project scheduling', 'Invoice processing', 'Document management', 'Customer updates'],
     workflow: [
       { step: 'Capture', detail: 'The customer’s inquiry, from any channel' },
@@ -53,7 +53,7 @@ export const INDUSTRIES: Industry[] = [
     name: 'Logistics & Trucking',
     short: 'Tracking, dispatch, delivery updates, reconciliation',
     intro:
-      'Dispatchers spend hours answering “where is my shipment?”. We bring scan events into one tracking view and send customers an update only when something actually changes.',
+      'Every shipment tracked in one place, and customers updated only when something changes.',
     solutions: ['Shipment tracking dashboards', 'Dispatch reporting', 'Delivery notification workflows', 'Invoice reconciliation', 'Customer communication'],
     workflow: [
       { step: 'Ingest', detail: 'Scan and GPS events from carriers and drivers' },
@@ -68,7 +68,7 @@ export const INDUSTRIES: Industry[] = [
     name: 'Healthcare Administration & Clinics',
     short: 'Reminders, document routing, scheduling support',
     intro:
-      'Front desks juggle forms, requests and reminders. We route administrative paperwork to the right queue and keep appointment reminders running, so staff spend more time with patients.',
+      'Paperwork routed to the right desk and reminders sent on schedule, so staff spend more time with patients.',
     solutions: ['Appointment reminders', 'Administrative document routing', 'Scheduling support', 'General inquiry organization', 'Non-clinical reporting'],
     workflow: [
       { step: 'Receive', detail: 'Forms, requests and messages arriving at the front desk' },
@@ -84,7 +84,7 @@ export const INDUSTRIES: Industry[] = [
     name: 'Spas, Salons & Local Services',
     short: 'Booking, reminders, inquiries, follow-up',
     intro:
-      'When booking happens by phone and DM, appointments slip through the cracks. We set up online booking that respects each service’s length and each staff member’s calendar, with reminders and follow-ups built in.',
+      'Online booking that fits each service into the right person’s day, with reminders built in.',
     solutions: ['Appointment booking', 'Customer reminders', 'Inquiry handling', 'Customer follow-up', 'Staff scheduling'],
     workflow: [
       { step: 'Request', detail: 'A customer picks a service and a preferred time' },
@@ -99,7 +99,7 @@ export const INDUSTRIES: Industry[] = [
     name: 'Retail & E-commerce',
     short: 'Inventory alerts, order updates, sales reporting',
     intro:
-      'Stock-outs and “where is my order” emails cost sales and time. We watch inventory against how fast it sells and draft purchase orders before you run out.',
+      'Stock watched against how fast it sells, with purchase orders drafted before you run out.',
     solutions: ['Inventory notifications', 'Order status communication', 'Sales reporting', 'Customer support workflows', 'Returns administration'],
     workflow: [
       { step: 'Watch', detail: 'Stock levels and sales from your store and POS' },
@@ -114,7 +114,7 @@ export const INDUSTRIES: Industry[] = [
     name: 'Startups & Professional Services',
     short: 'Prospecting, CRM, pipeline, onboarding',
     intro:
-      'Early teams sell while they build. We turn your ideal customer profile into a steady list of researched, qualified prospects, and keep the CRM organized around them.',
+      'Your ideal customer, turned into a steady list of researched, qualified prospects.',
     solutions: ['Customer acquisition research', 'CRM automation', 'Sales pipeline organization', 'Client onboarding', 'Invoice and document workflows'],
     workflow: [
       { step: 'Define', detail: 'Who you sell to: industry, size, location, signals' },

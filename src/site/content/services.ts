@@ -13,6 +13,8 @@ export type Service = {
   /** How a visitor would say it: the three starting points on the homepage. */
   choice: string;
   choiceDetail: string;
+  /** Five short items for the back of the homepage card. */
+  highlights: string[];
   headline: string;
   summary: string;
   examples: string[];
@@ -27,10 +29,10 @@ export const SERVICES: Service[] = [
     href: '/services/automation',
     name: 'Business Automation',
     choice: 'Automate my business',
-    choiceDetail: 'Custom software and workflows for the repetitive work in your operations.',
+    choiceDetail: 'Software that takes the repetitive work off your team.',
+    highlights: ['Data entry and documents', 'Quality and production reports', 'Inventory alerts', 'Invoices and quotes', 'Dashboards and data sync'],
     headline: 'Your business runs better when the repetitive work runs itself.',
-    summary:
-      'We study how your business actually operates, decide what is worth automating, and build software around it: connected to the tools you already use, hosted and looked after by us.',
+    summary: 'We find the work your team repeats every day and build software that does it, connected to the tools you already use.',
     examples: [
       'Automated data entry and document processing',
       'Quality assurance and production reporting',
@@ -59,10 +61,10 @@ export const SERVICES: Service[] = [
     href: '/services/customer-acquisition',
     name: 'Customer Acquisition',
     choice: 'Find me more customers',
-    choiceDetail: 'A managed system that finds, researches and organizes the right prospects.',
+    choiceDetail: 'A system that finds and lines up the right prospects.',
+    highlights: ['Prospect discovery', 'Research with sources', 'Lead scoring', 'Outreach you approve', 'CRM and follow-ups'],
     headline: 'Finding your next customer shouldn’t be another full-time job.',
-    summary:
-      'We configure a customer acquisition system around your ideal customer and your offer: finding relevant businesses, researching them, organizing the pipeline and preparing outreach for you to approve.',
+    summary: 'A system built around your ideal customer that finds, researches and lines up prospects. You approve every message.',
     examples: [
       'Discovering relevant prospective businesses',
       'Filtering by industry, location and company characteristics',
@@ -90,10 +92,10 @@ export const SERVICES: Service[] = [
     href: '/services/websites',
     name: 'Websites & Digital Foundations',
     choice: 'Build my online presence',
-    choiceDetail: 'A professional website, booking, business email and the basics, done properly.',
+    choiceDetail: 'A professional website and the basics, done properly.',
+    highlights: ['Business website', 'Online booking', 'Business email', 'Inquiry forms', 'Search and analytics'],
     headline: 'Build the foundation your business deserves.',
-    summary:
-      'For new and smaller businesses: a professional website and the simple tools around it (booking, inquiries, business email, analytics), set up and maintained for you. Add automation later, when you need it.',
+    summary: 'A professional website, booking, business email and the basics around them, set up and looked after for you.',
     examples: [
       'Professional business websites',
       'Landing pages',

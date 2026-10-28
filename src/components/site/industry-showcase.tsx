@@ -54,8 +54,12 @@ function sampleRun(slug: string): { input: string; output: string[] } {
   }
 }
 
+const CYCLE_MS = 7000;
+
 export function IndustryShowcase() {
   const [active, setActive] = useState(0);
+  // Advances on its own, like a slideshow, until someone picks an industry.
+  const [auto, setAuto] = useState(true);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const id = useId();
   const industry = INDUSTRIES[active]!;
@@ -66,31 +70,37 @@ export function IndustryShowcase() {
     if (e.key in keys) {
       e.preventDefault();
       const next = (active + keys[e.key]! + INDUSTRIES.length) % INDUSTRIES.length;
+      setAuto(false);
       setActive(next);
       tabs.current[next]?.focus();
     }
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-12">
+    <div className="group/show grid gap-6 lg:grid-cols-12">
       <div role="tablist" aria-label="Industries" aria-orientation="vertical" onKeyDown={onKey}
         className="lg:col-span-4 flex lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0 snap-x">
         {INDUSTRIES.map((ind, i) => (
           <button key={ind.slug} ref={(el) => { tabs.current[i] = el; }} role="tab" type="button" id={`${id}-tab-${i}`}
-            aria-selected={i === active} aria-controls={`${id}-panel`} tabIndex={i === active ? 0 : -1} onClick={() => setActive(i)}
-            className={`snap-start shrink-0 lg:shrink text-left rounded-2xl border px-4 py-3.5 lg:px-5 lg:py-4 transition-all duration-200 ${i === active ? 'border-site-night bg-site-night text-site-paper shadow-[0_20px_40px_-28px_rgba(11,18,32,0.8)]' : 'border-site-rule bg-site-chalk hover:border-site-night/30'}`}>
+            aria-selected={i === active} aria-controls={`${id}-panel`} tabIndex={i === active ? 0 : -1} onClick={() => { setAuto(false); setActive(i); }}
+            className={`relative overflow-hidden snap-start shrink-0 lg:shrink text-left rounded-2xl border px-4 py-3.5 lg:px-5 lg:py-4 transition-all duration-300 ease-[cubic-bezier(.2,.7,.1,1)] hover:translate-x-1 ${i === active ? 'border-site-night bg-site-night text-site-paper shadow-[0_20px_40px_-28px_rgba(11,18,32,0.8)]' : 'border-site-rule bg-site-chalk hover:border-site-night/30'}`}>
             <span className="flex items-center gap-3">
               <span className={`font-mono text-[0.7rem] ${i === active ? 'text-site-spark' : 'text-site-signal'}`}>{String(i + 1).padStart(2, '0')}</span>
               <span className="text-[0.98rem] font-medium whitespace-nowrap lg:whitespace-normal">{ind.name}</span>
             </span>
             <span className={`hidden lg:block mt-1 pl-8 text-[0.84rem] leading-snug ${i === active ? 'text-site-haze' : 'text-site-fog'}`}>{ind.short}</span>
+            {auto && i === active && (
+              <span aria-hidden="true" onAnimationEnd={() => setActive((a) => (a + 1) % INDUSTRIES.length)}
+                className="absolute left-0 bottom-0 h-[2px] w-full origin-left bg-site-spark animate-[s-progress_linear_forwards] motion-reduce:hidden group-hover/show:[animation-play-state:paused] group-focus-within/show:[animation-play-state:paused]"
+                style={{ animationDuration: `${CYCLE_MS}ms` }} />
+            )}
           </button>
         ))}
       </div>
 
-      <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${active}`} key={industry.slug} className="lg:col-span-8 s-card p-6 sm:p-9 s-rise">
+      <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${active}`} key={industry.slug} data-spot className="lg:col-span-8 s-card p-6 sm:p-9 s-rise">
         <p className="s-eyebrow">Example solutions · {industry.name}</p>
-        <p className="mt-4 font-serif text-[1.45rem] sm:text-[1.7rem] leading-[1.25] tracking-[-0.02em] text-balance">{industry.intro}</p>
+        <p className="mt-4 text-[1.4rem] sm:text-[1.65rem] font-semibold leading-[1.2] tracking-[-0.035em] text-balance">{industry.intro}</p>
         <ul className="mt-6 flex flex-wrap gap-2">
           {industry.solutions.map((s) => <li key={s} className="s-chip">{s}</li>)}
         </ul>
@@ -101,7 +111,7 @@ export function IndustryShowcase() {
             {industry.workflow.map((w, i) => (
               <li key={w.step} className="relative rounded-2xl border border-site-rule bg-white/70 p-4 s-rise" style={{ animationDelay: `${i * 90}ms` }}>
                 <span className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-full bg-site-signal text-white font-mono text-[0.68rem]">{i + 1}</span>
+                  <span className="grid size-6 place-items-center rounded-full bg-site-signal text-white font-mono text-[0.68rem] animate-[s-flow_4.8s_ease-in-out_infinite]" style={{ animationDelay: `${i * 1.2}s` }}>{i + 1}</span>
                   <span className="font-medium text-[0.95rem]">{w.step}</span>
                 </span>
                 <span className="mt-2 block text-[0.84rem] leading-snug text-site-fog">{w.detail}</span>
@@ -132,7 +142,6 @@ export function IndustryShowcase() {
 
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href={`/demos/${industry.demo}`} className="s-btn-primary h-11">Try the full demo <ArrowRight className="size-4" /></Link>
-          <Link href={`/contact?industry=${encodeURIComponent(industry.name)}`} className="s-btn-quiet h-11">Talk to us about your business</Link>
         </div>
       </div>
     </div>

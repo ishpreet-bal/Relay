@@ -90,7 +90,7 @@ export function HeroWorkflow() {
 
   return (
     <div className="relative">
-      <figure aria-label={`Sample workflow: ${scenario.title}`} className="on-dark relative rounded-[28px] overflow-hidden border border-site-seam shadow-[0_50px_100px_-50px_rgba(11,18,32,0.7)]">
+      <figure aria-label={`Sample workflow: ${scenario.title}`} data-spot className="on-dark relative rounded-[28px] overflow-hidden border border-site-seam shadow-[0_50px_100px_-50px_rgba(11,18,32,0.7)]">
         <div className="absolute inset-0 s-grid-bg pointer-events-none" aria-hidden="true" />
         <div className="relative flex items-center justify-between gap-3 border-b border-site-seam px-4 sm:px-5 py-3">
           <div role="group" aria-label="Choose an example" className="flex gap-1 rounded-full bg-white/5 p-1">

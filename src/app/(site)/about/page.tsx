@@ -28,7 +28,7 @@ export default function AboutPage() {
           <li><strong>Around your process.</strong> We learn how your business actually runs before recommending anything, and we build to fit it.</li>
           <li><strong>One provider, one price.</strong> Hosting, the services behind your solution, support and maintenance are part of what we quote. Anything you would need to license yourself is named before you sign.</li>
           <li><strong>Your systems, your say.</strong> We connect only what you authorize, through your own accounts, and you can withdraw access at any time.</li>
-          <li><strong>Honest about where we are.</strong> We are a young company. Instead of testimonials we show <Link href="/demos">working demos</Link>, and we will tell you plainly when something is not a good fit.</li>
+          <li><strong>Proof you can try.</strong> Our <Link href="/demos">demos</Link> are working software, and we will tell you plainly when something is not a good fit.</li>
         </ul>
 
         <h2>The platform behind it</h2>

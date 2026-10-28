@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Check, KeyRound, LockKeyhole, ScrollText, Undo2 } from 'lucide-react';
 import { ConsultCta, ProcessSteps, SectionHead, STEPS } from '@/components/site/sections';
 import { BRAND } from '@/site/config';
+import { Words } from '@/components/site/words';
 
 export const metadata: Metadata = {
   title: 'How it works',
@@ -23,8 +24,8 @@ export default function HowItWorksPage() {
         <div className="absolute inset-0 s-grid-bg-light [mask-image:linear-gradient(to_bottom,black,transparent)] pointer-events-none" aria-hidden="true" />
         <div className="s-container relative pt-14 sm:pt-20 pb-14 sm:pb-16">
           <p className="s-eyebrow">How it works</p>
-          <h1 className="s-display mt-5 max-w-5xl text-balance !text-[clamp(2.5rem,5.6vw,4.8rem)]">You focus on running your business. <span className="s-em">We handle the technology.</span></h1>
-          <p className="s-lede mt-6 max-w-2xl">You should not need to understand APIs, buy automation tools or manage hosting. You tell us what the business needs; we design, build, connect and run it, and you pay one provider.</p>
+          <h1 className="s-display mt-5 max-w-5xl text-balance !text-[clamp(2.5rem,5.6vw,4.8rem)]"><Words text="You focus on running your business." start={100} step={60} /> <span className="s-em"><Words text="We handle the technology." start={520} step={60} /></span></h1>
+          <p className="s-lede mt-6 max-w-2xl s-rise" style={{ animationDelay: '900ms' }}>No tools to buy, no hosting to manage, no integrations to babysit. One provider.</p>
         </div>
       </section>
 
@@ -66,7 +67,7 @@ export default function HowItWorksPage() {
             ].map(([Icon, t, b]) => {
               const I = Icon as typeof KeyRound;
               return (
-                <li key={t as string} className="s-card p-6">
+                <li key={t as string} data-reveal data-spot className="s-card s-lift p-6">
                   <span className="grid size-10 place-items-center rounded-xl bg-site-signal/[0.08] text-site-signal"><I className="size-5" /></span>
                   <p className="mt-4 font-medium">{t as string}</p>
                   <p className="mt-1.5 text-[0.94rem] leading-relaxed text-site-fog">{b as string}</p>
@@ -89,7 +90,7 @@ export default function HowItWorksPage() {
               ['Customer acquisition', 'A tailored monthly service, set by your markets, volumes and channels.'],
               ['Websites and digital foundations', 'Fixed-scope packages, quoted after a short call.'],
             ].map(([t, b]) => (
-              <div key={t} className="s-card p-6">
+              <div key={t} data-reveal data-spot className="s-card s-lift p-6">
                 <p className="font-medium">{t}</p>
                 <p className="mt-1.5 text-[0.95rem] leading-relaxed text-site-fog">{b}</p>
               </div>

@@ -37,13 +37,13 @@ export function SiteNav() {
         <nav aria-label="Main" className="hidden lg:flex items-center gap-1">
           {NAV.map((item) => item.href === '/services' ? (
             <div key={item.href} className="relative group">
-              <Link href={item.href} className={`px-3.5 py-2 rounded-full text-[0.94rem] transition-colors ${active(item.href) ? 'text-site-night' : 'text-site-fog hover:text-site-night'}`}>
+              <Link href={item.href} aria-current={active(item.href) ? 'page' : undefined} className={`s-navlink px-3.5 py-2 rounded-full text-[0.94rem] transition-colors ${active(item.href) ? 'text-site-night' : 'text-site-fog hover:text-site-night'}`}>
                 {item.label}
               </Link>
               <div className="absolute left-1/2 top-full -translate-x-1/2 pt-3 opacity-0 invisible translate-y-1 transition-all duration-200 group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:visible group-focus-within:translate-y-0">
                 <div className="w-[440px] rounded-2xl border border-site-rule bg-site-chalk p-2 shadow-[0_24px_60px_-24px_rgba(11,18,32,0.35)]">
                   {SERVICES.map((s, i) => (
-                    <Link key={s.key} href={s.href} className="flex gap-4 rounded-xl p-3.5 hover:bg-site-sand/60 transition-colors">
+                    <Link key={s.key} href={s.href} className="flex gap-4 rounded-xl p-3.5 hover:bg-site-sand/60 hover:translate-x-1 transition-all duration-300">
                       <span className="font-mono text-[0.7rem] text-site-signal pt-1">0{i + 1}</span>
                       <span>
                         <span className="block text-[0.95rem] font-medium text-site-night">{s.name}</span>
@@ -56,7 +56,7 @@ export function SiteNav() {
             </div>
           ) : (
             <Link key={item.href} href={item.href} aria-current={active(item.href) ? 'page' : undefined}
-              className={`px-3.5 py-2 rounded-full text-[0.94rem] transition-colors ${active(item.href) ? 'text-site-night' : 'text-site-fog hover:text-site-night'}`}>
+              className={`s-navlink px-3.5 py-2 rounded-full text-[0.94rem] transition-colors ${active(item.href) ? 'text-site-night' : 'text-site-fog hover:text-site-night'}`}>
               {item.label}
             </Link>
           ))}
