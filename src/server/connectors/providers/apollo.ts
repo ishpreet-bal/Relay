@@ -304,9 +304,9 @@ export const apolloConnector: ConnectorDefinition = {
   emailFinder,
   async healthCheck() {
     try {
-      const r = await call('/v1/auth/health', { method: 'GET' });
+      const r = await call('/api/v1/auth/health', { method: 'GET' });
       const healthy = (r.json as { healthy?: boolean; is_logged_in?: boolean } | null);
-      if (r.ok && healthy?.is_logged_in) return { ok: true, detail: 'API key accepted' };
+      if (r.ok && healthy?.is_logged_in && healthy?.healthy) return { ok: true, detail: 'API key accepted' };
       return { ok: false, detail: `Apollo responded ${r.status}${healthy ? '' : `: ${r.text}`}` };
     } catch (err) {
       return { ok: false, detail: err instanceof Error ? err.message : 'Request failed' };

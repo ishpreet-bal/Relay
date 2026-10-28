@@ -20,3 +20,15 @@ it('rejects email placeholders and a reported current employer mismatch', async 
     expect(r.data).toBeUndefined();
   }
 });
+
+it('tests authentication at the current Apollo health endpoint and requires both health flags', async () => {
+  vi.stubEnv('APOLLO_API_KEY', 'synthetic-apollo-key');
+  const fetcher = vi.fn(async (url: string | URL | Request) => {
+    expect(String(url)).toBe('https://api.apollo.io/api/v1/auth/health');
+    return Response.json({ healthy: true, is_logged_in: true });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  expect((await apolloConnector.healthCheck!()).ok).toBe(true);
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ healthy: false, is_logged_in: true })));
+  expect((await apolloConnector.healthCheck!()).ok).toBe(false);
+});
