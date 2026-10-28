@@ -62,6 +62,7 @@ export interface CompanyProfile {
 }
 
 export interface ContactCandidate {
+  sourceUrl?: string | null;
   externalId: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -94,7 +95,7 @@ export interface EmailFinderProvider {
   findEmail(
     input: { firstName: string; lastName: string; domain: string; externalId?: string | null },
     ctx: ProviderContext,
-  ): Promise<ProviderResult<{ email: string; verification: EmailVerification }>>;
+  ): Promise<ProviderResult<{ email: string; verification: EmailVerification; firstName?: string | null; lastName?: string | null }>>;
 }
 
 export interface EmailVerificationProvider {

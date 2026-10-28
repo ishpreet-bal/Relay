@@ -1,5 +1,7 @@
 import type { ClaimType, Prisma, SignalType } from '@prisma/client';
 import { db } from '@/lib/db';
+import { systemAccess } from '@/server/access/scope';
+import { saveWebsiteContacts } from '@/server/services/contact-resolution';
 import { crawlSite, type CrawledPage } from '@/server/services/crawler';
 import { rescoreAccount } from '@/server/services/scoring';
 import { logActivity } from '@/server/services/activity';
@@ -96,7 +98,7 @@ export async function runResearch(organizationId: string, accountId: string, opt
       organizationId, clientId: account.clientId, accountId,
       provider: 'company_website', operation: 'website.crawl', lookupKey: account.domain ?? account.websiteUrl,
       status: crawl.pages.length ? 'SUCCESS' : 'NOT_FOUND',
-      normalized: { pages: crawl.pages.map(pageMeta), errors: crawl.errors, blockedByRobots: crawl.blockedByRobots } as Prisma.InputJsonValue,
+      normalized: { pages: crawl.pages.map(pageMeta), errors: crawl.errors, blockedByRobots: crawl.blockedByRobots, coverage: crawl.coverage ?? null } as Prisma.InputJsonValue,
     });
     if (crawl.blockedByRobots) {
       throw new ResearchError('Their robots.txt asks crawlers not to read the site.', 'BLOCKED');
@@ -104,6 +106,8 @@ export async function runResearch(organizationId: string, accountId: string, opt
     if (crawl.pages.length === 0) {
       throw new ResearchError('Could not read any pages from their website.', 'CRAWL_FAILED');
     }
+
+    await saveWebsiteContacts(systemAccess(organizationId), accountId, crawl.contacts ?? []);
 
     // 2. Generate, framed by the client's offer and ICP.
     const completion = await complete({

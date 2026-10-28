@@ -157,12 +157,13 @@ describe('approval policy', () => {
     [{ sentence: 'I saw that Acme recently opened a manufacturing facility in Toronto.', factId: 'f1', kind: 'PROSPECT' }],
   );
 
-  it('approves a verified draft above the threshold in an auto campaign', () => {
+  it('holds even a verified draft in a legacy auto campaign for human approval', () => {
     const d = decideApproval({
       mode: 'AUTO_APPROVE_VERIFIED', threshold: 0.92, approvedClaimTypes: ['EXPANSION'],
       verification: verified, hasLintBlockers: false, tier: 'VERIFIED', campaignActive: true,
     });
-    expect(d.autoApprove).toBe(true);
+    expect(d.autoApprove).toBe(false);
+    expect(d.reasons).toContain('A person must review every outreach message.');
     expect(d.snapshot.threshold).toBe(0.92);
   });
 

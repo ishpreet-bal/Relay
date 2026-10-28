@@ -1,3 +1,4 @@
+import { hunterContacts, hunterEmailFinder } from './hunter-contacts';
 import type { EmailVerification } from '@prisma/client';
 import type { ConnectorDefinition, EmailVerificationProvider, ProviderResult } from '../types';
 
@@ -116,12 +117,14 @@ export function hunterVerifier(fetchImpl: Fetch = fetch): EmailVerificationProvi
 export const hunterConnector: ConnectorDefinition = {
   id: 'hunter',
   name: 'Hunter',
-  capabilities: ['EMAIL_VERIFICATION'],
-  description: 'Email verification. (Email finding through Hunter is not built; Apollo covers it.)',
+  capabilities: ['CONTACT_DATA', 'EMAIL_FINDER', 'EMAIL_VERIFICATION'],
+  description: 'Domain contact search, work email finding and deliverability verification. Fallback after Apollo; API access and credits depend on your plan.',
   requiredEnv: ['HUNTER_API_KEY'],
   implemented: true,
   docsUrl: 'https://hunter.io/api-documentation/v2#email-verifier',
   defaultPriority: 30,
+  contacts: hunterContacts(),
+  emailFinder: hunterEmailFinder(),
   emailVerification: hunterVerifier(),
   async healthCheck() {
     const key = process.env.HUNTER_API_KEY;

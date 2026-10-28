@@ -88,13 +88,13 @@ export async function enrichAccount(access: AccessContext, accountId: string) {
  * seniorities, and adds the ones not already there. Emails are revealed
  * separately (see revealEmail) because that costs credits.
  */
-export async function discoverContacts(access: AccessContext, accountId: string, limit = 5) {
+export async function discoverContacts(access: AccessContext, accountId: string, limit = 5, opts: { provider?: string } = {}) {
   const account = await db.account.findFirst({
     where: { id: accountId, ...clientFilter(access), deletedAt: null },
     include: {
       icp: true,
       client: { include: { icps: { where: { isActive: true }, take: 1 } } },
-      contacts: { where: { deletedAt: null }, select: { firstName: true, lastName: true, email: true } },
+      contacts: { where: { deletedAt: null }, select: { firstName: true, lastName: true, email: true, sourceRef: true, sourceProvider: true } },
     },
   });
   if (!account) throw new NotFoundError('Account');
@@ -108,7 +108,7 @@ export async function discoverContacts(access: AccessContext, accountId: string,
   const outcome = await runChain<ContactCandidate[]>(
     { organizationId: account.organizationId, clientId: account.clientId, accountId },
     'CONTACT_DATA',
-    { operation: 'contact.search', lookupKey, ttlDays: CONTACT_SEARCH_TTL_DAYS },
+    { operation: 'contact.search', lookupKey: `${lookupKey}|limit=${limit * 2}`, ttlDays: CONTACT_SEARCH_TTL_DAYS, providerIds: opts.provider ? [opts.provider] : undefined },
     (def) => def.contacts?.findContacts({ domain: account.domain!, titles, seniorities, limit: limit * 2 }, { organizationId: account.organizationId, clientId: account.clientId, accountId }) ?? null,
   );
   if (outcome.result.status !== 'SUCCESS' || !outcome.result.data?.length) {
@@ -116,6 +116,7 @@ export async function discoverContacts(access: AccessContext, accountId: string,
   }
 
   const known = new Set(account.contacts.map((c) => `${(c.firstName ?? '').toLowerCase()} ${(c.lastName ?? '').toLowerCase()}`.trim()));
+  const knownRefs = new Set(account.contacts.filter((c) => c.sourceRef).map((c) => `${c.sourceProvider}:${c.sourceRef}`));
   const knownEmails = new Set(account.contacts.map((c) => c.email?.toLowerCase()).filter(Boolean));
   // Prefer exact title matches, then whatever order the provider ranked.
   const candidates = [...outcome.result.data].sort((a, b) => Number(!!matchingTitle(b.title, titles)) - Number(!!matchingTitle(a.title, titles)));
@@ -124,8 +125,8 @@ export async function discoverContacts(access: AccessContext, accountId: string,
   for (const c of candidates) {
     if (added >= limit) break;
     const name = `${(c.firstName ?? '').toLowerCase()} ${(c.lastName ?? '').toLowerCase()}`.trim();
-    if ((name && known.has(name)) || (c.email && knownEmails.has(c.email.toLowerCase()))) continue;
-    if (!c.firstName && !c.email) continue;
+    if ((c.externalId && knownRefs.has(`${outcome.provider}:${c.externalId}`)) || (c.firstName && c.lastName && known.has(name)) || (c.email && knownEmails.has(c.email.toLowerCase()))) continue;
+    if (!c.firstName && !c.email && !c.phone) continue;
     await db.$transaction((tx) => createContactRecord(tx, {
       organizationId: account.organizationId,
       clientId: account.clientId,
@@ -135,11 +136,13 @@ export async function discoverContacts(access: AccessContext, accountId: string,
         seniority: c.seniority ?? undefined, email: c.email, emailVerification: c.emailVerification ?? undefined,
         phone: c.phone, directPhone: c.directPhone, mobilePhone: c.mobilePhone, linkedinUrl: c.linkedinUrl,
         city: c.city, region: c.region, country: c.country,
-        source: 'PROVIDER', sourceProvider: outcome.provider, sourceRef: c.externalId,
+        source: 'PROVIDER', sourceProvider: outcome.provider, sourceRef: c.externalId, sourceUrl: c.sourceUrl,
       },
       isPrimary: account.contacts.length === 0 && added === 0,
     }));
     known.add(name);
+    if (c.email) knownEmails.add(c.email.toLowerCase());
+    if (c.externalId) knownRefs.add(`${outcome.provider}:${c.externalId}`);
     added++;
   }
   await logActivity({
@@ -191,16 +194,16 @@ export async function revealEmail(access: AccessContext, contactId: string) {
   });
   if (!contact) throw new NotFoundError('Contact');
   if (contact.email) throw new DomainError('This contact already has an email.');
-  if (!contact.account.domain || !contact.firstName || !contact.lastName) {
-    throw new DomainError('Need a first name, last name and company domain to look up an email.');
+  if (!contact.account.domain || (!(contact.sourceProvider === 'apollo' && contact.sourceRef) && (!contact.firstName || !contact.lastName))) {
+    throw new DomainError('Need an Apollo person ID or a full name, plus a company domain, to look up an email.');
   }
 
   const ctx = { organizationId: contact.organizationId, clientId: contact.clientId, accountId: contact.accountId, contactId };
-  const outcome = await runChain<{ email: string; verification: 'UNVERIFIED' | 'VALID' | 'RISKY' | 'INVALID' | 'CATCH_ALL' }>(
+  const outcome = await runChain<{ email: string; verification: 'UNVERIFIED' | 'VALID' | 'RISKY' | 'INVALID' | 'CATCH_ALL'; firstName?: string | null; lastName?: string | null }>(
     ctx,
     'EMAIL_FINDER',
     { operation: 'email.find', lookupKey: contact.sourceRef ?? `${contact.firstName} ${contact.lastName}@${contact.account.domain}`, ttlDays: EMAIL_TTL_DAYS },
-    (def) => def.emailFinder?.findEmail({ firstName: contact.firstName!, lastName: contact.lastName!, domain: contact.account.domain!, externalId: contact.sourceRef }, ctx) ?? null,
+    (def) => def.emailFinder?.findEmail({ firstName: contact.firstName ?? '', lastName: contact.lastName ?? '', domain: contact.account.domain!, externalId: def.id === contact.sourceProvider ? contact.sourceRef : null }, ctx) ?? null,
   );
   if (outcome.result.status !== 'SUCCESS' || !outcome.result.data) {
     return { status: outcome.result.status, provider: outcome.provider, email: null };
@@ -208,7 +211,7 @@ export async function revealEmail(access: AccessContext, contactId: string) {
   const { email, verification } = outcome.result.data;
   await db.contact.update({
     where: { id: contactId },
-    data: { email, emailVerification: verification, emailVerifiedAt: verification === 'VALID' ? new Date() : null },
+    data: { email, ...(!contact.firstName && outcome.result.data.firstName ? { firstName: outcome.result.data.firstName } : {}), ...(!contact.lastName && outcome.result.data.lastName ? { lastName: outcome.result.data.lastName } : {}), emailVerification: verification, emailVerifiedAt: verification === 'VALID' ? new Date() : null },
   });
   await recordProvenance(
     { organizationId: contact.organizationId, contactId },

@@ -1,4 +1,5 @@
 import type { Prisma, ProviderRecordStatus } from '@prisma/client';
+import { redactText, redactValue } from '@/lib/redact';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
@@ -45,12 +46,12 @@ export async function recordProviderCall(call: ProviderCall) {
         lookupKey: normalizeLookupKey(call.lookupKey),
         status: call.status,
         externalId: call.externalId ?? null,
-        request: call.request,
-        response: call.response,
+        request: redactValue(call.request) as Prisma.InputJsonValue | undefined,
+        response: redactValue(call.response) as Prisma.InputJsonValue | undefined,
         normalized: call.normalized,
         confidence: call.confidence ?? null,
         costMillicents: call.costMillicents ?? 0,
-        error: call.error?.slice(0, 500) ?? null,
+        error: call.error ? redactText(call.error).slice(0, 500) : null,
         expiresAt: call.ttlDays ? new Date(Date.now() + call.ttlDays * 86_400_000) : null,
       },
     });

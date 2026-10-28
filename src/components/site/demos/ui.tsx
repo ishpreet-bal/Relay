@@ -1,24 +1,32 @@
 'use client';
 
+import { Blocks, FlaskConical, LockKeyhole, Workflow } from 'lucide-react';
+
 /** Small building blocks shared by the demo applications. */
 
 export function Frame({ title, status = 'Sample data', children, className = '' }: { title: string; status?: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-[24px] border border-site-rule bg-site-chalk shadow-[0_40px_80px_-50px_rgba(11,18,32,0.45)] overflow-hidden ${className}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-site-rule bg-white/70 px-4 sm:px-5 py-3">
-        <p className="font-medium text-[0.92rem] truncate">{title}</p>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-site-rule bg-site-paper px-2.5 h-7 s-label"><span className="size-1.5 rounded-full bg-site-coral" />{status}</span>
+    <div className={`demo-workspace overflow-hidden rounded-2xl border border-[#26364D] bg-[#EEF2F7] shadow-[0_28px_80px_-30px_rgba(11,18,32,0.4)] ${className}`}>
+      <div className="flex items-center justify-between gap-3 bg-[#101D30] px-4 sm:px-6 py-3 text-white">
+        <div className="flex items-center gap-3 min-w-0"><span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#315EFB]"><Blocks className="size-4" /></span>
+          <div className="min-w-0"><p className="text-[10px] uppercase tracking-[0.2em] text-[#A7B8D2]">Relay / Sample workspace</p><p className="text-[0.86rem] font-medium truncate mt-0.5">{title}</p></div></div>
+        <span className="hidden sm:inline-flex shrink-0 items-center gap-1.5 rounded-md bg-white/[0.08] px-2.5 py-1.5 text-[0.7rem] text-[#D4E0F3]"><FlaskConical className="size-3.5" />{status}</span>
       </div>
-      <div className="p-4 sm:p-6">{children}</div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D5DEE9] bg-white px-4 sm:px-6 py-3">
+        <p className="inline-flex items-center gap-2 text-[0.78rem] font-medium text-[#203450]"><Workflow className="size-4 text-[#315EFB]" />Interactive workflow</p>
+        <p className="inline-flex items-center gap-1.5 text-[0.7rem] text-[#53667F]"><LockKeyhole className="size-3" />Fictional records · no external actions</p>
+      </div>
+      <div className="p-3 sm:p-6">{children}</div>
+      <div className="border-t border-[#D5DEE9] bg-white/80 px-4 sm:px-6 py-3 text-[0.72rem] leading-relaxed text-[#53667F]">Change the inputs to inspect the output. A production workflow needs your systems, access rules, acceptance tests and monitoring.</div>
     </div>
   );
 }
 
 export function Panel({ title, aside, children, className = '' }: { title: string; aside?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`rounded-2xl border border-site-rule bg-white p-4 sm:p-5 ${className}`}>
+    <section className={`rounded-xl border border-[#D7E0EB] bg-white p-4 sm:p-5 shadow-[0_2px_4px_rgba(16,29,48,0.02)] ${className}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="s-label">{title}</h3>
+        <h3 className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#52647C]">{title}</h3>
         {aside}
       </div>
       {children}
@@ -29,9 +37,9 @@ export function Panel({ title, aside, children, className = '' }: { title: strin
 export function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: 'good' | 'warn' | 'bad' }) {
   const color = tone === 'good' ? 'text-[#0B7F71]' : tone === 'warn' ? 'text-[#A8590F]' : tone === 'bad' ? 'text-[#B4382A]' : 'text-site-night';
   return (
-    <div className="rounded-xl border border-site-rule bg-site-paper/60 px-3.5 py-3">
+    <div className="rounded-xl border border-[#D7E0EB] bg-white px-3.5 py-4 shadow-[inset_0_3px_0_#315EFB]">
       <p className="s-label">{label}</p>
-      <p className={`mt-1 text-[1.5rem] font-semibold leading-none tracking-[-0.03em] tabular ${color}`}>{value}</p>
+      <p className={`mt-2 text-[1.8rem] font-semibold leading-none tracking-[-0.03em] tabular ${color}`}>{value}</p>
     </div>
   );
 }

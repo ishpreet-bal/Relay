@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { getAccountBrief } from '@/server/services/account-brief';
+import { enqueueJob } from '@/server/services/jobs';
 import { router, permissionProcedure } from '../init';
 import {
   accountBoard,
@@ -19,6 +21,20 @@ import { can } from '@/lib/rbac';
 import { recordAudit } from '@/lib/audit';
 
 export const accountsRouter = router({
+  brief: permissionProcedure('account:read')
+    .input(z.object({ id: z.string().uuid() }))
+    .query(({ ctx, input }) => getAccountBrief(ctx.access, input.id)),
+
+  resolveContacts: permissionProcedure('account:write')
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const account = await findAccount(ctx.access, input.id);
+      if (account.doNotContact) throw new Error('Account is marked do not contact');
+      return enqueueJob({ type: 'CONTACT_ENRICHMENT', organizationId: ctx.access.organizationId, clientId: account.clientId,
+        entityType: 'Account', entityId: account.id, payload: { resolve: true, limit: 3 }, createdById: ctx.session.userId,
+        dedupeKey: `resolve-contacts:${account.id}` });
+    }),
+
   list: permissionProcedure('account:read')
     .input(accountFilterSchema)
     .query(({ ctx, input }) => listAccounts(ctx.access, input)),

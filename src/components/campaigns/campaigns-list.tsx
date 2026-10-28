@@ -34,7 +34,7 @@ export function CampaignsList({ canWrite }: { canWrite: boolean }) {
                   <header className="flex flex-wrap items-center gap-2 mb-1">
                     <Link href={`/campaigns/${c.id}`} className="text-[15px] font-medium hover:text-accent">{c.name}</Link>
                     <Pill tone={STATUS_TONE[c.status] ?? 'neutral'}>{c.status.toLowerCase().replace(/_/g, ' ')}</Pill>
-                    {c.approvalMode === 'AUTO_APPROVE_VERIFIED' && <Pill tone="accent"><ShieldCheck className="size-3" /> auto-sends verified ≥ {c.autoApproveThreshold.toFixed(2)}</Pill>}
+                    <Pill tone="accent"><ShieldCheck className="size-3" /> human approval required</Pill>
                     <span className="flex-1" />
                     <span className="num text-[11px] text-muted">{c._count.enrollments} people · {c.dailyCap}/day</span>
                   </header>

@@ -29,6 +29,7 @@ export function ResearchPanel({ accountId, canRun, hasWebsite }: { accountId: st
     onSettled: () => {
       utils.research.byAccount.invalidate({ accountId });
       utils.accounts.byId.invalidate({ id: accountId });
+      utils.accounts.brief.invalidate({ id: accountId });
       utils.accounts.timeline.invalidate({ accountId });
     },
   });
@@ -52,7 +53,7 @@ export function ResearchPanel({ accountId, canRun, hasWebsite }: { accountId: st
           {!hasWebsite
             ? 'This account has no website on file. Add one to research it, or work it from other sources.'
             : running
-              ? 'Reading up to eight pages, then checking every finding against what the pages actually say. About a minute.'
+              ? 'Reading up to sixteen pages, then checking every finding against what the pages actually say. About a minute.'
               : 'Research reads their site for facts, signals and reasons they might need what this client sells. Anything that cannot be traced to a quote is discarded.'}
         </p>
         {runButton}

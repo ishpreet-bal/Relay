@@ -27,8 +27,8 @@ export function ConnectorsPage({ canManage }: { canManage: boolean }) {
       <PageBody>
         <p className="text-sm text-muted mb-6 max-w-2xl">
           Relay orchestrates providers rather than replacing them. When several can do the same job they are tried in priority
-          order, and paid lookups are cached so the same question is never paid for twice. A provider that isn&apos;t connected
-          simply isn&apos;t used — nothing is filled in with made-up data.
+          order, and fresh lookup results are cached to reduce repeat charges. A provider that isn&apos;t connected
+          simply isn&apos;t used. Key presence means configured; a passing health check proves only the tested endpoint. Endpoint permissions and available credits still need a real lookup.
         </p>
         <ErrorNote error={connectors.error} />
         {connectors.isPending ? <Loading /> : (
@@ -67,16 +67,18 @@ function ConnectorRow({ c, canManage }: { c: Connector; canManage: boolean }) {
   const utils = trpc.useUtils();
   const set = trpc.ops.setConnector.useMutation({ onSuccess: () => utils.ops.connectors.invalidate() });
   const test = trpc.ops.testConnector.useMutation({ onSuccess: () => utils.ops.connectors.invalidate() });
-  const state = !c.implemented ? 'planned' : !c.configured ? 'missing' : !c.enabled ? 'disabled' : 'ready';
-  const Icon = state === 'ready' ? CheckCircle2 : state === 'planned' ? CircleDashed : XCircle;
+  const state = !c.implemented ? 'planned' : !c.configured ? 'missing' : !c.enabled ? 'disabled' : c.lastError ? 'error' : c.lastCheckedAt && c.hasHealthCheck ? 'tested' : 'configured';
+  const Icon = state === 'tested' ? CheckCircle2 : state === 'planned' ? CircleDashed : XCircle;
 
   return (
     <li className="p-4 flex flex-col sm:flex-row sm:items-start gap-3">
-      <Icon className={`size-4 shrink-0 mt-0.5 ${state === 'ready' ? 'text-cleared' : state === 'planned' ? 'text-muted' : 'text-held'}`} />
+      <Icon className={`size-4 shrink-0 mt-0.5 ${state === 'tested' ? 'text-cleared' : state === 'planned' ? 'text-muted' : 'text-held'}`} />
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-[13px] font-medium">{c.name}</p>
-          {state === 'ready' && <Pill tone="positive">connected</Pill>}
+          {state === 'tested' && <Pill tone="positive">test passed</Pill>}
+          {state === 'configured' && <Pill tone="warning">configured · untested</Pill>}
+          {state === 'error' && <Pill tone="negative">check failed</Pill>}
           {state === 'missing' && <Pill tone="warning">not configured</Pill>}
           {state === 'disabled' && <Pill>turned off</Pill>}
           {state === 'planned' && <Pill>not built yet</Pill>}

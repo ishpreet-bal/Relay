@@ -35,7 +35,7 @@ export interface PolicyDecision {
 }
 
 export function decideApproval(input: PolicyInput, now = new Date()): PolicyDecision {
-  const reasons: string[] = [];
+  const reasons: string[] = ['A person must review every outreach message.'];
 
   if (input.mode !== 'AUTO_APPROVE_VERIFIED') reasons.push('This campaign reviews every message.');
   if (!input.campaignActive) reasons.push('The campaign is not active.');
@@ -49,7 +49,7 @@ export function decideApproval(input: PolicyInput, now = new Date()): PolicyDeci
   }
 
   return {
-    autoApprove: reasons.length === 0,
+    autoApprove: false,
     reasons,
     snapshot: {
       mode: input.mode,

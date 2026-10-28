@@ -269,15 +269,18 @@ const emailFinder: EmailFinderProvider = {
     const r = await call('/api/v1/people/match', {
       method: 'POST',
       body: externalId
-        ? { id: externalId, reveal_personal_emails: false }
+        ? { id: externalId, reveal_personal_emails: false, reveal_phone_number: false }
         : { first_name: firstName, last_name: lastName, domain, reveal_personal_emails: false },
     });
     if (!r.ok) return errorResult(r);
     const person = personSchema.safeParse((r.json as { person?: unknown })?.person);
-    if (!person.success || !person.data.email) return { status: 'NOT_FOUND', costMillicents: creditMillicents(), raw: r.json };
+    if (!person.success || !person.data.email || person.data.email.includes('email_not_unlocked') || !z.string().email().safeParse(person.data.email).success) return { status: 'NOT_FOUND', costMillicents: creditMillicents(), raw: r.json };
+    const employer = z.object({ primary_domain: z.string().nullish(), website_url: z.string().nullish() }).safeParse(person.data.organization);
+    const employerDomain = employer.success ? toDomain(employer.data.primary_domain ?? employer.data.website_url) : null;
+    if (employerDomain && employerDomain !== toDomain(domain)) return { status: 'NOT_FOUND', costMillicents: creditMillicents(), error: 'Apollo reports a different current employer; review the person before contacting', raw: r.json };
     return {
       status: 'SUCCESS',
-      data: { email: person.data.email.toLowerCase(), verification: emailStatus(person.data.email_status) ?? 'UNVERIFIED' },
+      data: { email: person.data.email.toLowerCase(), verification: emailStatus(person.data.email_status) ?? 'UNVERIFIED', firstName: person.data.first_name, lastName: person.data.last_name },
       externalId: person.data.id,
       confidence: person.data.email_status === 'verified' ? 0.95 : 0.6,
       costMillicents: creditMillicents(),

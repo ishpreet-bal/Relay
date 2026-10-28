@@ -43,9 +43,9 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
     <>
       <section className="relative overflow-hidden border-b border-site-rule">
         <div className="absolute inset-0 s-grid-bg-light [mask-image:linear-gradient(to_bottom,black,transparent)] pointer-events-none" aria-hidden="true" />
-        <div className="s-container relative pt-12 sm:pt-16 pb-10">
+        <div className="s-container relative pt-8 sm:pt-12 pb-7">
           <p className="s-eyebrow"><Link href="/demos" className="hover:text-site-night">Demos</Link> <span className="mx-2">/</span> {demo.industry}</p>
-          <h1 className="s-display mt-5 max-w-4xl text-balance !text-[clamp(2.3rem,5vw,4.2rem)]">{demo.title}</h1>
+          <h1 className="s-display mt-5 max-w-4xl text-balance !text-[clamp(2rem,4vw,3.4rem)]">{demo.title}</h1>
           <p className="s-lede mt-5 max-w-2xl">{demo.tagline}</p>
           <p className="mt-6 inline-flex items-center gap-2 rounded-full border border-site-rule bg-site-chalk px-3.5 h-9 text-[0.84rem] text-site-fog">
             <FlaskConical className="size-4 text-site-coral" />Sample data · runs in your browser
@@ -59,6 +59,14 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
             ))}
           </nav>
         </div>
+      </section>
+
+      <section className="s-container pt-8 sm:pt-10 pb-4" aria-label="Interactive example">
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+          <h2 className="s-h3">Explore the workflow</h2>
+          <p className="text-[0.9rem] text-site-fog max-w-xl sm:text-right"><span className="text-site-night">Output:</span> {demo.output}</p>
+        </div>
+        <View />
       </section>
 
       <section className="s-container py-12 sm:py-16">
@@ -83,13 +91,7 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
         </div>
       </section>
 
-      <section className="s-container pb-12 sm:pb-16" aria-label="Interactive example">
-        <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
-          <h2 className="s-h3">Try it</h2>
-          <p className="text-[0.9rem] text-site-fog max-w-xl sm:text-right"><span className="text-site-night">Output:</span> {demo.output}</p>
-        </div>
-        <View />
-      </section>
+
 
       <section className="s-container pb-4">
         <div data-reveal className="grid gap-6 rounded-[28px] border border-site-rule bg-site-sand/50 p-6 sm:p-10 lg:grid-cols-12 lg:items-center">
