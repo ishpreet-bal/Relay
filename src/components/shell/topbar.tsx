@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes';
 import { Moon, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ClientSwitcher } from './client-switcher';
+import { PageHelp } from '@/components/onboarding/page-help';
 
 export function Topbar({ title, actions, showClientSwitcher = true }: {
   title: string;
@@ -12,7 +13,7 @@ export function Topbar({ title, actions, showClientSwitcher = true }: {
   showClientSwitcher?: boolean;
 }) {
   return (
-    <header className="h-14 shrink-0 border-b border-hairline bg-surface flex items-center gap-3 px-4 md:px-5">
+    <><header className="min-h-14 shrink-0 border-b border-hairline bg-surface flex flex-wrap items-center gap-3 px-4 md:px-5 py-2">
       <h1 className="text-[15px] font-semibold tracking-display flex-1 truncate">{title}</h1>
       {actions}
       {showClientSwitcher && <ClientSwitcher />}
@@ -22,7 +23,7 @@ export function Topbar({ title, actions, showClientSwitcher = true }: {
         <OrganizationSwitcher hidePersonal appearance={{ elements: { rootBox: 'flex', organizationSwitcherTrigger: 'text-[13px]' } }} />
       </div>
       <UserButton />
-    </header>
+    </header><PageHelp /></>
   );
 }
 

@@ -18,7 +18,7 @@ export function Dialog({ open, onOpenChange, title, description, children, width
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-50 bg-ink/30 backdrop-blur-sm" />
         <RadixDialog.Content
-          className={cn('fixed z-50 left-1/2 top-[8vh] -translate-x-1/2 w-[calc(100vw-32px)] max-h-[84vh] overflow-y-auto card shadow-pop animate-fade-up',
+          className={cn('fixed z-50 left-1/2 top-[8vh] -translate-x-1/2 w-[calc(100vw-32px)] max-h-[84vh] overflow-y-auto card shadow-pop',
             { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }[width])}
         >
           <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-hairline">

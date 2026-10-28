@@ -24,8 +24,11 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
   {
     label: null,
     items: [
+      { href: '/guide', label: 'Start here', icon: BookOpen, permission: 'account:read' },
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'analytics:read' },
       { href: '/calls', label: 'Call queue', icon: PhoneCall, permission: 'call:read', badge: 'calls' },
+      { href: '/call-history', label: 'Call history', icon: PhoneCall, permission: 'call:read' },
+      { href: '/email-history', label: 'Email history', icon: Inbox, permission: 'message:read' },
       { href: '/meetings', label: 'Meetings', icon: CalendarCheck, permission: 'meeting:read' },
       { href: '/inquiries', label: 'Website inquiries', icon: Inbox, permission: 'account:read', badge: 'inquiries' },
       { href: '/assistant', label: 'Ask Relay', icon: Sparkles, permission: 'account:read' },
@@ -152,6 +155,7 @@ function NavList({ role, counts }: { role: Role; counts: NavCounts }) {
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      prefetch={false}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
                         'flex items-center gap-2.5 rounded-md px-2.5 h-8 text-[13px] transition-colors',

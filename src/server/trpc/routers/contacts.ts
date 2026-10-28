@@ -7,8 +7,24 @@ import {
 import { currentProvenance } from '@/server/services/provenance';
 import { revealEmail, verifyContactEmail } from '@/server/services/enrichment';
 import { recordAudit } from '@/lib/audit';
+import { clientFilter } from '@/server/access/scope';
 
 export const contactsRouter = router({
+  businessLines: permissionProcedure('account:read')
+    .input(z.object({ clientId: z.string().uuid().nullish(), cursor: z.string().uuid().optional() }))
+    .query(async ({ ctx, input }) => {
+      // Discovery can find a company's switchboard before a named person.
+      // Keep that usable route visible without fabricating a contact record.
+      const rows = await ctx.db.account.findMany({
+        where: { ...clientFilter(ctx.access, input.clientId), deletedAt: null, doNotContact: false, phone: { not: null } },
+        orderBy: [{ score: 'desc' }, { id: 'asc' }], take: 51,
+        ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+        select: { id: true, name: true, phone: true, city: true, industry: true },
+      });
+      const items = rows.slice(0, 50);
+      return { items, nextCursor: rows.length > 50 ? items.at(-1)!.id : null };
+    }),
+
   list: permissionProcedure('account:read')
     .input(contactFilterSchema)
     .query(({ ctx, input }) => listContacts(ctx.access, input)),

@@ -230,7 +230,7 @@ export function contactWhere(access: AccessContext, f: ContactFilter): Prisma.Co
   }
   if (f.seniority?.length) where.seniority = { in: f.seniority };
   if (f.hasEmail) and.push({ email: { not: null }, doNotEmail: false });
-  if (f.hasPhone) and.push({ doNotCall: false, OR: [{ phone: { not: null } }, { directPhone: { not: null } }, { mobilePhone: { not: null } }] });
+  if (f.hasPhone) and.push({ doNotCall: false, account: { doNotContact: false }, OR: [{ phone: { not: null } }, { directPhone: { not: null } }, { mobilePhone: { not: null } }, { account: { phone: { not: null } } }] });
   if (!f.includeSuppressed) and.push({ NOT: { AND: [{ doNotEmail: true }, { doNotCall: true }] } });
   if (and.length) where.AND = and;
   return where;
@@ -246,7 +246,7 @@ export async function listContacts(access: AccessContext, filter: ContactFilter)
       id: true, firstName: true, lastName: true, title: true, seniority: true, email: true, emailVerification: true,
       phone: true, directPhone: true, mobilePhone: true, score: true, scoreBreakdown: true, doNotEmail: true, doNotCall: true,
       lastContactedAt: true, lastRepliedAt: true, source: true,
-      account: { select: { id: true, name: true, score: true } },
+      account: { select: { id: true, name: true, score: true, phone: true, doNotContact: true } },
       client: { select: { id: true, name: true } },
     },
   });

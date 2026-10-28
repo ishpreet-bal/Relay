@@ -7,6 +7,8 @@ import { getActiveClientId } from '@/lib/page-auth';
 import { accessFrom, clientFilter } from '@/server/access/scope';
 import { Sidebar, MobileNav } from '@/components/shell/sidebar';
 import { ActiveClientProvider } from '@/components/shell/active-client';
+import { WelcomeGuide } from '@/components/onboarding/welcome-guide';
+import { WorkspaceRoleProvider } from '@/components/onboarding/workspace-role';
 
 /**
  * The internal workspace, for Relay staff. Client users are sent to their
@@ -48,11 +50,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <ActiveClientProvider initialClientId={activeClientId} clients={clients}>
+      <WorkspaceRoleProvider value={session.role}>
+      <WelcomeGuide role={session.role} organizationId={session.organizationId} userId={session.userId} />
       <div className="flex h-screen overflow-hidden">
         <Sidebar role={session.role} counts={counts} />
         <div className="flex-1 flex flex-col min-w-0">{children}</div>
         <MobileNav role={session.role} counts={counts} />
       </div>
+      </WorkspaceRoleProvider>
     </ActiveClientProvider>
   );
 }

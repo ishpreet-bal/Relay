@@ -21,6 +21,30 @@ function personalizeErrors<T>(p: Promise<T>) {
 }
 
 export const messagesRouter = router({
+  history: permissionProcedure('message:read')
+    .input(z.object({
+      clientId: z.string().uuid().nullish(),
+      direction: z.enum(['INBOUND', 'OUTBOUND']).optional(),
+      cursor: z.string().uuid().optional(),
+      limit: z.number().int().min(1).max(50).default(25),
+    }))
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db.message.findMany({
+        where: { ...clientFilter(ctx.access, input.clientId), ...(input.direction ? { direction: input.direction } : {}) },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+        take: input.limit + 1,
+        select: {
+          id: true, direction: true, status: true, subject: true, bodyText: true, sentAt: true, createdAt: true,
+          account: { select: { id: true, name: true } },
+          contact: { select: { id: true, firstName: true, lastName: true, email: true } },
+          campaign: { select: { name: true } },
+        },
+      });
+      const items = rows.slice(0, input.limit);
+      return { items, nextCursor: rows.length > input.limit ? items.at(-1)!.id : null };
+    }),
+
   reviewQueue: permissionProcedure('message:read')
     .input(z.object({
       clientId: z.string().uuid().nullish(),

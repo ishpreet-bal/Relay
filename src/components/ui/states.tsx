@@ -1,5 +1,6 @@
 import { AlertTriangle, Loader2, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 
 export function EmptyState({ icon: Icon, title, children, action, className }: {
   icon?: LucideIcon;
@@ -30,7 +31,8 @@ export function ErrorNote({ error, className }: { error: { message: string } | n
   if (!error) return null;
   return (
     <p role="alert" className={cn('flex items-start gap-1.5 text-[12px] text-blocked', className)}>
-      <AlertTriangle className="size-3.5 mt-0.5 shrink-0" /> {error.message}
+      <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+      <span>{error.message}{/session needs attention|Sign in again|UNAUTHORIZED|Sign in and select/i.test(error.message) && <Link href="/workspace" className="block underline mt-2">Sign in or select a workspace →</Link>}</span>
     </p>
   );
 }

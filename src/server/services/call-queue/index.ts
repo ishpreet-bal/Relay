@@ -195,16 +195,21 @@ export async function listQueue(access: AccessContext, filter: QueueFilter) {
     AND: and,
   };
 
-  const tasks = await db.callTask.findMany({
-    where,
-    orderBy: [{ priority: 'desc' }, { computedAt: 'asc' }],
-    take: filter.limit ?? 100,
+  // Fetch promised callbacks before applying the page limit. Sorting only
+  // after a priority-limited query can hide a low-score callback entirely.
+  const limit = filter.limit ?? 100;
+  const dueCallbacks = await db.callTask.findMany({
+    where: { ...where, dueAt: { lte: now } },
+    orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
+    take: limit,
     include: QUEUE_INCLUDE,
   });
-
-  // Due callbacks jump the queue regardless of score.
-  const dueCallbacks = tasks.filter((t) => t.dueAt && t.dueAt <= now).sort((a, b) => a.dueAt!.getTime() - b.dueAt!.getTime());
-  const rest = tasks.filter((t) => !dueCallbacks.includes(t));
+  const rest = dueCallbacks.length < limit ? await db.callTask.findMany({
+    where: { ...where, AND: [...and, { OR: [{ dueAt: null }, { dueAt: { gt: now } }] }] },
+    orderBy: [{ priority: 'desc' }, { computedAt: 'asc' }],
+    take: limit - dueCallbacks.length,
+    include: QUEUE_INCLUDE,
+  }) : [];
   const ordered = [...dueCallbacks, ...rest];
 
   const [scheduledCallbacks, snoozed] = await Promise.all([

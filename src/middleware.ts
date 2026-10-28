@@ -46,8 +46,16 @@ const authenticatedMiddleware = clerkMiddleware(async (auth, req: NextRequest) =
 
   if (isPublic(req)) return;
 
+  // tRPC resolves the Clerk session itself and returns its own structured
+  // UNAUTHORIZED response. Redirecting a stale session to an HTML login
+  // page makes the client fail with "Unexpected token '<'" instead.
+  if (req.nextUrl.pathname === '/api/trpc' || req.nextUrl.pathname.startsWith('/api/trpc/')) return;
+
   const { userId, orgId } = await auth();
   if (!userId) {
+    if (req.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'UNAUTHORIZED', message: 'Sign in again to continue.' }, { status: 401 });
+    }
     return NextResponse.redirect(new URL('/sign-in', req.url));
   }
 
@@ -55,6 +63,9 @@ const authenticatedMiddleware = clerkMiddleware(async (auth, req: NextRequest) =
   // OrgAutoActivate (mounted in the root layout) sets one automatically for
   // users with an existing membership; this only catches users with none.
   if (!orgId && !req.nextUrl.pathname.startsWith('/onboarding')) {
+    if (req.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'WORKSPACE_REQUIRED', message: 'Select or create a workspace to continue.' }, { status: 403 });
+    }
     return NextResponse.redirect(new URL('/onboarding', req.url));
   }
 });
