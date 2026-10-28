@@ -1,0 +1,45 @@
+/*
+ * Motion for the sign-in pages. Every rule is a prefixed class, so nothing
+ * here can restyle the workspace after a client-side navigation.
+ */
+.auth-grid {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 30% 35%, black 15%, transparent 72%);
+}
+.auth-grid-light {
+  background-image:
+    linear-gradient(to right, rgb(11 18 32 / 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(11 18 32 / 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 50% 0%, black 10%, transparent 65%);
+}
+.auth-drift { animation: auth-drift 18s ease-in-out infinite; }
+.auth-drift-slow { animation: auth-drift 26s ease-in-out infinite reverse; }
+.auth-rise { animation: auth-rise 0.8s cubic-bezier(0.2, 0.7, 0.1, 1) both; animation-delay: var(--d, 0ms); }
+.auth-thread {
+  background-image: linear-gradient(to bottom, rgb(124 152 255 / 0.65) 50%, transparent 50%);
+  background-size: 1px 10px;
+  animation: auth-thread 1.4s linear infinite;
+}
+.auth-pulse { animation: auth-pulse 2.4s ease-in-out infinite; }
+
+@keyframes auth-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(48px, -32px, 0) scale(1.08); }
+}
+@keyframes auth-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes auth-thread { to { background-position: 0 20px; } }
+@keyframes auth-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(15 181 160 / 0.55); }
+  50% { box-shadow: 0 0 0 6px rgb(15 181 160 / 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-drift, .auth-drift-slow, .auth-rise, .auth-thread, .auth-pulse { animation: none; }
+}
