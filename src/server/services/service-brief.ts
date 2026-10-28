@@ -25,7 +25,7 @@ export const WORKFLOW_PLAYBOOKS: WorkflowPlaybook[] = [
     failurePlan: 'Keep the original inquiry; queue failed syncs and show unresolved items to the owner. Never send a partial estimate.',
     validation: ['How many inquiries arrive each week?', 'Which inbox, CRM and estimating tool are used?', 'Who owns and updates the rate sheet?'],
     exclusions: ['Site measurement', 'Binding prices without approval', 'Unconfirmed CRM integrations'], demo: 'estimate', buildHours: [16, 32] },
-  { key: 'booking', name: 'Booking intake and reminders', evidencePattern: /salon|spa\b|barber|beauty|massage|appointment|booking/i,
+  { key: 'booking', name: 'Booking intake and reminders', evidencePattern: /salon|spa\b|barber|beauty|massage/i,
     question: 'Are staff copying booking requests between messages and a calendar?', trigger: 'A customer requests an appointment',
     inputs: ['Services, staff availability and buffers', 'Customer contact preferences and reminder permission'],
     steps: ['Validate service and required duration', 'Read availability from the booking system', 'Reserve a slot with a duplicate guard', 'Prepare confirmations and permitted reminders'],

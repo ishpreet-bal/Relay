@@ -48,7 +48,7 @@ export async function recordProviderCall(call: ProviderCall) {
         externalId: call.externalId ?? null,
         request: redactValue(call.request) as Prisma.InputJsonValue | undefined,
         response: redactValue(call.response) as Prisma.InputJsonValue | undefined,
-        normalized: call.normalized,
+        normalized: redactValue(call.normalized) as Prisma.InputJsonValue | undefined,
         confidence: call.confidence ?? null,
         costMillicents: call.costMillicents ?? 0,
         error: call.error ? redactText(call.error).slice(0, 500) : null,

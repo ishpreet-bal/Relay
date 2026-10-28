@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect } from 'react';
 import { ArrowRight, CheckCircle2, ExternalLink, FileSearch, Phone, RefreshCw, ShieldCheck } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { Pill } from '@/components/ui/pill';
@@ -12,6 +13,9 @@ export function AccountBrief({ accountId, canWrite }: { accountId: string; canWr
   const brief = trpc.accounts.brief.useQuery({ id: accountId }, {
     refetchInterval: (query) => query.state.data?.jobs.some((j) => ['QUEUED', 'RUNNING', 'RETRYING'].includes(j.status)) ? 5000 : false,
   });
+  useEffect(() => {
+    if (brief.dataUpdatedAt) void utils.accounts.byId.invalidate({ id: accountId });
+  }, [accountId, brief.dataUpdatedAt, utils]);
   const resolve = trpc.accounts.resolveContacts.useMutation({ onSuccess: () => { utils.accounts.brief.invalidate({ id: accountId }); utils.accounts.byId.invalidate({ id: accountId }); } });
   const b = brief.data;
   if (brief.error) return <ErrorNote error={brief.error} />;

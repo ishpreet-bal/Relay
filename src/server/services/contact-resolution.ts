@@ -35,7 +35,7 @@ export async function saveWebsiteContacts(access: AccessContext, accountId: stri
   });
 }
 
-/** Read-only enrichment. Never enrolls contacts, approves drafts, or sends mail. */
+/** Contact data enrichment. Never enrolls contacts, approves drafts, or sends mail. */
 export async function resolveAccountContacts(access: AccessContext, accountId: string, limit = 3) {
   const account = await db.account.findFirst({ where: { id: accountId, ...clientFilter(access), deletedAt: null } });
   if (!account) throw new NotFoundError('Account');
