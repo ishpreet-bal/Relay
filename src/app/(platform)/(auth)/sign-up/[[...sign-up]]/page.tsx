@@ -1,13 +1,14 @@
+import type { Metadata } from 'next';
 import { SignUp } from '@clerk/nextjs';
+import { AuthShell } from '@/components/auth/auth-shell';
+import { clerkAppearance } from '@/components/auth/clerk-appearance';
+
+export const metadata: Metadata = { title: 'Create your account', robots: { index: false } };
 
 export default function SignUpPage() {
   return (
-    <main className="min-h-screen grid place-items-center bg-canvas px-4">
-      <div className="w-full max-w-sm">
-        <p className="eyebrow mb-3">Relay</p>
-        <h1 className="text-2xl font-semibold mb-6">Create your account</h1>
-        <SignUp fallbackRedirectUrl="/workspace" appearance={{ elements: { rootBox: 'w-full', card: 'shadow-card border border-hairline' } }} />
-      </div>
-    </main>
+    <AuthShell>
+      <SignUp fallbackRedirectUrl="/workspace" appearance={clerkAppearance} />
+    </AuthShell>
   );
 }

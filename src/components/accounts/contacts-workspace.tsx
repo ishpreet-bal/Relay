@@ -60,6 +60,7 @@ export function ContactsWorkspace({ canEnroll, canExport }: { canEnroll: boolean
                 </a>
               )} />
       <PageBody width="full">
+        <p className="text-sm text-muted leading-relaxed mb-5 max-w-3xl">Email addresses and phone numbers for your prospects. Select a client to focus the list. Missing details? Open the company account and use Resolve contacts; published website details and configured data providers are checked separately from company discovery.</p>
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <label className="relative w-full sm:w-64">
             <span className="sr-only">Search contacts</span>
@@ -82,7 +83,7 @@ export function ContactsWorkspace({ canEnroll, canExport }: { canEnroll: boolean
         </div>
 
         <ErrorNote error={list.error} />
-        {list.isPending ? <Loading /> : !rows.length ? (
+        {list.isPending ? <Loading /> : list.error ? null : !rows.length ? (
           <EmptyState icon={Users} title="No contacts found">Contacts are added on accounts, by CSV import, or from a connected data provider.</EmptyState>
         ) : (
           <Table>
@@ -97,14 +98,14 @@ export function ContactsWorkspace({ canEnroll, canExport }: { canEnroll: boolean
                 <Th sort={{ active: sort === 'lastName', direction, onClick: () => sortBy('lastName') }}>Name</Th>
                 <Th sort={{ active: sort === 'score', direction, onClick: () => sortBy('score') }}>Score</Th>
                 <Th>Account</Th>
-                <Th className="hidden md:table-cell">Reach</Th>
+                <Th>Phone and email</Th>
                 {!clientId && <Th className="hidden lg:table-cell">Client</Th>}
                 <Th className="hidden lg:table-cell" sort={{ active: sort === 'lastContactedAt', direction, onClick: () => sortBy('lastContactedAt') }}>Last contacted</Th>
               </tr>
             </thead>
             <tbody>
               {rows.map((c) => {
-                const phone = c.directPhone ?? c.mobilePhone ?? c.phone;
+                const phone = c.directPhone ?? c.mobilePhone ?? c.phone ?? c.account.phone;
                 return (
                   <tr key={c.id} className={cn('hover:bg-raised/60', selected.has(c.id) && 'bg-accent-soft/40')}>
                     {canEnroll && (
@@ -122,15 +123,17 @@ export function ContactsWorkspace({ canEnroll, canExport }: { canEnroll: boolean
                       <Link href={`/accounts/${c.account.id}`} className="block truncate hover:text-accent">{c.account.name}</Link>
                       <span className="text-[11px] text-muted num">account {c.account.score}</span>
                     </Td>
-                    <Td className="hidden md:table-cell text-[11px]">
+                    <Td className="text-xs min-w-[220px]">
                       <span className={cn('flex items-center gap-1', c.doNotEmail ? 'text-blocked' : c.email ? 'text-ink' : 'text-muted')}>
                         {c.emailVerification === 'VALID' ? <MailCheck className="size-3" /> : <Mail className="size-3" />}
-                        {c.doNotEmail ? 'do not email' : c.email ? 'email' : 'no email'}
+                        {c.doNotEmail ? 'Do not email' : c.email ?? 'No email found'}
                       </span>
                       <span className={cn('flex items-center gap-1', c.doNotCall ? 'text-blocked' : phone ? 'text-ink' : 'text-muted')}>
                         {c.doNotCall ? <PhoneOff className="size-3" /> : <Phone className="size-3" />}
-                        {c.doNotCall ? 'do not call' : c.directPhone ? 'direct line' : c.mobilePhone ? 'mobile' : phone ? 'main line' : 'no phone'}
+                        {c.doNotCall || c.account.doNotContact ? 'Do not call' : phone ?? 'No phone found'}
                       </span>
+                      {phone && !c.doNotCall && !c.account.doNotContact && <span className="block text-[11px] text-muted mt-1">{c.directPhone ? 'Direct line' : c.mobilePhone ? 'Mobile' : 'Business line'}</span>}
+                      {c.email && !c.doNotEmail && <span className="block text-[11px] text-muted mt-1">{c.emailVerification === 'VALID' ? 'Verification recorded · review freshness before sending' : `Email: ${c.emailVerification.toLowerCase().replaceAll('_', ' ')}`}</span>}
                     </Td>
                     {!clientId && <Td className="hidden lg:table-cell text-micro text-muted">{c.client.name}</Td>}
                     <Td className="hidden lg:table-cell text-micro text-muted">

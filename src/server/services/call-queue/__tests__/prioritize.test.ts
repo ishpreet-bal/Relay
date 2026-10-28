@@ -104,3 +104,10 @@ describe('prioritize', () => {
     expect(d.eligible && d.priority).toBe(100);
   });
 });
+
+it('keeps a requested future callback out of today’s callable work', () => {
+  const requested = new Date(NOW.getTime() + 2 * 86400_000);
+  const d = prioritize(facts({ calls: [{ at: daysAgo(1), outcome: 'CALL_BACK', callbackAt: requested }] }));
+  expect(d.eligible).toBe(true);
+  if (d.eligible) expect(d.notBefore).toEqual(requested);
+});

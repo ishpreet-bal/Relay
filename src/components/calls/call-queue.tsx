@@ -47,6 +47,7 @@ export function CallQueue({ canAssign }: { canAssign: boolean }) {
                 </button>
               } />
       <PageBody>
+        <div className="mb-6 space-y-3 max-w-3xl"><p className="text-sm text-muted leading-relaxed">Start with requested callbacks and replies, then review fit and supporting evidence. Priority is a work-order score, not a probability of buying or customer satisfaction.</p><div className="flex flex-wrap gap-4 text-sm text-accent"><Link href="/contacts">Find phone numbers and emails</Link><Link href="/call-history">View logged calls</Link></div></div>
         <div className="flex flex-wrap items-center gap-2 mb-5">
           {canAssign && (
             <div role="group" aria-label="Whose calls" className="flex rounded-md border border-hairline overflow-hidden">
@@ -65,7 +66,8 @@ export function CallQueue({ canAssign }: { canAssign: boolean }) {
         </div>
 
         <ErrorNote error={queue.error ?? refresh.error} />
-        {queue.isPending ? <Loading label="Building your queue…" /> : !items.length ? (
+        {refresh.isSuccess && <p role="status" className="text-sm text-muted mb-4">A background queue refresh is queued or already running. This list updates every minute; the worker must be online.</p>}
+        {queue.isPending ? <Loading label="Building your queue…" /> : queue.error ? null : !items.length ? (
           <EmptyState icon={PhoneCall} title="No calls waiting">
             The queue fills itself from replies, engagement, fresh signals, callbacks and high-fit accounts with a phone number.
             It refreshes every hour; use Refresh to recompute now.
@@ -151,7 +153,8 @@ function QueueRow({ task: t, icon: Icon }: { task: Task; icon: typeof PhoneCall 
           <p className="text-[11px] text-muted truncate">{reasons.slice(0, 2).map((r) => r.label).join(' · ') || QUEUE_CATEGORY_LABELS[t.category]}</p>
         </div>
         <div className="text-right shrink-0">
-          <p className="num text-[12px]">{t.priority}</p>
+          <p className="num text-[12px]" title="Work priority, not a win probability">Priority {t.priority}</p>
+          {phoneOf(t) && <p className="num text-[11px] text-muted mt-1">{phoneOf(t)}</p>}
           {t.dueAt && <p className={cn('text-[11px]', overdue ? 'text-blocked' : 'text-muted')}>{overdue ? 'due ' : ''}{formatDistanceToNowStrict(t.dueAt, { addSuffix: true })}</p>}
           {t.assignee && <p className="text-[11px] text-muted">{t.assignee.firstName}</p>}
         </div>

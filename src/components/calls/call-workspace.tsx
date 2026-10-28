@@ -78,6 +78,7 @@ function Header({ prep: p }: { prep: Prep }) {
             {c.timezone && <> · their time {new Intl.DateTimeFormat('en-CA', { hour: 'numeric', minute: '2-digit', timeZone: c.timezone }).format(new Date())}</>}
             {c.callAttempts > 0 && <> · {c.callAttempts} previous attempt{c.callAttempts === 1 ? '' : 's'}, last <Ago date={c.lastCalledAt} /></>}
           </p>
+          {c.email && <p className="mt-3 text-sm break-all">{c.email}<span className="block text-xs text-muted mt-1">{c.doNotEmail ? 'Do not email' : `Email verification: ${c.emailVerification.toLowerCase().replaceAll('_', ' ')}`}</span></p>}
         </div>
         <ul className="space-y-1 sm:text-right">
           {numbers.length ? numbers.map((n) => (
@@ -259,7 +260,7 @@ function LogCall({ prep: p }: { prep: Prep }) {
   const [callbackAt, setCallbackAt] = useState('');
   const [referral, setReferral] = useState({ firstName: '', lastName: '', title: '', email: '', phone: '' });
   const [meeting, setMeeting] = useState({ startsAt: '', durationMinutes: '30', meetingUrl: '', location: '', qualificationNotes: '', estimatedValue: '' });
-  const log = trpc.calls.log.useMutation({ onSuccess: () => { utils.calls.queue.invalidate(); } });
+  const log = trpc.calls.log.useMutation({ onSuccess: () => { utils.calls.queue.invalidate(); utils.calls.recent.invalidate(); } });
 
   if (log.data) {
     return (

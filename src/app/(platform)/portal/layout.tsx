@@ -5,6 +5,7 @@ import { UserButton } from '@clerk/nextjs';
 import { getSession } from '@/lib/auth';
 import { can } from '@/lib/rbac';
 import { PortalNav } from '@/components/portal/portal-nav';
+import { WelcomeGuide } from '@/components/onboarding/welcome-guide';
 
 /**
  * The client portal: results, meetings, campaigns and the business profile.
@@ -18,6 +19,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   return (
     <div className="min-h-screen bg-canvas">
+      {!session.isInternal && <WelcomeGuide role={session.role} organizationId={session.organizationId} userId={session.userId} />}
       <header className="bg-surface border-b border-hairline">
         <div className="max-w-5xl mx-auto px-4 md:px-6">
           <div className="h-14 flex items-center gap-3">

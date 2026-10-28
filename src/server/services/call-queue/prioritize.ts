@@ -149,7 +149,7 @@ export function prioritize(f: QueueFacts): QueueDecision {
   }
   if (unanswered) reasons.push({ code: 'ATTEMPTS', label: `${unanswered} unanswered attempt${unanswered > 1 ? 's' : ''}`, points: -4 * unanswered });
 
-  let notBefore: Date | null = null;
+  let notBefore: Date | null = callback && callback > f.now ? callback : null;
   if (lastCall && UNANSWERED.includes(lastCall.outcome) && !callback) {
     // Two days between unanswered attempts; sooner reads as pestering.
     const next = addDays(lastCall.at, 2);

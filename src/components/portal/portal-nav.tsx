@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
 const LINKS = [
+  { href: '/portal/guide', label: 'Start here' },
   { href: '/portal', label: 'Overview' },
   { href: '/portal/meetings', label: 'Meetings' },
   { href: '/portal/campaigns', label: 'Campaigns' },

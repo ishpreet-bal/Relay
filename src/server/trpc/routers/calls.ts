@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { router, permissionProcedure } from '../init';
-import { addToQueue, assignCallTasks, listQueue, refreshQueue, snoozeCallTask } from '@/server/services/call-queue';
+import { addToQueue, assignCallTasks, listQueue, snoozeCallTask } from '@/server/services/call-queue';
 import { getCallPrep, listCalls, logCall, logCallSchema } from '@/server/services/calls';
 import { recordAudit } from '@/lib/audit';
+import { clientFilter } from '@/server/access/scope';
+import { enqueueJob } from '@/server/services/jobs';
 
 const CATEGORIES = ['CALLBACK_DUE', 'REPLIED', 'ENGAGED', 'SIGNAL', 'HIGH_FIT', 'MANUAL'] as const;
 
@@ -18,7 +20,15 @@ export const callsRouter = router({
 
   refresh: permissionProcedure('call:read')
     .input(z.object({ clientId: z.string().uuid().nullish() }).default({}))
-    .mutation(({ ctx, input }) => refreshQueue(ctx.access.organizationId, input.clientId ?? null)),
+    .mutation(async ({ ctx, input }) => {
+      // Validate client scope before queuing; processing belongs on the worker,
+      // not a web request that can time out while refreshing 1,500 prospects.
+      clientFilter(ctx.access, input.clientId);
+      const job = await enqueueJob({ type: 'CALL_QUEUE_REFRESH', organizationId: ctx.access.organizationId,
+        clientId: input.clientId ?? null, createdById: ctx.session.userId,
+        dedupeKey: `call-queue-refresh:${ctx.access.organizationId}:${input.clientId ?? 'all'}` });
+      return { queued: !!job };
+    }),
 
   addToQueue: permissionProcedure('call:log')
     .input(z.object({ contactId: z.string().uuid() }))
