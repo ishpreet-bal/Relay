@@ -26,6 +26,7 @@ import { AccountStatusPill, SignalPill, VerificationBadge } from '@/components/d
 import { ResearchPanel } from '@/components/research/research-panel';
 import { EnrollDialog } from '@/components/campaigns/enroll-dialog';
 import { Timeline } from './timeline';
+import { AccountBrief } from './account-brief';
 import { AccountFunnel } from '@/components/pipeline/account-funnel';
 import { AccountOpportunities } from '@/components/delivery/opportunity-ui';
 import { ContactFormDialog } from './contact-form-dialog';
@@ -100,6 +101,8 @@ export function AccountDetail({ id, can }: { id: string; can: AccountPermissions
 
         <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-6">
           <div className="space-y-6 min-w-0">
+            <AccountBrief accountId={a.id} canWrite={can.write} />
+
             <Section title="Why this account"
                      hint={a.scoreOverride !== null ? `Score set to ${a.scoreOverride} by hand${a.scoreOverrideReason ? `: ${a.scoreOverrideReason}` : ''}.` : breakdown?.summary}
                      action={can.override && <button type="button" className="btn-ghost h-7 text-micro" onClick={() => setDialog('override')}>Adjust score</button>}>

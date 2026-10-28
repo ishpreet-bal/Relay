@@ -205,7 +205,7 @@ export async function queueDeepResearch(organizationId: string, accountId: strin
  */
 export async function afterAnalysis(organizationId: string, accountId: string, trigger: Trigger) {
   const version = await snapshotAnalysis(accountId, trigger);
-  const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { pipelineStage: true, stagePinned: true } });
+  const account = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { pipelineStage: true, stagePinned: true, clientId: true } });
   await db.account.update({
     where: { id: accountId },
     data: {
@@ -215,6 +215,10 @@ export async function afterAnalysis(organizationId: string, accountId: string, t
       ...(account.pipelineStage === 'DEEP_RESEARCHED' || account.stagePinned ? {} : { pipelineStage: 'ANALYZED' as const }),
     },
   });
+  // A complete analysis must also attempt a contact route. The durable job
+  // retries independently; a contact provider outage never erases research.
+  await enqueueJob({ type: 'CONTACT_ENRICHMENT', organizationId, clientId: account.clientId, entityType: 'Account', entityId: accountId,
+    payload: { resolve: true, limit: 3 }, idempotencyKey: `contacts:${accountId}:analysis:${version?.id ?? 'current'}` });
   await screenAccounts(organizationId, [accountId]);
   const settings = await getPipelineSettings(organizationId);
   const after = await db.account.findUniqueOrThrow({ where: { id: accountId }, select: { screeningScore: true, opportunityTier: true } });

@@ -205,8 +205,7 @@ export function CampaignBuilder() {
           <div className="grid sm:grid-cols-2 gap-2">
             <PolicyOption active={approvalMode === 'REVIEW_ALL'} onClick={() => setApprovalMode('REVIEW_ALL')} title="Review every email"
                           body="Every draft waits in the review queue. Best for a new client or a new playbook." />
-            <PolicyOption active={approvalMode === 'AUTO_APPROVE_VERIFIED'} onClick={() => setApprovalMode('AUTO_APPROVE_VERIFIED')} title="Send verified drafts automatically"
-                          body="A draft sends without review only if every claim is verified against evidence, every claim type is approved below, and it scores at or above the threshold. Anything else goes to review." />
+            <p className="rounded-md border border-hairline p-3 text-micro text-muted">Research, contact checks and drafting can run in the background. Every email needs a person’s approval before sending.</p>
           </div>
           {approvalMode === 'AUTO_APPROVE_VERIFIED' && (
             <>

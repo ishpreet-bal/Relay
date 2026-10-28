@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { safeFetch } from './net-guard';
+import { extractWebsiteContacts, type WebsiteContact } from './website-contacts';
 
 export const CRAWLER_USER_AGENT = 'RelayBot/1.0 (research for a single named prospect)';
 
@@ -15,6 +16,8 @@ export interface CrawledPage {
 
 export interface CrawlResult {
   pages: CrawledPage[];
+  contacts?: WebsiteContact[];
+  coverage?: { visited: number; discovered: number; limit: number; truncated: boolean; contactPageFound: boolean };
   detectedSoftware: string[];
   signals: Record<string, boolean>;
   blockedByRobots: boolean;
@@ -22,7 +25,7 @@ export interface CrawlResult {
 }
 
 const USER_AGENT = CRAWLER_USER_AGENT;
-const MAX_PAGES = 8;
+const MAX_PAGES = 16;
 const MAX_CHARS_PER_PAGE = 12_000;
 const FETCH_TIMEOUT_MS = 12_000;
 const POLITE_DELAY_MS = 900;
@@ -38,7 +41,7 @@ const PRIORITY_PATTERNS: Array<{ pattern: RegExp; weight: number }> = [
   { pattern: /\/(about|our-story|team|who-we-are)/i, weight: 8 },
   { pattern: /\/(careers|jobs|hiring|join-us)/i, weight: 9 },
   { pattern: /\/(process|how-it-works|approach)/i, weight: 7 },
-  { pattern: /\/(contact|locations|book|schedule|appointment)/i, weight: 6 },
+  { pattern: /\/(contact|locations|book|schedule|appointment)/i, weight: 12 },
   { pattern: /\/(pricing|rates|plans)/i, weight: 5 },
   { pattern: /\/(faq|resources)/i, weight: 3 },
 ];
@@ -88,6 +91,25 @@ function detectSignals(html: string, $: cheerio.CheerioAPI) {
   };
 }
 
+async function boundedText(res: Response, maxBytes: number): Promise<string> {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) throw new Error('Response exceeds page size limit');
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = ''; let bytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) { await reader.cancel(); throw new Error('Response exceeds page size limit'); }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally { reader.releaseLock(); }
+}
+
 export async function fetchPage(url: string): Promise<{ html: string; finalUrl: string } | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -102,8 +124,8 @@ export async function fetchPage(url: string): Promise<{ html: string; finalUrl: 
     const type = res.headers.get('content-type') ?? '';
     if (!type.includes('html')) return null;
     // Guard against a 50MB page taking down the worker.
-    const body = await res.text();
-    return { html: body.slice(0, 800_000), finalUrl: res.url || url };
+    const body = await boundedText(res, 800_000);
+    return { html: body, finalUrl: res.url || url };
   } catch {
     return null;
   } finally {
@@ -111,30 +133,48 @@ export async function fetchPage(url: string): Promise<{ html: string; finalUrl: 
   }
 }
 
-/** Minimal robots.txt check for our user-agent and the wildcard group. */
-export async function isAllowed(origin: string, path: string): Promise<boolean> {
-  try {
-    const res = await safeFetch(`${origin}/robots.txt`, {
-      headers: { 'user-agent': USER_AGENT },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return true;
-    const txt = await res.text();
-
-    let applies = false;
-    const disallowed: string[] = [];
-    for (const raw of txt.split('\n')) {
-      const line = raw.split('#')[0]!.trim();
-      const [rawKey, ...rest] = line.split(':');
-      const key = rawKey?.toLowerCase().trim();
-      const value = rest.join(':').trim();
-      if (key === 'user-agent') applies = value === '*' || /relaybot/i.test(value);
-      else if (key === 'disallow' && applies && value) disallowed.push(value);
+/** Most specific matching group and rule wins; Allow wins equal-length ties. */
+export function robotsAllowed(txt: string, path: string): boolean {
+  const groups: Array<{ agents: string[]; rules: Array<{ allow: boolean; path: string }> }> = [];
+  let group = { agents: [] as string[], rules: [] as Array<{ allow: boolean; path: string }> };
+  let rulesStarted = false;
+  for (const raw of txt.split('\n')) {
+    const line = raw.split('#')[0]!.trim();
+    const at = line.indexOf(':');
+    if (at < 0) continue;
+    const key = line.slice(0, at).trim().toLowerCase();
+    const value = line.slice(at + 1).trim();
+    if (key === 'user-agent') {
+      if (rulesStarted) { groups.push(group); group = { agents: [], rules: [] }; rulesStarted = false; }
+      group.agents.push(value.toLowerCase());
+    } else if ((key === 'allow' || key === 'disallow') && group.agents.length) {
+      rulesStarted = true;
+      if (value) group.rules.push({ allow: key === 'allow', path: value });
     }
-    return !disallowed.some((rule) => rule === '/' || path.startsWith(rule));
-  } catch {
-    return true;
   }
+  groups.push(group);
+  const specific = groups.filter((g) => g.agents.some((a) => a !== '*' && 'relaybot'.includes(a)));
+  const applicable = specific.length ? specific : groups.filter((g) => g.agents.includes('*'));
+  const matching = applicable.flatMap((g) => g.rules).filter((r) => {
+    const anchor = r.path.endsWith('$');
+    const pattern = anchor ? r.path.slice(0, -1) : r.path;
+    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp('^' + escaped + (anchor ? '$' : '')).test(path);
+  }).sort((a, b) => b.path.replace(/[*$]/g, '').length - a.path.replace(/[*$]/g, '').length || Number(b.allow) - Number(a.allow));
+  return matching[0]?.allow ?? true;
+}
+
+async function readRobots(origin: string): Promise<string> {
+  const res = await safeFetch(`${origin}/robots.txt`, {
+    headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(6000),
+  });
+  if (res.status === 404 || res.status === 410) return '';
+  if (!res.ok) throw new Error(`robots.txt unavailable (${res.status})`);
+  return boundedText(res, 500_000);
+}
+
+export async function isAllowed(origin: string, path: string): Promise<boolean> {
+  try { return robotsAllowed(await readRobots(origin), path); } catch { return false; }
 }
 
 function extractText($: cheerio.CheerioAPI): string {
@@ -149,92 +189,66 @@ function extractText($: cheerio.CheerioAPI): string {
  * the agency out of trouble.
  */
 export async function crawlSite(websiteUrl: string): Promise<CrawlResult> {
-  const result: CrawlResult = {
-    pages: [], detectedSoftware: [], signals: {}, blockedByRobots: false, errors: [],
+  const result: CrawlResult = { pages: [], contacts: [], detectedSoftware: [], signals: {}, blockedByRobots: false, errors: [] };
+  let start: URL;
+  try { start = new URL(websiteUrl.startsWith('http') ? websiteUrl : `https://${websiteUrl}`); }
+  catch { result.errors.push({ url: websiteUrl, reason: 'Not a valid URL' }); return result; }
+  const robots = new Map<string, string>();
+  const allowed = async (url: URL) => {
+    if (!robots.has(url.origin)) robots.set(url.origin, await readRobots(url.origin));
+    return robotsAllowed(robots.get(url.origin)!, url.pathname + url.search);
   };
-
-  let origin: string;
-  let startPath: string;
-  try {
-    const parsed = new URL(websiteUrl.startsWith('http') ? websiteUrl : `https://${websiteUrl}`);
-    origin = parsed.origin;
-    startPath = parsed.pathname;
-  } catch {
-    result.errors.push({ url: websiteUrl, reason: 'Not a valid URL' });
-    return result;
-  }
-
-  if (!(await isAllowed(origin, startPath))) {
-    result.blockedByRobots = true;
-    result.errors.push({ url: origin, reason: 'Disallowed by robots.txt' });
-    return result;
-  }
-
-  const home = await fetchPage(origin + startPath);
-  if (!home) {
-    result.errors.push({ url: origin, reason: 'Homepage unreachable' });
-    return result;
-  }
-
-  const $home = cheerio.load(home.html);
+  const queue = new Map<string, { weight: number; depth: number }>([[start.href, { weight: 100, depth: 0 }]]);
+  const visited = new Set<string>();
   const software = new Set<string>();
-  for (const fp of TECH_FINGERPRINTS) if (fp.test.test(home.html)) software.add(fp.name);
-  result.signals = detectSignals(home.html, $home);
-
-  result.pages.push({
-    id: 'p1',
-    url: home.finalUrl,
-    title: $home('title').first().text().trim() || 'Homepage',
-    text: extractText($home),
-    chars: 0,
-    fetchedAt: new Date().toISOString(),
-  });
-
-  // Rank internal links, dedupe by path, take the top MAX_PAGES - 1.
-  const candidates = new Map<string, number>();
-  $home('a[href]').each((_, el) => {
-    const href = $home(el).attr('href');
-    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
-    let abs: URL;
-    try { abs = new URL(href, home.finalUrl); } catch { return; }
-    if (abs.origin !== origin) return;
-    if (/\.(pdf|jpe?g|png|gif|svg|zip|docx?|xlsx?)$/i.test(abs.pathname)) return;
-
-    const path = abs.pathname.replace(/\/$/, '') || '/';
-    if (path === '/' || candidates.has(path)) return;
-
-    const match = PRIORITY_PATTERNS.find((p) => p.pattern.test(path));
-    if (match) candidates.set(path, match.weight);
-  });
-
-  const ranked = [...candidates.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_PAGES - 1);
-
-  for (const [path] of ranked) {
-    await new Promise((r) => setTimeout(r, POLITE_DELAY_MS));
-    if (!(await isAllowed(origin, path))) continue;
-
-    const page = await fetchPage(origin + path);
-    if (!page) {
-      result.errors.push({ url: origin + path, reason: 'Fetch failed' });
-      continue;
+  const host = (url: URL) => url.hostname.toLowerCase().replace(/^www\./, '');
+  let contactPageFound = false;
+  while (queue.size && visited.size < MAX_PAGES) {
+    const [url, item] = [...queue.entries()].sort((a, b) => b[1].weight - a[1].weight)[0]!;
+    queue.delete(url); visited.add(url);
+    let permitted = false;
+    try { permitted = await allowed(new URL(url)); }
+    catch { result.errors.push({ url, reason: 'Could not check robots.txt; page held for review' }); continue; }
+    if (!permitted) {
+      if (result.pages.length === 0 && item.depth === 0) result.blockedByRobots = true;
+      result.errors.push({ url, reason: 'Disallowed by robots.txt' }); continue;
     }
+    if (visited.size > 1) await new Promise((r) => setTimeout(r, POLITE_DELAY_MS));
+    const page = await fetchPage(url);
+    if (!page) { result.errors.push({ url, reason: 'Fetch failed' }); continue; }
+    const final = new URL(page.finalUrl);
+    if (host(final) !== host(start)) { result.errors.push({ url, reason: 'Redirected outside the company website' }); continue; }
+    // A redirect may change the host (www) or the path; honour its robots rules too.
+    try {
+      if (final.href !== url && !(await allowed(final))) { result.errors.push({ url: final.href, reason: 'Redirect target disallowed by robots.txt' }); continue; }
+    } catch { result.errors.push({ url: final.href, reason: 'Could not check redirect robots.txt' }); continue; }
     const $ = cheerio.load(page.html);
+    const title = $('title').first().text().trim() || final.pathname;
+    const found = extractWebsiteContacts(page.html, final.href);
+    result.contacts!.push(...found);
+    contactPageFound ||= /contact|locations/i.test(final.pathname) || found.length > 0;
     for (const fp of TECH_FINGERPRINTS) if (fp.test.test(page.html)) software.add(fp.name);
-
-    const text = extractText($);
-    if (text.length < 200) continue; // Not enough substance to cite.
-
-    result.pages.push({
-      id: `p${result.pages.length + 1}`,
-      url: page.finalUrl,
-      title: $('title').first().text().trim() || path,
-      text,
-      chars: text.length,
-      fetchedAt: new Date().toISOString(),
+    for (const [key, value] of Object.entries(detectSignals(page.html, $))) result.signals[key] ||= value;
+    // Collect links BEFORE extractText removes nav/header/footer. Contact links
+    // commonly live only there; removing them used to lose the entire route.
+    if (item.depth < 3) $('a[href]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (!href || /^(#|mailto:|tel:|javascript:)/i.test(href)) return;
+      let next: URL;
+      try { next = new URL(href, final); } catch { return; }
+      if (next.origin !== final.origin || !['http:', 'https:'].includes(next.protocol)) return;
+      if (/\.(pdf|jpe?g|png|gif|svg|zip|docx?|xlsx?)$/i.test(next.pathname)) return;
+      next.search = ''; next.hash = ''; next.pathname = next.pathname.replace(/\/$/, '') || '/';
+      if (visited.has(next.href) || queue.has(next.href) || queue.size >= 200) return;
+      const match = PRIORITY_PATTERNS.find((p) => p.pattern.test(next.pathname));
+      if (match) queue.set(next.href, { weight: match.weight, depth: item.depth + 1 });
     });
+    const text = extractText($);
+    // Short contact pages still contain useful, citable details.
+    if (text || found.length) result.pages.push({ id: `p${result.pages.length + 1}`, url: final.href, title, text, chars: text.length, fetchedAt: new Date().toISOString() });
   }
-
-  for (const page of result.pages) page.chars = page.text.length;
   result.detectedSoftware = [...software];
+  result.contacts = [...new Map(result.contacts!.map((c) => [`${c.kind}:${c.value}`, c])).values()];
+  result.coverage = { visited: visited.size, discovered: visited.size + queue.size, limit: MAX_PAGES, truncated: queue.size > 0, contactPageFound };
   return result;
 }

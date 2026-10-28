@@ -1,6 +1,8 @@
 import { db } from '@/lib/db';
 import { addMinutes, startOfDay, subHours } from 'date-fns';
 import type { Message } from '@prisma/client';
+import { outreachContactBlock } from './outreach-readiness';
+import { briefFacts, recommendWorkflows } from './service-brief';
 import { findSuppression } from './suppression';
 
 /**
@@ -18,6 +20,11 @@ export type GateVerdict =
 
 export type GateBlockCode =
   | 'NOT_APPROVED'
+  | 'CONTACT_SCOPE'
+  | 'EMAIL_UNVERIFIED'
+  | 'CONSENT_REQUIRED'
+  | 'RESEARCH_REQUIRED'
+  | 'OFFER_REQUIRED'
   | 'UNVERIFIED_CLAIMS'
   | 'NO_RECIPIENT'
   | 'SUPPRESSED'
@@ -38,6 +45,8 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
     return { allowed: false, code: 'NOT_APPROVED', reason: 'Waiting for review' };
   }
 
+  if (message.approvalSource !== 'HUMAN') return { allowed: false, code: 'NOT_APPROVED', reason: 'A person must approve every outreach message' };
+
   // 2. A draft with unsupported or contradicted claims only leaves if a person
   // approved it and took responsibility for the wording. Policy never can.
   if ((message.verificationStatus === 'BLOCKED' || message.verificationStatus === 'UNSUPPORTED') && message.approvalSource !== 'HUMAN') {
@@ -53,6 +62,23 @@ export async function evaluateSend(message: Message, now = new Date()): Promise<
   const email = contact?.email?.toLowerCase().trim();
   if (!contact || !email || contact.deletedAt || contact.account.deletedAt) {
     return { allowed: false, code: 'NO_RECIPIENT', reason: 'No email address on the contact' };
+  }
+
+  const readinessBlock = outreachContactBlock(contact, message, now);
+  if (readinessBlock) return { allowed: false, ...readinessBlock };
+
+  // Marketing campaign outreach requires current business research and a
+  // specific offer. Direct replies to inbound inquiries do not require a crawl.
+  if (message.campaignId) {
+    const research = await db.research.findUnique({ where: { accountId: contact.accountId } });
+    const facts = briefFacts(research?.facts);
+    if (research?.status !== 'COMPLETED' || !research.refreshedAt || now.getTime() - research.refreshedAt.getTime() > 30 * 86400_000 || !facts.length) {
+      return { allowed: false, code: 'RESEARCH_REQUIRED', reason: 'Campaign outreach needs current research with sourced business facts' };
+    }
+    const client = await db.client.findUnique({ where: { id: message.clientId }, select: { kind: true, offers: { where: { isActive: true }, select: { name: true } } } });
+    const angles = (research.relevance as { angles?: Array<{ offer?: string | null }> } | null)?.angles ?? [];
+    const hasOffer = client?.kind === 'INTERNAL' ? recommendWorkflows(facts).length > 0 : client?.offers.some((o) => angles.some((a) => a.offer === o.name));
+    if (!hasOffer) return { allowed: false, code: 'OFFER_REQUIRED', reason: 'Choose a specific offer supported by this account’s research before campaign outreach' };
   }
 
   // 3. Do-not-contact, on the person, the account, or the suppression list

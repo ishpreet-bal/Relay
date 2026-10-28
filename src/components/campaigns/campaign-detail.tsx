@@ -73,14 +73,7 @@ export function CampaignDetail({ id, can }: { id: string; can: { write: boolean;
               <h3 className="eyebrow flex-1">Approval policy</h3>
               {can.write && <button type="button" className="btn-ghost h-7 text-micro" onClick={() => setEditingPolicy(true)}>Change</button>}
             </div>
-            {c.approvalMode === 'REVIEW_ALL' ? (
-              <p className="text-micro">Every draft is reviewed by a person before it sends.</p>
-            ) : (
-              <>
-                <p className="text-micro flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-accent" /> Verified drafts scoring ≥ <span className="num">{c.autoApproveThreshold.toFixed(2)}</span> send automatically.</p>
-                <p className="text-[11px] text-muted mt-1.5">Approved claim types: {c.approvedClaimTypes.map((t) => CLAIM_TYPE_LABELS[t]).join(', ') || 'none'}</p>
-              </>
-            )}
+            <p className="text-micro flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-accent" />Every draft requires a person’s approval before sending.</p>
           </div>
           <div className="card p-4">
             <h3 className="eyebrow mb-2">Sending</h3>
@@ -169,7 +162,7 @@ function EnrollmentRow({ e, canWrite, onChange }: { e: RouterOutputs['campaigns'
 }
 
 function PolicyDialog({ campaign: c, onClose }: { campaign: Campaign; onClose: () => void }) {
-  const [mode, setMode] = useState(c.approvalMode);
+  const [mode, setMode] = useState<'REVIEW_ALL' | 'AUTO_APPROVE_VERIFIED'>('REVIEW_ALL');
   const [threshold, setThreshold] = useState(c.autoApproveThreshold);
   const [types, setTypes] = useState<ClaimType[]>(c.approvedClaimTypes);
   const [dailyCap, setDailyCap] = useState(c.dailyCap);
@@ -181,7 +174,7 @@ function PolicyDialog({ campaign: c, onClose }: { campaign: Campaign; onClose: (
           {(id) => (
             <select id={id} className="input" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
               <option value="REVIEW_ALL">Review every email</option>
-              <option value="AUTO_APPROVE_VERIFIED">Send verified drafts automatically</option>
+              <option value="AUTO_APPROVE_VERIFIED" disabled>Automatic sending is disabled</option>
             </select>
           )}
         </Field>

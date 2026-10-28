@@ -1,3 +1,4 @@
+import { redactValue } from './redact';
 /**
  * Structured logging. One JSON line per event in production so log drains can
  * index by event name and fields; readable lines in development. Errors are
@@ -16,6 +17,7 @@ function serialize(value: unknown): unknown {
 }
 
 function write(level: Level, event: string, fields: Fields = {}) {
+  fields = redactValue(fields) as Fields;
   const entry: Fields = { level, event, at: new Date().toISOString() };
   for (const [k, v] of Object.entries(fields)) entry[k] = serialize(v);
 

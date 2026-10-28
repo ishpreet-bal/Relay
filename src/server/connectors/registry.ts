@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { redactText } from '@/lib/redact';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { NotConfiguredError } from '@/server/errors';
@@ -23,7 +24,7 @@ const companyWebsite: ConnectorDefinition = {
   id: 'company_website',
   name: 'Company website',
   capabilities: ['RESEARCH_SOURCE'],
-  description: "Reads up to eight pages of a prospect's own site (robots.txt respected) as the evidence base for research.",
+  description: "Reads up to sixteen pages of a prospect's own site (robots.txt respected) as the evidence base for research.",
   requiredEnv: [],
   implemented: true,
   defaultPriority: 10,
@@ -79,7 +80,7 @@ export function connectorById(id: string) {
 }
 
 export function missingEnv(def: ConnectorDefinition): string[] {
-  return def.requiredEnv.filter((k) => !process.env[k]);
+  return def.requiredEnv.filter((k) => !process.env[k]?.trim());
 }
 
 export interface ConnectorState {
@@ -119,7 +120,7 @@ export async function connectorStates(organizationId: string): Promise<Connector
       missingEnv: missing,
       docsUrl: def.docsUrl ?? null,
       lastCheckedAt: s?.lastCheckedAt ?? null,
-      lastError: s?.lastError ?? null,
+      lastError: s?.lastError ? redactText(s.lastError) : null,
       hasHealthCheck: !!def.healthCheck,
     };
   });
@@ -143,6 +144,8 @@ export interface ChainOutcome<T> {
   provider: string;
   providerRecordId: string | null;
   cached: boolean;
+  /** When the provider actually observed this answer, not when its cache was read. */
+  observedAt: Date;
 }
 
 /**
@@ -154,10 +157,10 @@ export interface ChainOutcome<T> {
 export async function runChain<T>(
   ctx: ProviderContext,
   capability: Capability,
-  op: { operation: string; lookupKey: string; ttlDays: number; usageType?: 'ENRICHMENT_REQUEST' | 'EMAIL_VERIFICATION' | 'PHONE_LOOKUP' | 'EXTERNAL_DATA' },
+  op: { operation: string; lookupKey: string; ttlDays: number; providerIds?: string[]; usageType?: 'ENRICHMENT_REQUEST' | 'EMAIL_VERIFICATION' | 'PHONE_LOOKUP' | 'EXTERNAL_DATA' },
   call: (def: ConnectorDefinition) => Promise<ProviderResult<T>> | null,
 ): Promise<ChainOutcome<T>> {
-  const chain = await chainFor(ctx.organizationId, capability);
+  const chain = (await chainFor(ctx.organizationId, capability)).filter((def) => !op.providerIds || op.providerIds.includes(def.id));
   if (!chain.length) {
     throw new NotConfiguredError(capability, `No ${capability.toLowerCase().replace(/_/g, ' ')} provider is connected. Configure one under Connectors.`);
   }
@@ -172,6 +175,7 @@ export async function runChain<T>(
         provider: def.id,
         providerRecordId: cached.id,
         cached: true,
+        observedAt: cached.requestedAt,
       };
       if (cached.status === 'SUCCESS') return outcome;
       last = outcome;
@@ -195,6 +199,7 @@ export async function runChain<T>(
     } catch (err) {
       result = { status: 'ERROR', costMillicents: 0, error: err instanceof Error ? err.message : 'Request failed' };
     }
+    if (result.error) result.error = redactText(result.error);
     await reportProviderResult(def.id, result.status === 'ERROR' ? { ok: false, error: result.error ?? 'Request failed' } : { ok: true });
 
     const record = await recordProviderCall({
@@ -232,7 +237,7 @@ export async function runChain<T>(
       });
     }
 
-    const outcome: ChainOutcome<T> = { result, provider: def.id, providerRecordId: record?.id ?? null, cached: false };
+    const outcome: ChainOutcome<T> = { result, provider: def.id, providerRecordId: record?.id ?? null, cached: false, observedAt: record?.requestedAt ?? new Date() };
     if (result.status === 'SUCCESS') return outcome;
     last = outcome;
   }

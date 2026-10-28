@@ -1,3 +1,4 @@
+import { queueContactBacklog } from './contact-resolution';
 import { releaseStaleJobs } from './jobs';
 import { scheduleDueDiscovery } from './discovery/run';
 import { sweepRetention } from './discovery/retention';
@@ -26,11 +27,13 @@ export async function scheduledMaintenance(now = new Date()) {
   let screeningJobs = 0;
   let refreshJobs = 0;
   let backlogAnalyses = 0;
+  let contactJobs = 0;
   for (const org of await db.organization.findMany({ where: { deletedAt: null }, select: { id: true } })) {
     try {
       screeningJobs += await enqueuePendingScreening(org.id);
       refreshJobs += await enqueueDueRefresh(org.id, 200, now);
       backlogAnalyses += await queueQualifiedBacklog(org.id);
+      contactJobs += await queueContactBacklog(org.id, now);
     } catch (err) {
       logger.error('scheduler.pipeline_failed', { organizationId: org.id, error: err });
     }
@@ -41,5 +44,5 @@ export async function scheduledMaintenance(now = new Date()) {
   const billing = await runBillingCycle(now).catch((err) => { logger.error('scheduler.billing_failed', { error: err }); return { subscriptions: 0, periods: 0 }; });
   // Health: raise or clear alerts for stuck queues, paused providers, dead letters, failed webhooks, failing apps.
   const health = await checkPlatformHealth(now).catch((err) => { logger.error('scheduler.health_failed', { error: err }); return { findings: [] as string[] }; });
-  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, backlogAnalyses, workflowsStarted: schedules.started, billingPeriodsClosed: billing.periods, healthFindings: health.findings.length };
+  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, backlogAnalyses, contactJobs, workflowsStarted: schedules.started, billingPeriodsClosed: billing.periods, healthFindings: health.findings.length };
 }

@@ -1,3 +1,4 @@
+import { redactText } from '@/lib/redact';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { router, permissionProcedure } from '../init';
@@ -138,7 +139,9 @@ export const opsRouter = router({
       const def = connectorById(input.provider);
       if (!def) throw new NotFoundError('Connector');
       if (!def.healthCheck) return { ok: false, detail: 'This connector has no health check.' };
-      const result = await def.healthCheck();
+      let result: { ok: boolean; detail: string };
+      try { result = await def.healthCheck(); } catch (err) { result = { ok: false, detail: err instanceof Error ? err.message : 'Connection test failed' }; }
+      result.detail = redactText(result.detail);
       await ctx.db.connectorSetting.upsert({
         where: { organizationId_provider: { organizationId: ctx.access.organizationId, provider: input.provider } },
         create: { organizationId: ctx.access.organizationId, provider: input.provider, lastCheckedAt: new Date(), lastError: result.ok ? null : result.detail },

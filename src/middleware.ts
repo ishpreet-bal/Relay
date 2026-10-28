@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextResponse, type NextRequest } from 'next/server';
+import { isPublicSitePath } from '@/site/public-routes';
+import { NextResponse, type NextRequest, type NextFetchEvent } from 'next/server';
 
 const isPublic = createRouteMatcher([
   // The public website. Nothing under these paths reads private data.
@@ -28,7 +29,7 @@ const isPublic = createRouteMatcher([
   '/site/(.*)', // portfolio microsite renderer
 ]);
 
-export default clerkMiddleware(async (auth, req: NextRequest) => {
+const authenticatedMiddleware = clerkMiddleware(async (auth, req: NextRequest) => {
   const host = req.headers.get('host') ?? '';
   const root = process.env.PORTFOLIO_ROOT_DOMAIN ?? '';
 
@@ -57,6 +58,17 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     return NextResponse.redirect(new URL('/onboarding', req.url));
   }
 });
+
+/** Public pages stay available even when the identity provider is unavailable.
+ * Auth pages and every unknown/private path still run Clerk's middleware.
+ */
+export default function middleware(req: NextRequest, event: NextFetchEvent) {
+  const host = req.headers.get('host') ?? '';
+  const root = process.env.PORTFOLIO_ROOT_DOMAIN ?? '';
+  const portfolioHost = !!root && host.endsWith(root) && host !== root;
+  if (!portfolioHost && isPublicSitePath(req.nextUrl.pathname)) return NextResponse.next();
+  return authenticatedMiddleware(req, event);
+}
 
 export const config = {
   matcher: ['/((?!_next|.*\\..*).*)', '/api/(.*)'],

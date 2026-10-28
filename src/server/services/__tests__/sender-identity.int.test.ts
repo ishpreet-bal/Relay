@@ -44,7 +44,7 @@ describe.skipIf(!reachable)('CASL footer on sent email (database)', () => {
     await db.organization.create({ data: { id: orgId, clerkOrgId: `test_${orgId}`, name: 'Relay', brandName: 'Relay', slug: `casl-${orgId.slice(0, 8)}`, minMinutesBetweenSends: 1 } });
     clientId = (await db.client.create({ data: { organizationId: orgId, name: 'Relay', slug: `relay-${orgId.slice(0, 6)}`, kind: 'INTERNAL' } })).id;
     const account = await db.account.create({ data: { organizationId: orgId, clientId, name: 'Synthetic Prospect Ltd', domain: `prospect-${orgId.slice(0, 6)}.test` } });
-    const contact = await db.contact.create({ data: { organizationId: orgId, clientId, accountId: account.id, firstName: 'Pat', email: `pat@prospect-${orgId.slice(0, 6)}.test` } });
+    const contact = await db.contact.create({ data: { organizationId: orgId, clientId, accountId: account.id, firstName: 'Pat', emailVerification: 'VALID', emailVerifiedAt: new Date(), consentBasis: 'EXPRESS', consentNote: 'Synthetic fixture: express permission recorded for this test', email: `pat@prospect-${orgId.slice(0, 6)}.test` } });
     const mailbox = await db.mailbox.create({
       data: { organizationId: orgId, provider: 'GMAIL', fromName: 'Ish', fromEmail: 'ish@relay.test', spfVerified: true, dkimVerified: true, oauthRefreshTokenEnc: encryptSecret('rt'), oauthEmail: 'ish@relay.test' },
     });

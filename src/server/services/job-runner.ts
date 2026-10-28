@@ -12,6 +12,7 @@ import { ProviderUnavailableError, throttled } from '@/server/queues/throttle';
 import { rescoreAccount } from './scoring';
 import { refreshQueue } from './call-queue';
 import { claimJob, claimJobs, completeJob, failJob, requeueJob, settleTimedOutAttempt } from './jobs';
+import { resolveAccountContacts } from './contact-resolution';
 import { discoverContacts, enrichAccount } from './enrichment';
 import { executeDiscoveryStep } from './discovery/run';
 import { sweepRetention } from './discovery/retention';
@@ -68,7 +69,7 @@ const HANDLERS: Partial<Record<JobType, Handler>> = {
   },
   CALL_QUEUE_REFRESH: (job) => refreshQueue(requireOrg(job).organizationId, job.clientId),
   ACCOUNT_ENRICHMENT: (job) => enrichAccount(requireOrg(job), job.entityId!),
-  CONTACT_ENRICHMENT: (job) => discoverContacts(requireOrg(job), job.entityId!, Number((job.payload as { limit?: number } | null)?.limit ?? 5)),
+  CONTACT_ENRICHMENT: (job) => payloadOf<{ resolve?: boolean }>(job).resolve ? resolveAccountContacts(requireOrg(job), job.entityId!, 3) : discoverContacts(requireOrg(job), job.entityId!, Number((job.payload as { limit?: number } | null)?.limit ?? 5)),
   RESEARCH: (job) => runResearch(requireOrg(job).organizationId, job.entityId!, { trigger: payloadOf<{ trigger?: Trigger }>(job).trigger ?? 'MANUAL' })
     .then((r) => ({ signals: r.signalsCreated, groundingRate: r.report.groundingRate })),
   SCREENING: (job) => screenAccounts(requireOrg(job).organizationId, payloadOf<{ accountIds?: string[] }>(job).accountIds ?? (job.entityId ? [job.entityId] : [])),
