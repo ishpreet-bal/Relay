@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { db } from '@/lib/db';
 import { dbTestsAllowed } from '@/test/db';
 import { systemAccess } from '@/server/access/scope';
-import { discoverContacts, revealEmail } from '../enrichment';
+import { discoverContacts, revealEmail, verifyContactEmail } from '../enrichment';
 import { resolveAccountContacts, saveWebsiteContacts } from '../contact-resolution';
 import { getAccountBrief } from '../account-brief';
 import { evaluateSend } from '../send-gate';
@@ -64,6 +64,20 @@ describe.skipIf(!reachable)('usable prospect contacts (Postgres)', () => {
     const brief = await getAccountBrief(access, fresh.id);
     expect(brief.state).toBe('RESEARCH_REQUIRED');
     expect(brief.workflows).toEqual([]);
+  });
+
+  it('keeps the original verification time when a cached result is reused', async () => {
+    vi.stubEnv('ZEROBOUNCE_API_KEY', 'synthetic-verifier-key');
+    const office = await db.contact.findFirstOrThrow({ where: { accountId, email: 'office@machine.test' } });
+    const checkedAt = new Date(Date.now() - 20 * 86400_000);
+    await db.providerRecord.create({ data: { organizationId: orgId, clientId, accountId, contactId: office.id,
+      provider: 'zerobounce', operation: 'email.verify', lookupKey: office.email!, status: 'SUCCESS', normalized: { verification: 'VALID' },
+      requestedAt: checkedAt, expiresAt: new Date(Date.now() + 10 * 86400_000) } });
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    expect((await verifyContactEmail(access, office.id)).verification).toBe('VALID');
+    const after = await db.contact.findUniqueOrThrow({ where: { id: office.id } });
+    expect(after.emailVerifiedAt?.getTime()).toBe(checkedAt.getTime());
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('requires human approval, fresh verification and an explicit outreach basis at the final send gate', async () => {

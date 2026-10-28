@@ -176,7 +176,7 @@ export async function verifyContactEmail(access: AccessContext, contactId: strin
     return { status: outcome.result.status, provider: outcome.provider, verification: contact.emailVerification, error: outcome.result.error ?? null };
   }
   const { verification } = outcome.result.data;
-  await db.contact.update({ where: { id: contactId }, data: { emailVerification: verification, emailVerifiedAt: verification === 'VALID' ? new Date() : null } });
+  await db.contact.update({ where: { id: contactId }, data: { emailVerification: verification, emailVerifiedAt: verification === 'VALID' ? outcome.observedAt : null } });
   await recordProvenance(
     { organizationId: contact.organizationId, contactId },
     { emailVerification: verification },
@@ -211,7 +211,7 @@ export async function revealEmail(access: AccessContext, contactId: string) {
   const { email, verification } = outcome.result.data;
   await db.contact.update({
     where: { id: contactId },
-    data: { email, ...(!contact.firstName && outcome.result.data.firstName ? { firstName: outcome.result.data.firstName } : {}), ...(!contact.lastName && outcome.result.data.lastName ? { lastName: outcome.result.data.lastName } : {}), emailVerification: verification, emailVerifiedAt: verification === 'VALID' ? new Date() : null },
+    data: { email, ...(!contact.firstName && outcome.result.data.firstName ? { firstName: outcome.result.data.firstName } : {}), ...(!contact.lastName && outcome.result.data.lastName ? { lastName: outcome.result.data.lastName } : {}), emailVerification: verification, emailVerifiedAt: verification === 'VALID' ? outcome.observedAt : null },
   });
   await recordProvenance(
     { organizationId: contact.organizationId, contactId },

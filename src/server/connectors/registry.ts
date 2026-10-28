@@ -144,6 +144,8 @@ export interface ChainOutcome<T> {
   provider: string;
   providerRecordId: string | null;
   cached: boolean;
+  /** When the provider actually observed this answer, not when its cache was read. */
+  observedAt: Date;
 }
 
 /**
@@ -173,6 +175,7 @@ export async function runChain<T>(
         provider: def.id,
         providerRecordId: cached.id,
         cached: true,
+        observedAt: cached.requestedAt,
       };
       if (cached.status === 'SUCCESS') return outcome;
       last = outcome;
@@ -234,7 +237,7 @@ export async function runChain<T>(
       });
     }
 
-    const outcome: ChainOutcome<T> = { result, provider: def.id, providerRecordId: record?.id ?? null, cached: false };
+    const outcome: ChainOutcome<T> = { result, provider: def.id, providerRecordId: record?.id ?? null, cached: false, observedAt: record?.requestedAt ?? new Date() };
     if (result.status === 'SUCCESS') return outcome;
     last = outcome;
   }
