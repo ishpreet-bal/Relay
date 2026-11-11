@@ -272,6 +272,8 @@ const SETTING_FIELDS: Array<{ key: keyof Settings; label: string; hint?: string;
   { key: 'autoDeep', label: 'Deep-research accounts above the threshold automatically', kind: 'bool' },
   { key: 'maxAnalysesPerDay', label: 'Automatic analyses per day', kind: 'int' },
   { key: 'maxDeepPerDay', label: 'Automatic deep research per day', kind: 'int' },
+  { key: 'autoContacts', label: 'Look up contacts for qualified accounts automatically', hint: 'Does not wait for AI analysis; paid lookups use the enrichment budget', kind: 'bool' },
+  { key: 'maxContactLookupsPerDay', label: 'Automatic contact lookups per day', kind: 'int' },
   { key: 'refreshDaysHot', label: 'Refresh hot accounts every (days)', kind: 'int' },
   { key: 'refreshDaysWarm', label: 'Refresh warm (days)', kind: 'int' },
   { key: 'refreshDaysExploratory', label: 'Refresh exploratory (days)', kind: 'int' },

@@ -188,7 +188,8 @@ function extractText($: cheerio.CheerioAPI): string {
  * company, not a scraper — behaving like one keeps the sending domain clean and
  * the agency out of trouble.
  */
-export async function crawlSite(websiteUrl: string): Promise<CrawlResult> {
+export async function crawlSite(websiteUrl: string, opts: { maxPages?: number } = {}): Promise<CrawlResult> {
+  const maxPages = Math.min(opts.maxPages ?? MAX_PAGES, MAX_PAGES);
   const result: CrawlResult = { pages: [], contacts: [], detectedSoftware: [], signals: {}, blockedByRobots: false, errors: [] };
   let start: URL;
   try { start = new URL(websiteUrl.startsWith('http') ? websiteUrl : `https://${websiteUrl}`); }
@@ -203,7 +204,7 @@ export async function crawlSite(websiteUrl: string): Promise<CrawlResult> {
   const software = new Set<string>();
   const host = (url: URL) => url.hostname.toLowerCase().replace(/^www\./, '');
   let contactPageFound = false;
-  while (queue.size && visited.size < MAX_PAGES) {
+  while (queue.size && visited.size < maxPages) {
     const [url, item] = [...queue.entries()].sort((a, b) => b[1].weight - a[1].weight)[0]!;
     queue.delete(url); visited.add(url);
     let permitted = false;
@@ -249,6 +250,6 @@ export async function crawlSite(websiteUrl: string): Promise<CrawlResult> {
   }
   result.detectedSoftware = [...software];
   result.contacts = [...new Map(result.contacts!.map((c) => [`${c.kind}:${c.value}`, c])).values()];
-  result.coverage = { visited: visited.size, discovered: visited.size + queue.size, limit: MAX_PAGES, truncated: queue.size > 0, contactPageFound };
+  result.coverage = { visited: visited.size, discovered: visited.size + queue.size, limit: maxPages, truncated: queue.size > 0, contactPageFound };
   return result;
 }
