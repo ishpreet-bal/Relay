@@ -2,7 +2,9 @@ import { Webhook } from 'svix';
 import { headers } from 'next/headers';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
+import { clerkClient } from '@clerk/nextjs/server';
 import { initialAssignment } from '@/server/services/team';
+import { mirrorOrganization } from '@/server/services/workspace-access';
 
 /**
  * Clerk is the source of truth for identity; Postgres mirrors it so that joins,
@@ -91,15 +93,12 @@ async function handle(event: { type: string; data: Record<string, any> }) {
 
     case 'organization.created':
     case 'organization.updated': {
-      await db.organization.upsert({
-        where: { clerkOrgId: d.id },
-        create: {
-          clerkOrgId: d.id, name: d.name, slug: d.slug ?? d.id,
-          brandName: d.name,
-          trialEndsAt: new Date(Date.now() + 14 * 864e5),
-        },
-        update: { name: d.name, slug: d.slug ?? d.id },
-      });
+      // Invite-only: a workspace nobody was allowed to create is recorded
+      // closed and removed from Clerk (see services/workspace-access).
+      await mirrorOrganization(
+        { id: d.id, name: d.name, slug: d.slug, created_by: d.created_by },
+        async (clerkOrgId) => (await clerkClient()).organizations.deleteOrganization(clerkOrgId),
+      );
       break;
     }
 
