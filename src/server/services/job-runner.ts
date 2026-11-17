@@ -50,6 +50,9 @@ export class JobTimeoutError extends Error {
 
 type Handler = (job: Job, ctx: RunContext) => Promise<unknown>;
 
+/** Time a contact job needs left on the clock before it reads a website itself. */
+const WEBSITE_READ_MIN_MS = 75_000;
+
 const payloadOf = <T>(job: Job) => (job.payload ?? {}) as T;
 
 function requireOrg(job: Job) {
@@ -69,7 +72,11 @@ const HANDLERS: Partial<Record<JobType, Handler>> = {
   },
   CALL_QUEUE_REFRESH: (job) => refreshQueue(requireOrg(job).organizationId, job.clientId),
   ACCOUNT_ENRICHMENT: (job) => enrichAccount(requireOrg(job), job.entityId!),
-  CONTACT_ENRICHMENT: (job) => payloadOf<{ resolve?: boolean }>(job).resolve ? resolveAccountContacts(requireOrg(job), job.entityId!, 3) : discoverContacts(requireOrg(job), job.entityId!, Number((job.payload as { limit?: number } | null)?.limit ?? 5)),
+  CONTACT_ENRICHMENT: (job, ctx) => payloadOf<{ resolve?: boolean }>(job).resolve
+    // Reading the site takes up to a minute at one polite request a second:
+    // only when this runner has the time (the worker does, a cron tick doesn't).
+    ? resolveAccountContacts(requireOrg(job), job.entityId!, 3, { readWebsite: ctx.deadline - Date.now() > WEBSITE_READ_MIN_MS })
+    : discoverContacts(requireOrg(job), job.entityId!, Number((job.payload as { limit?: number } | null)?.limit ?? 5)),
   RESEARCH: (job) => runResearch(requireOrg(job).organizationId, job.entityId!, { trigger: payloadOf<{ trigger?: Trigger }>(job).trigger ?? 'MANUAL' })
     .then((r) => ({ signals: r.signalsCreated, groundingRate: r.report.groundingRate })),
   SCREENING: (job) => screenAccounts(requireOrg(job).organizationId, payloadOf<{ accountIds?: string[] }>(job).accountIds ?? (job.entityId ? [job.entityId] : [])),

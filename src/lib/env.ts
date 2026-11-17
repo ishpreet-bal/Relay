@@ -48,6 +48,11 @@ const serverSchema = z.object({
   /** The client that receives website inquiries; defaults to the one internal client. */
   INQUIRY_CLIENT_ID: z.string().uuid().optional(),
 
+  /** Who may create a workspace. Invite-only unless set to "open"; the first workspace can always be created. */
+  SIGNUP_MODE: z.enum(['invite_only', 'open']).default('invite_only'),
+  /** Comma-separated emails allowed to create further workspaces while sign-up is invite-only. */
+  WORKSPACE_CREATOR_EMAILS: z.string().optional(),
+
   ENCRYPTION_KEY: z.string().length(44, 'must be a base64-encoded 32-byte key'),
   UNSUBSCRIBE_SIGNING_KEY: z.string().min(32),
   CRON_SECRET: z.string().min(16),

@@ -6,6 +6,7 @@ import { assertClientAccess, type AccessContext } from '@/server/access/scope';
 import { DomainError, NotFoundError } from '@/server/errors';
 import { isCapabilityAvailable } from '@/server/connectors/registry';
 import { enqueueJob, enqueueJobs } from '@/server/services/jobs';
+import { unavailableProviders } from '@/server/queues/throttle';
 import { logActivity } from '@/server/services/activity';
 import { rescoreAccount } from '@/server/services/scoring';
 import type { AccountScore } from '@/server/services/scoring/types';
@@ -178,6 +179,9 @@ export async function queueAnalysis(organizationId: string, accountId: string, t
   if (!account.websiteUrl) throw new DomainError('This account has no website to analyse.');
   if (!(await isCapabilityAvailable(organizationId, 'AI'))) throw new DomainError('No AI provider is connected. Set ANTHROPIC_API_KEY, then check it under Connectors.');
   if (!(await budgetOpen(organizationId, 'analysis'))) throw new DomainError("This month's AI analysis budget is used up.");
+  // While the AI provider is paused (out of credit, or failing), automatic
+  // work is not piled up behind it; a person can still queue an account.
+  if (trigger !== 'MANUAL' && (await unavailableProviders()).includes('anthropic')) throw new DomainError('The AI provider is paused; automatic analysis resumes when it recovers.');
   return enqueueJob({
     type: 'RESEARCH', organizationId, clientId: account.clientId, entityType: 'Account', entityId: accountId,
     payload: { trigger }, provider: 'anthropic', createdById: userId, priority: trigger === 'MANUAL' ? 10 : 0,

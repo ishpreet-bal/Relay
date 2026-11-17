@@ -17,10 +17,12 @@ import { logger } from '@/lib/logger';
  */
 
 export class ProviderUnavailableError extends Error {
-  constructor(public provider: string, public retryAt: Date, public reason: 'RATE_LIMIT' | 'CIRCUIT_OPEN') {
+  constructor(public provider: string, public retryAt: Date, public reason: 'RATE_LIMIT' | 'CIRCUIT_OPEN' | 'BILLING') {
     super(reason === 'RATE_LIMIT'
       ? `${provider}: request budget for this minute is used up; retrying at ${retryAt.toISOString()}`
-      : `${provider}: paused after repeated failures; retrying at ${retryAt.toISOString()}`);
+      : reason === 'BILLING'
+        ? `${provider}: the account's prepaid credit is used up; add credit, work resumes on its own (next check ${retryAt.toISOString()})`
+        : `${provider}: paused after repeated failures; retrying at ${retryAt.toISOString()}`);
     this.name = 'ProviderUnavailableError';
   }
 }

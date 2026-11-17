@@ -18,6 +18,8 @@ export const pipelineSettingsSchema = z.object({
   autoDeep: z.boolean(),
   maxAnalysesPerDay: z.number().int().min(0).max(10_000),
   maxDeepPerDay: z.number().int().min(0).max(1_000),
+  autoContacts: z.boolean(),
+  maxContactLookupsPerDay: z.number().int().min(0).max(5_000),
   refreshDaysHot: days,
   refreshDaysWarm: days,
   refreshDaysExploratory: days,

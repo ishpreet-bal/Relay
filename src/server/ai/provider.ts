@@ -78,6 +78,14 @@ const USAGE_TYPE: Record<CompletionRequest['kind'], UsageType> = {
 };
 
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 529]);
+const CREDIT_RECHECK_MS = 60 * 60_000;
+
+/** The API's answer when the organization's prepaid credit has run out (a 400, not a 402). */
+export function isCreditExhausted(err: unknown) {
+  const status = (err as { status?: number })?.status;
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  return (status === 400 || status === 402 || status === 403) && /credit balance is too low/i.test(message);
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -162,6 +170,17 @@ async function throttledAnthropic(req: CompletionRequest, model: string) {
     return result;
   } catch (err) {
     const status = (err as { status?: number })?.status;
+    if (isCreditExhausted(err)) {
+      // Not this request's fault and not fixable by retrying: pause the
+      // provider so queued work waits (keeping its attempts) instead of
+      // failing for good, and check again each hour until credit is added.
+      const retryAt = new Date(Date.now() + CREDIT_RECHECK_MS);
+      await reportProviderResult('anthropic', {
+        ok: false, retryAfter: retryAt,
+        error: 'Anthropic API credit is used up. Add credit in the Anthropic Console (Billing); queued work resumes on its own within the hour.',
+      });
+      throw new ProviderUnavailableError('anthropic', retryAt, 'BILLING');
+    }
     if (!status || RETRYABLE.has(status)) {
       await reportProviderResult('anthropic', {
         ok: false, error: err instanceof Error ? err.message : String(err),

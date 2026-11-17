@@ -2502,29 +2502,33 @@ model ResearchVersion {
 /// research funnel. Budgets are enforced in the backend; null means no
 /// category limit (the workspace AI budget still applies).
 model PipelineSettings {
-  organizationId         String   @id @db.Uuid
-  screeningThreshold     Int      @default(55)
-  deepThreshold          Int      @default(70)
-  autoScreen             Boolean  @default(true)
-  autoAnalyze            Boolean  @default(false)
-  autoDeep               Boolean  @default(false)
-  maxAnalysesPerDay      Int      @default(25)
-  maxDeepPerDay          Int      @default(5)
-  refreshDaysHot         Int      @default(14)
-  refreshDaysWarm        Int      @default(30)
-  refreshDaysExploratory Int      @default(60)
-  refreshDaysLow         Int      @default(120)
-  refreshDaysScreenedOut Int      @default(180)
-  globalBudgetCents      Int?
-  discoveryBudgetCents   Int?
-  analysisBudgetCents    Int?
-  deepBudgetCents        Int?
-  enrichmentBudgetCents  Int?
-  outreachBudgetCents    Int?
+  organizationId          String   @id @db.Uuid
+  screeningThreshold      Int      @default(55)
+  deepThreshold           Int      @default(70)
+  autoScreen              Boolean  @default(true)
+  autoAnalyze             Boolean  @default(false)
+  autoDeep                Boolean  @default(false)
+  maxAnalysesPerDay       Int      @default(25)
+  maxDeepPerDay           Int      @default(5)
+  /// Look up contact routes for qualified accounts without waiting for AI research.
+  autoContacts            Boolean  @default(true)
+  /// Automatic contact lookups started per day; the enrichment budget still applies to each paid call.
+  maxContactLookupsPerDay Int      @default(40)
+  refreshDaysHot          Int      @default(14)
+  refreshDaysWarm         Int      @default(30)
+  refreshDaysExploratory  Int      @default(60)
+  refreshDaysLow          Int      @default(120)
+  refreshDaysScreenedOut  Int      @default(180)
+  globalBudgetCents       Int?
+  discoveryBudgetCents    Int?
+  analysisBudgetCents     Int?
+  deepBudgetCents         Int?
+  enrichmentBudgetCents   Int?
+  outreachBudgetCents     Int?
   /// Unit-cost assumptions for forecasts (services/pipeline/forecast.ts).
-  costAssumptions        Json?
-  updatedById            String?  @db.Uuid
-  updatedAt              DateTime @updatedAt
+  costAssumptions         Json?
+  updatedById             String?  @db.Uuid
+  updatedAt               DateTime @updatedAt
 }
 
 /// Something an operator should know about: budget thresholds, stalled
