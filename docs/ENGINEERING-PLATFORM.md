@@ -39,7 +39,7 @@ and test code in isolation, and (d) a single approval inbox.
 | Contact enrichment depends on research | Confirmed: 0 `CONTACT_ENRICHMENT` jobs ever | **Fixed**: qualified accounts get a lookup on their own daily allowance; the job reads the site for published contacts itself |
 | Apollo, Hunter, ZeroBounce unused | Confirmed: 0 provider records. Cause was the dependency above, not the adapters | Unblocked by the fix. **Not yet verified live**: needs one real run after deploy; the Render worker must have the same provider keys as Vercel |
 | Anyone can create a workspace | Confirmed in code | **Fixed**: invite-only, enforced in the Clerk webhook |
-| Staff see every client | Confirmed: 88 queries scope by workspace only | **Open** (next increment; needs a careful pass over each query) |
+| Staff see every client | Confirmed: 88 queries scope by workspace only | **Fixed**: operators, analysts and callers can be limited to chosen clients; limited staff lose workspace-wide pages |
 | Stripe incomplete | Adapter, webhooks and tests exist; no keys in any environment | **Open**: needs the owner's Stripe test keys, then an end-to-end test |
 | Preview deployments fail | Database variables exist for Production only | **Open**: owner decision (separate preview database) |
 
@@ -123,10 +123,10 @@ enforces budgets, retries, and escalates to the approval inbox.
 
 ## 4. Implementation sequence
 
-1. **Phase 1 remainder**: per-client staff scope; Stripe end to end with test
-   keys; preview environment decision.
-2. **Orchestrator foundation**: the models in 3.2, stage machine with
-   evidence gates, approval inbox, command center page. No model calls.
+1. **Phase 1 remainder**: ~~per-client staff scope~~ (done); Stripe end to end
+   with test keys; preview environment decision. Both wait on the owner.
+2. ~~**Orchestrator foundation**~~ (done, 2026-11-17): the models in 3.2, stage
+   machine with evidence gates, approval inbox, command center page. No model calls.
 3. **Analyst, architect, estimator** on `complete()`, with fixtures and a
    scripted-model test suite. First real use: an internal Relay project.
 4. **Sandboxed developer and QA agents** behind a feature switch; GitHub App;
