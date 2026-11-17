@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { LayoutDashboard, Building2, Users, Layers, PhoneCall, CalendarCheck, BookOpen, BarChart3, Briefcase, ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow, Lightbulb, ClipboardList, Receipt, Columns3, Sparkles, Store, Inbox, Calculator } from 'lucide-react';
 import type { Role } from '@prisma/client';
 import { cn } from '@/lib/utils';
-import { can, ROLE_LABELS, type Permission } from '@/lib/rbac';
+import { can, ROLE_LABELS, WORKSPACE_WIDE, type Permission } from '@/lib/rbac';
 
 interface NavItem {
   href: string;
@@ -89,11 +89,11 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
   },
 ];
 
-export function Sidebar({ role, counts }: { role: Role; counts: NavCounts }) {
+export function Sidebar({ role, counts, limited = false }: { role: Role; counts: NavCounts; limited?: boolean }) {
   return (
     <nav aria-label="Main" className="hidden md:flex w-[220px] shrink-0 border-r border-hairline bg-surface flex-col">
       <Brand />
-      <NavList role={role} counts={counts} />
+      <NavList role={role} counts={counts} limited={limited} />
       <div className="p-3 border-t border-hairline">
         <p className="eyebrow mb-0.5">Signed in as</p>
         <p className="text-micro text-muted">{ROLE_LABELS[role]}</p>
@@ -103,7 +103,7 @@ export function Sidebar({ role, counts }: { role: Role; counts: NavCounts }) {
 }
 
 /** The same navigation in a drawer, for narrow screens. */
-export function MobileNav({ role, counts }: { role: Role; counts: NavCounts }) {
+export function MobileNav({ role, counts, limited = false }: { role: Role; counts: NavCounts; limited?: boolean }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   useEffect(() => setOpen(false), [pathname]);
@@ -119,7 +119,7 @@ export function MobileNav({ role, counts }: { role: Role; counts: NavCounts }) {
             <div className="flex items-center pr-2"><div className="flex-1"><Brand /></div>
               <button type="button" className="btn-ghost size-8 p-0" onClick={() => setOpen(false)} aria-label="Close navigation"><X className="size-4" /></button>
             </div>
-            <NavList role={role} counts={counts} />
+            <NavList role={role} counts={counts} limited={limited} />
           </nav>
         </div>
       )}
@@ -136,12 +136,13 @@ function Brand() {
   );
 }
 
-function NavList({ role, counts }: { role: Role; counts: NavCounts }) {
+function NavList({ role, counts, limited = false }: { role: Role; counts: NavCounts; limited?: boolean }) {
   const pathname = usePathname();
   return (
     <div className="flex-1 p-2 overflow-y-auto space-y-3">
       {GROUPS.map((group) => {
-        const items = group.items.filter((i) => can(role, i.permission));
+        // Staff limited to some clients don't see workspace-wide pages.
+        const items = group.items.filter((i) => can(role, i.permission) && !(limited && WORKSPACE_WIDE.has(i.permission)));
         if (!items.length) return null;
         return (
           <div key={group.label ?? 'main'}>

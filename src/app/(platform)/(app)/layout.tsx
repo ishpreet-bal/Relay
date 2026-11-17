@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { can } from '@/lib/rbac';
 import { PROSPECTING_CLIENT_KINDS } from '@/lib/domain';
 import { getActiveClientId } from '@/lib/page-auth';
-import { accessFrom, clientFilter } from '@/server/access/scope';
+import { accessFrom, clientFilter, clientRowFilter, isLimitedStaff } from '@/server/access/scope';
 import { Sidebar, MobileNav } from '@/components/shell/sidebar';
 import { ActiveClientProvider } from '@/components/shell/active-client';
 import { WelcomeGuide } from '@/components/onboarding/welcome-guide';
@@ -25,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const [clients, review, calls, duplicates, inquiries] = await Promise.all([
     db.client.findMany({
-      where: { organizationId: session.organizationId, archivedAt: null, kind: { in: PROSPECTING_CLIENT_KINDS } },
+      where: { ...clientRowFilter(access), archivedAt: null, kind: { in: PROSPECTING_CLIENT_KINDS } },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, status: true },
     }),
@@ -53,9 +53,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <WorkspaceRoleProvider value={session.role}>
       <WelcomeGuide role={session.role} organizationId={session.organizationId} userId={session.userId} />
       <div className="flex h-screen overflow-hidden">
-        <Sidebar role={session.role} counts={counts} />
+        <Sidebar role={session.role} counts={counts} limited={isLimitedStaff(access)} />
         <div className="flex-1 flex flex-col min-w-0">{children}</div>
-        <MobileNav role={session.role} counts={counts} />
+        <MobileNav role={session.role} counts={counts} limited={isLimitedStaff(access)} />
       </div>
       </WorkspaceRoleProvider>
     </ActiveClientProvider>

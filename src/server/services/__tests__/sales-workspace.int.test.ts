@@ -12,7 +12,7 @@ describe.skipIf(!reachable)('sales workspace boundaries (Postgres)', () => {
   const orgId = randomUUID();
   let clientId: string, otherClientId: string, accountId: string, contactId: string;
   const access = systemAccess(orgId);
-  const session: Session = { userId: randomUUID(), clerkUserId: 'synthetic-sales-user', organizationId: orgId, organizationSlug: 'synthetic-sales', role: 'OPERATOR', clientId: null, isInternal: true, email: 'sales@synthetic.test', name: 'Synthetic Sales' };
+  const session: Session = { userId: randomUUID(), clerkUserId: 'synthetic-sales-user', organizationId: orgId, organizationSlug: 'synthetic-sales', role: 'OPERATOR', clientId: null, clientIds: [], isInternal: true, email: 'sales@synthetic.test', name: 'Synthetic Sales' };
   const caller = () => appRouter.createCaller({ db, headers: new Headers(), session });
   beforeAll(async () => {
     await db.organization.create({ data: { id: orgId, clerkOrgId: `sales-${orgId}`, name: 'Synthetic Sales', slug: `sales-${orgId}` } });

@@ -1,3 +1,4 @@
+import { viaAccount } from '@/server/access/scope';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { router, permissionProcedure } from '../init';
@@ -10,7 +11,7 @@ import { env } from '@/lib/env';
 export const proposalsRouter = router({
   list: permissionProcedure('proposal:read').query(({ ctx }) =>
     ctx.db.proposal.findMany({
-      where: { organizationId: ctx.access.organizationId },
+      where: { organizationId: ctx.access.organizationId, ...viaAccount(ctx.access) },
       orderBy: { createdAt: 'desc' },
       take: 100,
       include: { account: { select: { id: true, name: true } } },
@@ -21,7 +22,7 @@ export const proposalsRouter = router({
     .input(z.object({ accountId: z.string().uuid() }))
     .query(({ ctx, input }) =>
       ctx.db.proposal.findMany({
-        where: { accountId: input.accountId, organizationId: ctx.access.organizationId },
+        where: { accountId: input.accountId, organizationId: ctx.access.organizationId, ...viaAccount(ctx.access) },
         orderBy: { createdAt: 'desc' },
       }),
     ),
@@ -62,7 +63,7 @@ export const proposalsRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const proposal = await ctx.db.proposal.findFirst({
-        where: { id: input.id, organizationId: ctx.access.organizationId },
+        where: { id: input.id, organizationId: ctx.access.organizationId, ...viaAccount(ctx.access) },
       });
       if (!proposal) throw new TRPCError({ code: 'NOT_FOUND' });
       if (proposal.opportunityId && !proposal.approvedAt) {
@@ -86,7 +87,7 @@ export const proposalsRouter = router({
 
   sites: permissionProcedure('portfolio:read').query(({ ctx }) =>
     ctx.db.portfolioSite.findMany({
-      where: { organizationId: ctx.access.organizationId },
+      where: { organizationId: ctx.access.organizationId, ...viaAccount(ctx.access) },
       orderBy: { createdAt: 'desc' },
       include: { account: { select: { id: true, name: true } } },
     }),
@@ -125,7 +126,7 @@ export const proposalsRouter = router({
     .input(z.object({ id: z.string().uuid(), publish: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const owned = await ctx.db.portfolioSite.count({
-        where: { id: input.id, organizationId: ctx.access.organizationId },
+        where: { id: input.id, organizationId: ctx.access.organizationId, ...viaAccount(ctx.access) },
       });
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND' });
 
@@ -149,7 +150,7 @@ export const proposalsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const owned = await ctx.db.portfolioSite.count({
-        where: { id, organizationId: ctx.access.organizationId },
+        where: { id, organizationId: ctx.access.organizationId, ...viaAccount(ctx.access) },
       });
       if (!owned) throw new TRPCError({ code: 'NOT_FOUND' });
       return ctx.db.portfolioSite.update({ where: { id }, data });

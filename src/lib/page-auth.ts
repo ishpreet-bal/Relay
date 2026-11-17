@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { db } from './db';
 import { getSession, type Session } from './auth';
-import { can, type Permission } from './rbac';
+import type { Permission } from './rbac';
+import { accessCan, accessFrom } from '@/server/access/scope';
 
 /** Where each kind of user lands. */
 export function homeFor(session: Pick<Session, 'isInternal' | 'role'>) {
@@ -18,7 +19,7 @@ export function homeFor(session: Pick<Session, 'isInternal' | 'role'>) {
 export async function pageSession(permission: Permission): Promise<Session> {
   const session = await getSession();
   if (!session) redirect('/sign-in');
-  if (!can(session.role, permission)) redirect(homeFor(session));
+  if (!accessCan(accessFrom(session), permission)) redirect(homeFor(session));
   return session;
 }
 
@@ -33,6 +34,8 @@ export async function getActiveClientId(session: Session): Promise<string | null
   if (!session.isInternal) return session.clientId;
   const value = (await cookies()).get(ACTIVE_CLIENT_COOKIE)?.value;
   if (!value || !/^[0-9a-f-]{36}$/i.test(value)) return null;
+  // Staff limited to some clients can only select one of theirs.
+  if (session.clientIds.length && !session.clientIds.includes(value)) return null;
   const exists = await db.client.count({ where: { id: value, organizationId: session.organizationId, archivedAt: null } });
   return exists ? value : null;
 }
@@ -46,6 +49,7 @@ export async function getActiveClientId(session: Session): Promise<string | null
 export async function portalTarget(session: Session, requested: string | undefined): Promise<{ clientId: string | null; viewAs: boolean }> {
   if (!session.isInternal) return { clientId: session.clientId, viewAs: false };
   if (!requested || !/^[0-9a-f-]{36}$/i.test(requested)) return { clientId: null, viewAs: true };
+  if (session.clientIds.length && !session.clientIds.includes(requested)) return { clientId: null, viewAs: true };
   const exists = await db.client.count({ where: { id: requested, organizationId: session.organizationId, archivedAt: null } });
   return { clientId: exists ? requested : null, viewAs: true };
 }

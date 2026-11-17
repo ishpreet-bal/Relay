@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { getSession, type Session } from '@/lib/auth';
 import { can, ForbiddenError, type Permission } from '@/lib/rbac';
 import { db } from '@/lib/db';
-import { accessFrom, type AccessContext } from '@/server/access/scope';
+import { accessCan, accessFrom, type AccessContext } from '@/server/access/scope';
 import { DomainError, NotConfiguredError, NotFoundError } from '@/server/errors';
 import { BudgetExceededError } from '@/server/ai/budget';
 import { logger } from '@/lib/logger';
@@ -82,8 +82,8 @@ export const protectedProcedure = publicProcedure.use(enforceSession);
  */
 export function permissionProcedure(permission: Permission) {
   return protectedProcedure.use(({ ctx, next }) => {
-    if (!can(ctx.session.role, permission)) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: `Requires ${permission}` });
+    if (!accessCan(ctx.access, permission)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: can(ctx.session.role, permission) ? `Limited to some clients: ${permission} is for staff who work across the workspace` : `Requires ${permission}` });
     }
     return next({ ctx });
   });

@@ -1,3 +1,5 @@
+import { isLimitedStaff } from '@/server/access/scope';
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { router, permissionProcedure } from '../init';
 import { funnel, meetingsTrend, windowFromDays } from '@/server/services/analytics/funnel';
@@ -52,7 +54,11 @@ export const analyticsRouter = router({
   // Personalization-tier comparison and its automatic guardrail.
   tierComparison: permissionProcedure('message:read')
     .input(z.object({ windowDays: z.number().min(7).max(365).default(90) }).default({ windowDays: 90 }))
-    .query(({ ctx, input }) => compareTiers(ctx.access.organizationId, input.windowDays)),
+    .query(({ ctx, input }) => {
+      // A workspace-wide comparison; staff limited to some clients don't see other clients' results.
+      if (isLimitedStaff(ctx.access)) throw new TRPCError({ code: 'FORBIDDEN', message: 'Tier comparison covers every client.' });
+      return compareTiers(ctx.access.organizationId, input.windowDays);
+    }),
 
   contextualSetting: permissionProcedure('settings:read').query(({ ctx }) =>
     ctx.db.organization.findUniqueOrThrow({

@@ -107,10 +107,10 @@ async function handle(event: { type: string; data: Record<string, any> }) {
       const org = await db.organization.findUnique({ where: { clerkOrgId: d.organization.id } });
       const user = await db.user.findUnique({ where: { clerkUserId: d.public_user_data.user_id } });
       if (!org || !user) throw new Error('Membership arrived before org or user');
-      const { role, clientId } = await initialAssignment(org.id, d.role, d.public_metadata);
+      const { role, clientId, clientIds } = await initialAssignment(org.id, d.role, d.public_metadata);
       await db.membership.upsert({
         where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
-        create: { organizationId: org.id, userId: user.id, role, clientId },
+        create: { organizationId: org.id, userId: user.id, role, clientId, clientIds },
         // Roles are managed in Relay after the membership exists. A Clerk
         // role change must never silently promote or demote someone.
         update: {},

@@ -1,5 +1,5 @@
 import type { Role } from '@prisma/client';
-import { isInternalRole } from '@/lib/rbac';
+import { can, isInternalRole, SCOPABLE_ROLES, WORKSPACE_WIDE, type Permission } from '@/lib/rbac';
 import { NotFoundError } from '@/server/errors';
 
 /**
@@ -29,15 +29,48 @@ export function accessFrom(session: {
   userId: string;
   role: Role;
   clientId: string | null;
+  /** Clients a scopable staff member is limited to; empty or absent means all. */
+  clientIds?: readonly string[];
 }): AccessContext {
+  const limited = SCOPABLE_ROLES.includes(session.role) && (session.clientIds?.length ?? 0) > 0;
   return {
     organizationId: session.organizationId,
     userId: session.userId,
     role: session.role,
-    clients: isInternalRole(session.role)
-      ? { kind: 'all' }
-      : { kind: 'clients', ids: session.clientId ? [session.clientId] : [] },
+    clients: !isInternalRole(session.role)
+      ? { kind: 'clients', ids: session.clientId ? [session.clientId] : [] }
+      : limited ? { kind: 'clients', ids: [...new Set(session.clientIds)] } : { kind: 'all' },
   };
+}
+
+/** True for staff limited to some clients. */
+export function isLimitedStaff(access: AccessContext): boolean {
+  return isInternalRole(access.role) && access.clients.kind === 'clients';
+}
+
+/**
+ * The permission check that also knows about client limits: staff limited to
+ * some clients never get workspace-wide powers, whatever their role.
+ */
+export function accessCan(access: AccessContext, permission: Permission): boolean {
+  if (!can(access.role, permission)) return false;
+  return !(isLimitedStaff(access) && WORKSPACE_WIDE.has(permission));
+}
+
+/**
+ * Where-fragment for rows that belong to a client only through their account
+ * (legacy proposals and demo sites). Staff limited to some clients see rows
+ * whose account is one of theirs, never rows without an account.
+ */
+export function viaAccount(access: AccessContext): { account?: { clientId: { in: string[] } } } {
+  if (access.clients.kind === 'all') return {};
+  return { account: { clientId: { in: [...access.clients.ids] } } };
+}
+
+/** Where-fragment for the Client table itself (its own id, not a clientId column). */
+export function clientRowFilter(access: AccessContext): { organizationId: string; id?: { in: string[] } } {
+  if (access.clients.kind === 'all') return { organizationId: access.organizationId };
+  return { organizationId: access.organizationId, id: { in: [...access.clients.ids] } };
 }
 
 /** A worker or webhook acting on behalf of one workspace. */

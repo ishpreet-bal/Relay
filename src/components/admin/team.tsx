@@ -6,7 +6,7 @@ import type { Role } from '@prisma/client';
 import { trpc } from '@/lib/trpc/client';
 import type { RouterOutputs } from '@/lib/trpc/types';
 import { useActiveClient } from '@/components/shell/active-client';
-import { CLIENT_ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS } from '@/lib/rbac';
+import { CLIENT_ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS, SCOPABLE_ROLES } from '@/lib/rbac';
 import { Topbar } from '@/components/shell/topbar';
 import { PageBody, Section } from '@/components/ui/page';
 import { Field } from '@/components/ui/field';
@@ -52,14 +52,43 @@ export function TeamPage({ currentUserId }: { currentUserId: string }) {
   );
 }
 
+const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x) => b.includes(x));
+
+/**
+ * Which clients an operator, analyst or caller works on. Nothing ticked means
+ * every client. Limited staff also lose workspace-wide pages (queues,
+ * connectors, settings, team, billing).
+ */
+function ClientScope({ value, onChange, disabled }: { value: string[]; onChange: (ids: string[]) => void; disabled?: boolean }) {
+  const { clients } = useActiveClient();
+  const label = value.length === 0 ? 'All clients' : value.length === 1 ? (clients.find((c) => c.id === value[0])?.name ?? '1 client') : `${value.length} clients`;
+  return (
+    <details className="relative">
+      <summary className={`input h-8 w-44 text-micro flex items-center cursor-pointer list-none ${disabled ? 'pointer-events-none opacity-60' : ''}`} aria-label="Clients this person works on">{label}</summary>
+      <div className="absolute right-0 z-20 mt-1 w-64 card p-2 shadow-pop max-h-72 overflow-y-auto">
+        <p className="px-1 pb-2 text-[11px] text-muted">Tick the clients they work on. None ticked means all clients.</p>
+        {clients.map((c) => (
+          <label key={c.id} className="flex items-center gap-2 rounded px-1 py-1 text-micro hover:bg-hairline/40">
+            <input type="checkbox" checked={value.includes(c.id)} onChange={(e) => onChange(e.target.checked ? [...value, c.id] : value.filter((v) => v !== c.id))} />
+            <span className="truncate">{c.name}</span>
+          </label>
+        ))}
+        {value.length > 0 && <button type="button" className="btn-ghost h-7 w-full text-micro mt-1" onClick={() => onChange([])}>All clients</button>}
+      </div>
+    </details>
+  );
+}
+
 function MemberRow({ m, self }: { m: Member; self: boolean }) {
   const { clients } = useActiveClient();
   const [role, setRole] = useState<Role>(m.role);
   const [clientId, setClientId] = useState(m.client?.id ?? '');
+  const [clientIds, setClientIds] = useState<string[]>(m.clientIds);
   const utils = trpc.useUtils();
   const update = trpc.team.update.useMutation({ onSuccess: () => utils.team.members.invalidate() });
   const isClientRole = CLIENT_ROLES.includes(role);
-  const dirty = role !== m.role || (isClientRole && clientId !== (m.client?.id ?? ''));
+  const scopable = SCOPABLE_ROLES.includes(role);
+  const dirty = role !== m.role || (isClientRole && clientId !== (m.client?.id ?? '')) || (scopable && !sameSet(clientIds, m.clientIds));
 
   return (
     <li className="p-3 flex flex-col sm:flex-row sm:items-center gap-2">
@@ -76,9 +105,10 @@ function MemberRow({ m, self }: { m: Member; self: boolean }) {
           {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       )}
+      {scopable && <ClientScope value={clientIds} onChange={setClientIds} disabled={self} />}
       {dirty && (
         <button type="button" className="btn-primary h-8 text-micro" disabled={update.isPending}
-                onClick={() => update.mutate({ membershipId: m.id, role, clientId: isClientRole ? clientId || null : null })}>Save</button>
+                onClick={() => update.mutate({ membershipId: m.id, role, clientId: isClientRole ? clientId || null : null, clientIds: scopable ? clientIds : [] })}>Save</button>
       )}
       <ErrorNote error={update.error} className="sm:basis-full" />
     </li>
@@ -90,14 +120,16 @@ function Invite() {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('CALLER');
   const [clientId, setClientId] = useState('');
-  const invite = trpc.team.invite.useMutation({ onSuccess: () => setEmail('') });
+  const [clientIds, setClientIds] = useState<string[]>([]);
+  const invite = trpc.team.invite.useMutation({ onSuccess: () => { setEmail(''); setClientIds([]); } });
   const isClientRole = CLIENT_ROLES.includes(role);
+  const scopable = SCOPABLE_ROLES.includes(role);
 
   return (
     <Section title="Invite someone">
       <form className="card p-4 flex flex-wrap items-end gap-3" onSubmit={(e) => {
         e.preventDefault();
-        invite.mutate({ email, role, clientId: isClientRole ? clientId || null : null });
+        invite.mutate({ email, role, clientId: isClientRole ? clientId || null : null, clientIds: scopable ? clientIds : [] });
       }}>
         <Field label="Email" className="flex-1 min-w-[200px]">{(id) => <input id={id} type="email" required className="input" value={email} onChange={(e) => setEmail(e.target.value)} />}</Field>
         <Field label="Role">
@@ -117,6 +149,7 @@ function Invite() {
             )}
           </Field>
         )}
+        {scopable && <Field label="Works on">{() => <ClientScope value={clientIds} onChange={setClientIds} />}</Field>}
         <button type="submit" className="btn-primary" disabled={invite.isPending}><UserPlus className="size-3.5" /> {invite.isPending ? 'Sending…' : 'Send invite'}</button>
         {invite.data && <p className="basis-full text-[12px] text-cleared">Invitation sent to {invite.data.email}. Their role applies when they accept.</p>}
         <ErrorNote error={invite.error} className="basis-full" />

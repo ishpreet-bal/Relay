@@ -1,3 +1,4 @@
+import { accessFrom, viaAccount } from '@/server/access/scope';
 import { requirePermission } from '@/lib/auth';
 import { renderProposalPdf } from '@/server/pdf/render';
 import { db } from '@/lib/db';
@@ -7,7 +8,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const session = await requirePermission('proposal:read');
 
   const proposal = await db.proposal.findFirst({
-    where: { id, organizationId: session.organizationId },
+    where: { id, organizationId: session.organizationId, ...viaAccount(accessFrom(session)) },
     select: { number: true },
   });
   if (!proposal) return new Response('Not found', { status: 404 });

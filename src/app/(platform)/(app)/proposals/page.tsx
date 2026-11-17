@@ -1,3 +1,4 @@
+import { accessFrom, viaAccount } from '@/server/access/scope';
 import Link from 'next/link';
 import { pageSession } from '@/lib/page-auth';
 import { db } from '@/lib/db';
@@ -15,7 +16,7 @@ export default async function ProposalsPage() {
   const session = await pageSession('proposal:read');
 
   const proposals = await db.proposal.findMany({
-    where: { organizationId: session.organizationId },
+    where: { organizationId: session.organizationId, ...viaAccount(accessFrom(session)) },
     orderBy: { createdAt: 'desc' },
     take: 100,
     include: { account: { select: { id: true, name: true } } },

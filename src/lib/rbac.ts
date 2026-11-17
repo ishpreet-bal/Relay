@@ -94,6 +94,18 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
 export const INTERNAL_ROLES: readonly Role[] = ['SUPER_ADMIN', 'RELAY_ADMIN', 'OPERATOR', 'ANALYST', 'CALLER'];
 export const CLIENT_ROLES: readonly Role[] = ['CLIENT_ADMIN', 'CLIENT_MEMBER'];
 
+/** Staff roles an owner can limit to chosen clients. Admins always work across all of them. */
+export const SCOPABLE_ROLES: readonly Role[] = ['OPERATOR', 'ANALYST', 'CALLER'];
+
+/**
+ * Permissions that act on the whole workspace rather than on one client's
+ * records (queues, connectors, settings, team, billing, audit). Staff
+ * limited to some clients do not get them, whatever their role.
+ */
+export const WORKSPACE_WIDE: ReadonlySet<Permission> = new Set<Permission>([
+  'ops:read', 'connector:manage', 'settings:read', 'settings:write', 'member:manage', 'billing:manage', 'audit:read', 'client:manage',
+]);
+
 export function isInternalRole(role: Role): boolean {
   return INTERNAL_ROLES.includes(role);
 }
@@ -111,9 +123,9 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   SUPER_ADMIN: 'Everything, including billing and the team.',
   RELAY_ADMIN: 'Runs operations across every client.',
-  OPERATOR: 'Runs campaigns: approves and sends, manages prospects.',
-  ANALYST: 'Research, enrichment and drafting. Cannot send.',
-  CALLER: 'Call queue, call outcomes and meeting booking.',
+  OPERATOR: 'Runs campaigns: approves and sends, manages prospects. Can be limited to chosen clients.',
+  ANALYST: 'Research, enrichment and drafting. Cannot send. Can be limited to chosen clients.',
+  CALLER: 'Call queue, call outcomes and meeting booking. Can be limited to chosen clients.',
   CLIENT_ADMIN: 'Client portal, plus their business profile, offers and ICPs.',
   CLIENT_MEMBER: 'Client portal, read only.',
 };

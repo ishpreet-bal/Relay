@@ -173,6 +173,9 @@ model Membership {
   role           Role     @default(CLIENT_MEMBER)
   /// Required for CLIENT_* roles; a client user without one has no access.
   clientId       String?  @db.Uuid
+  /// Operators, analysts and callers limited to these clients. Empty means
+  /// every client. Owners and admins always see every client.
+  clientIds      String[] @default([]) @db.Uuid
   createdAt      DateTime @default(now())
   updatedAt      DateTime @default(now()) @updatedAt
 

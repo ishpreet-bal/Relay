@@ -17,7 +17,7 @@ export const teamRouter = router({
     .input(inviteSchema)
     .mutation(async ({ ctx, input }) => {
       const invitation = await inviteMember(ctx.access, ctx.session.clerkUserId, input);
-      await recordAudit({ session: ctx.session, action: 'member.invite', entityType: 'Membership', after: { email: input.email, role: input.role, clientId: input.clientId ?? null } });
+      await recordAudit({ session: ctx.session, action: 'member.invite', entityType: 'Membership', after: { email: input.email, role: input.role, clientId: input.clientId ?? null, clientIds: invitation.clientIds } });
       return invitation;
     }),
 });
