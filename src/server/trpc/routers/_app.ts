@@ -8,6 +8,7 @@ import { discoveryRouter } from './discovery';
 import { pipelineRouter } from './pipeline';
 import { studioRouter } from './studio';
 import { deliveryRouter } from './delivery';
+import { engineeringRouter } from './engineering';
 import { callLeadsRouter } from './call-leads';
 import { inquiriesRouter } from './inquiries';
 import { servicePackagesRouter } from './service-packages';
@@ -38,6 +39,7 @@ export const appRouter = router({
   pipeline: pipelineRouter,
   studio: studioRouter,
   delivery: deliveryRouter,
+  engineering: engineeringRouter,
   callLeads: callLeadsRouter,
   inquiries: inquiriesRouter,
   servicePackages: servicePackagesRouter,

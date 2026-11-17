@@ -3143,3 +3143,177 @@ model CustomerInvoice {
   @@index([organizationId, issuedAt])
   @@index([clientId, issuedAt])
 }
+
+// ---------------------------------------------------------------------------
+// Engineering platform: projects run through gated stages by agents and people
+// (docs/ENGINEERING-PLATFORM.md). Additive; relations to existing models are
+// plain ids so nothing existing changes shape.
+// ---------------------------------------------------------------------------
+
+/// One piece of custom software or automation being delivered for a client.
+/// Moves through fixed stages; each move needs recorded evidence.
+model EngineeringProject {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  clientId          String   @db.Uuid
+  /// The delivery project it implements (estimates, time, billing), when there is one.
+  deliveryProjectId String?  @unique @db.Uuid
+  opportunityId     String?  @db.Uuid
+  name              String
+  /// The business problem in the customer's words.
+  problem           String   @db.Text
+  /// See STAGES in services/engineering/stages.ts.
+  stage             String   @default("INTAKE")
+  /// ACTIVE, PAUSED, BLOCKED, DONE or CANCELLED.
+  status            String   @default("ACTIVE")
+  blockedReason     String?
+  /// Repository the work lands in, e.g. "acme/invoice-automation". Never Relay's own.
+  repository        String?
+  /// Most this project may spend on models and agent sandboxes, in cents.
+  budgetCents       Int      @default(5000)
+  createdById       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  stageRuns ProjectStageRun[]
+  tasks     EngineeringTask[]
+  artifacts ProjectArtifact[]
+  agentRuns AgentRun[]
+  approvals Approval[]
+
+  @@index([organizationId, status])
+  @@index([clientId])
+}
+
+/// Entering and leaving a stage, with the evidence that let it leave.
+model ProjectStageRun {
+  id          String    @id @default(uuid()) @db.Uuid
+  projectId   String    @db.Uuid
+  stage       String
+  enteredAt   DateTime  @default(now())
+  completedAt DateTime?
+  /// What satisfied the gate: artifact, approval, task and run ids, checked at the time.
+  evidence    Json?
+  /// "user:<id>" or "orchestrator".
+  completedBy String?
+
+  project EngineeringProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, enteredAt])
+}
+
+/// A unit of work for one agent role (or a person), with its own branch.
+model EngineeringTask {
+  id                 String   @id @default(uuid()) @db.Uuid
+  projectId          String   @db.Uuid
+  title              String
+  description        String   @db.Text
+  /// Agent role key (services/engineering/agents.ts) or "human".
+  role               String
+  acceptanceCriteria String[] @default([])
+  dependsOn          String[] @default([]) @db.Uuid
+  /// Git branch the work goes on; one per task so agents never share a branch.
+  branch             String?
+  /// PENDING, READY, RUNNING, REVIEW, DONE, FAILED or CANCELLED.
+  status             String   @default("PENDING")
+  attempts           Int      @default(0)
+  maxAttempts        Int      @default(3)
+  /// Proof the work exists: pull request URL, commit, test run id.
+  evidence           Json?
+  /// Who checked it: a run of a different role, or a person. Required for DONE.
+  verifiedBy         String?
+  error              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  project   EngineeringProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agentRuns AgentRun[]
+
+  @@index([projectId, status])
+}
+
+/// One execution of an agent: model, tokens, cost, outcome.
+model AgentRun {
+  id             String    @id @default(uuid()) @db.Uuid
+  projectId      String    @db.Uuid
+  taskId         String?   @db.Uuid
+  role           String
+  model          String
+  /// QUEUED, RUNNING, SUCCEEDED, FAILED or CANCELLED.
+  status         String    @default("QUEUED")
+  tokensIn       Int       @default(0)
+  tokensOut      Int       @default(0)
+  costMillicents Int       @default(0)
+  /// Short account of what it did; full transcripts live with the runtime.
+  summary        String?   @db.Text
+  error          String?
+  /// External session id (sandboxed runtimes), for audit.
+  externalRef    String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  project EngineeringProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    EngineeringTask?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([status])
+}
+
+/// A versioned project document: requirements, architecture, estimate, test
+/// and security reports, deployment record, handover.
+model ProjectArtifact {
+  id           String    @id @default(uuid()) @db.Uuid
+  projectId    String    @db.Uuid
+  /// REQUIREMENTS, ANALYSIS, ARCHITECTURE, ESTIMATE, TEST_REPORT, SECURITY_REPORT, DEPLOYMENT, HANDOVER.
+  kind         String
+  version      Int       @default(1)
+  title        String
+  content      String    @db.Text
+  /// Structured fields a gate checks (e.g. { passed: true }, { openHigh: 0 }).
+  data         Json?
+  contentHash  String
+  /// DRAFT until a person accepts it; agents cannot accept their own work.
+  status       String    @default("DRAFT")
+  /// "agent:<runId>" or "user:<id>".
+  createdBy    String
+  acceptedById String?   @db.Uuid
+  acceptedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  project EngineeringProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, version])
+  @@index([projectId, kind])
+}
+
+/// A consequential action prepared by an agent or a person, waiting for
+/// someone with the right permission to decide. Nothing executes without it.
+model Approval {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  clientId       String?   @db.Uuid
+  projectId      String?   @db.Uuid
+  /// SCOPE, ACCEPTANCE, PRODUCTION_DEPLOY, PRODUCTION_DATA, CUSTOMER_EMAIL,
+  /// CUSTOMER_SYSTEM_ACCESS, PURCHASE, DNS_CHANGE, CHARGE, IRREVERSIBLE.
+  kind           String
+  title          String
+  /// What will happen, in plain words.
+  summary        String    @db.Text
+  /// The prepared action, exactly as it would run.
+  payload        Json?
+  /// PENDING, APPROVED, REJECTED, EXPIRED or CANCELLED.
+  status         String    @default("PENDING")
+  /// "agent:<runId>" or "user:<id>".
+  requestedBy    String
+  decidedById    String?   @db.Uuid
+  decidedAt      DateTime?
+  decisionNote   String?
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  project EngineeringProject? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([projectId])
+}

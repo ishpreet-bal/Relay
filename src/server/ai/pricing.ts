@@ -76,6 +76,15 @@ export const MODELS = {
   assistant: 'claude-sonnet-5',
   /** Cheap, high-volume classification and extraction. */
   classify: 'claude-haiku-4-5-20251001',
+  /**
+   * Engineering agents (services/engineering/agents.ts). Reviewers use a
+   * different model from developers, so a check is never the author marking
+   * its own work.
+   */
+  analyst: 'claude-opus-5-5',
+  architect: 'claude-opus-5-5',
+  developer: 'claude-sonnet-5-5',
+  reviewer: 'claude-opus-5-5',
   /** Fallback provider equivalents. */
   fallbackResearch: 'gpt-4o',
   fallbackClassify: 'gpt-4o-mini',

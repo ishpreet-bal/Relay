@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Building2, Users, Layers, PhoneCall, CalendarCheck, BookOpen, BarChart3, Briefcase, ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow, Lightbulb, ClipboardList, Receipt, Columns3, Sparkles, Store, Inbox, Calculator } from 'lucide-react';
+import { Cpu, LayoutDashboard, Building2, Users, Layers, PhoneCall, CalendarCheck, BookOpen, BarChart3, Briefcase, ShieldCheck, Plug, Activity, UsersRound, ShieldBan, Settings, Microscope, FileText, Globe, LayoutTemplate, Menu, X, CopyCheck, Radar, Filter, AppWindow, Lightbulb, ClipboardList, Receipt, Columns3, Sparkles, Store, Inbox, Calculator } from 'lucide-react';
 import type { Role } from '@prisma/client';
 import { cn } from '@/lib/utils';
 import { can, ROLE_LABELS, WORKSPACE_WIDE, type Permission } from '@/lib/rbac';
@@ -30,6 +30,7 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
       { href: '/call-history', label: 'Call history', icon: PhoneCall, permission: 'call:read' },
       { href: '/email-history', label: 'Email history', icon: Inbox, permission: 'message:read' },
       { href: '/meetings', label: 'Meetings', icon: CalendarCheck, permission: 'meeting:read' },
+      { href: '/approvals', label: 'Approvals', icon: ShieldCheck, permission: 'account:read' },
       { href: '/inquiries', label: 'Website inquiries', icon: Inbox, permission: 'account:read', badge: 'inquiries' },
       { href: '/assistant', label: 'Ask Relay', icon: Sparkles, permission: 'account:read' },
     ],
@@ -55,6 +56,7 @@ const GROUPS: Array<{ label: string | null; items: NavItem[] }> = [
     label: 'Relay Studio',
     items: [
       { href: '/opportunities', label: 'Opportunities', icon: Lightbulb, permission: 'account:read' },
+      { href: '/engineering', label: 'Engineering', icon: Cpu, permission: 'studio:read' },
       { href: '/studio', label: 'Applications', icon: AppWindow, permission: 'studio:read' },
       { href: '/projects', label: 'Projects', icon: ClipboardList, permission: 'proposal:read' },
       { href: '/billing', label: 'Billing', icon: Receipt, permission: 'billing:manage' },

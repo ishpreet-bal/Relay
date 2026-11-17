@@ -10,6 +10,7 @@ import { enqueueDueRefresh } from './pipeline/refresh';
 import { runDueSchedules } from '@/server/studio/applications';
 import { runBillingCycle } from './customer-billing/subscriptions';
 import { checkPlatformHealth } from './monitoring';
+import { orchestrateProjects } from './engineering/orchestrator';
 
 /**
  * Housekeeping on a clock: start due discovery runs, release jobs whose
@@ -42,7 +43,9 @@ export async function scheduledMaintenance(now = new Date()) {
   const schedules = await runDueSchedules(now).catch((err) => { logger.error('scheduler.studio_failed', { error: err }); return { started: 0 }; });
   // Customer billing: close ended periods (metered usage, ledger invoices, Stripe overage).
   const billing = await runBillingCycle(now).catch((err) => { logger.error('scheduler.billing_failed', { error: err }); return { subscriptions: 0, periods: 0 }; });
+  // Engineering: advance projects whose gates are met, release ready tasks, stop work over budget.
+  const engineering = await orchestrateProjects(now).catch((err) => { logger.error('scheduler.engineering_failed', { error: err }); return { advanced: 0 }; });
   // Health: raise or clear alerts for stuck queues, paused providers, dead letters, failed webhooks, failing apps.
   const health = await checkPlatformHealth(now).catch((err) => { logger.error('scheduler.health_failed', { error: err }); return { findings: [] as string[] }; });
-  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, backlogAnalyses, contactJobs, workflowsStarted: schedules.started, billingPeriodsClosed: billing.periods, healthFindings: health.findings.length };
+  return { releasedJobs: released.count, discovery, backfill, retention, screeningJobs, refreshJobs, backlogAnalyses, contactJobs, workflowsStarted: schedules.started, billingPeriodsClosed: billing.periods, engineeringAdvanced: engineering.advanced, healthFindings: health.findings.length };
 }
