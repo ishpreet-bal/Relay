@@ -2095,3 +2095,53 @@ zod                            3.25.76  3.25.76    4.6.7  node_modules/zod      
 
 ### 2026-11-18 — typecheck/test status: pass
 
+### 2026-11-19 — dependency freshness
+```
+Package                        Current   Wanted   Latest  Location                                    Depended by
+@anthropic-ai/sdk               0.30.1   0.30.1   1.11.0  node_modules/@anthropic-ai/sdk              Relay
+@clerk/nextjs                   6.39.6   6.39.9   7.10.5  node_modules/@clerk/nextjs                  Relay
+@hookform/resolvers             3.10.0   3.10.0    7.0.7  node_modules/@hookform/resolvers            Relay
+@playwright/test                1.61.1   1.65.1   1.65.1  node_modules/@playwright/test               Relay
+@prisma/client                  6.19.3   6.19.3   7.10.1  node_modules/@prisma/client                 Relay
+@radix-ui/react-dialog          1.1.20    1.3.1    1.3.1  node_modules/@radix-ui/react-dialog         Relay
+@radix-ui/react-dropdown-menu   2.1.21    2.2.1    2.2.1  node_modules/@radix-ui/react-dropdown-menu  Relay
+@radix-ui/react-popover         1.1.20    1.3.1    1.3.1  node_modules/@radix-ui/react-popover        Relay
+@radix-ui/react-select           2.3.4    2.4.1    2.4.1  node_modules/@radix-ui/react-select         Relay
+@radix-ui/react-tabs            1.1.18    1.2.1    1.2.1  node_modules/@radix-ui/react-tabs           Relay
+@radix-ui/react-toast           1.2.20    1.3.1    1.3.1  node_modules/@radix-ui/react-toast          Relay
+@react-pdf/renderer              4.5.1    4.9.0    4.9.0  node_modules/@react-pdf/renderer            Relay
+@tanstack/react-query          5.101.4  5.108.1  5.108.1  node_modules/@tanstack/react-query          Relay
+@tanstack/react-table           8.21.3   8.21.3    9.3.1  node_modules/@tanstack/react-table          Relay
+@trpc/client                   11.18.0  11.29.5  11.29.5  node_modules/@trpc/client                   Relay
+@trpc/react-query              11.18.0  11.28.5  11.28.5  node_modules/@trpc/react-query              Relay
+@trpc/server                   11.18.0  11.29.5  11.29.5  node_modules/@trpc/server                   Relay
+@types/node                    22.20.1  22.20.5   26.6.6  node_modules/@types/node                    Relay
+@types/react                   19.2.17   19.3.0   19.3.0  node_modules/@types/react                   Relay
+@upstash/ratelimit               2.0.8    2.2.1    2.2.1  node_modules/@upstash/ratelimit             Relay
+@upstash/redis                  1.38.0   1.41.0   1.41.0  node_modules/@upstash/redis                 Relay
+autoprefixer                    10.5.4   10.7.0   10.7.0  node_modules/autoprefixer                   Relay
+eslint                          9.39.5   9.39.5  10.15.0  node_modules/eslint                         Relay
+eslint-config-next             15.5.21  15.5.29   16.4.6  node_modules/eslint-config-next             Relay
+framer-motion                  11.18.2  11.18.2  14.14.0  node_modules/framer-motion                  Relay
+lucide-react                   0.468.0  0.468.0   1.76.0  node_modules/lucide-react                   Relay
+next                           15.5.21  15.5.29   16.4.6  node_modules/next                           Relay
+openai                         4.104.0  4.104.0   6.49.0  node_modules/openai                         Relay
+postcss                         8.5.22   8.5.33   8.5.33  node_modules/postcss                        Relay
+prisma                          6.19.3   6.19.3   7.10.1  node_modules/prisma                         Relay
+react                           19.2.8   19.3.1   19.3.1  node_modules/react                          Relay
+react-dom                       19.2.8   19.3.1   19.3.1  node_modules/react-dom                      Relay
+react-hook-form                 7.82.0   7.92.0   7.92.0  node_modules/react-hook-form                Relay
+recharts                        2.15.4   2.15.4   3.11.0  node_modules/recharts                       Relay
+resend                           4.8.0    4.8.0   6.39.0  node_modules/resend                         Relay
+stripe                          17.7.0   17.7.0   23.2.0  node_modules/stripe                         Relay
+svix                            1.98.0   1.99.1   1.99.1  node_modules/svix                           Relay
+tailwind-merge                   2.6.1    2.6.2    3.7.0  node_modules/tailwind-merge                 Relay
+tailwindcss                     3.4.19   3.4.19    4.3.5  node_modules/tailwindcss                    Relay
+tsx                             4.23.1  4.23.15  4.23.15  node_modules/tsx                            Relay
+typescript                       5.9.3    5.9.3    7.0.2  node_modules/typescript                     Relay
+vitest                           2.1.9    2.1.9   4.1.12  node_modules/vitest                         Relay
+zod                            3.25.76  3.25.76    4.6.7  node_modules/zod                            Relay
+```
+
+### 2026-11-19 — typecheck/test status: pass
+
